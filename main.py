@@ -57,6 +57,11 @@ def image_read(fname):
     # detect green color
     frame_threshold = cv2.inRange(frame_hsv, (25, 25, 25), (80, 255,255))
 
+    # detect grey and black
+    # frame_threshold_1 = cv2.inRange(frame_hsv, (0, 10, 25), (25, 255, 150))
+    # frame_threshold_2 = cv2.inRange(frame_hsv, (80, 0, 0), (180, 255, 150))
+    # frame_threshold = cv2.bitwise_or(frame_threshold_1, frame_threshold_2)
+
     erode_kernel = np.ones((5, 5), np.uint8)
     eroded = cv2.erode(frame_threshold, erode_kernel, iterations=2)
 
@@ -66,11 +71,53 @@ def image_read(fname):
     contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
 
+    all_contours = [] # [(cnt, approx, cx, cy), ...]
+
     for cnt in contours:
         # x, y, w, h = cv2.boundingRect(cnt)
-        approx = cv2.approxPolyDP(cnt, 0.01*cv2.arcLength(cnt, True), True)
+        approx = cv2.approxPolyDP(cnt, 0.03*cv2.arcLength(cnt, True), True)
         cv2.drawContours(frame, [approx], 0, (0, 255, 255), 2)
-        # cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 255), 2)
+
+        center = cv2.moments(cnt)
+        cx = int(center["m10"] / center["m00"])
+        cy = int(center["m01"] / center["m00"])
+
+        cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
+
+        all_contours.append((cnt, approx, cx, cy))
+
+    left_most = min(all_contours, key=lambda x: x[2])
+    right_most = max(all_contours, key=lambda x: x[2])
+
+    rightest_idx = 0
+    rightest_idx_2 = 1
+    rightest_value = 0
+
+    approx = left_most[1]
+    for i in range(len(approx)):
+        pt1 = approx[i]
+        i2 = (i + 1) % len(approx)
+        pt2 = approx[i2]
+
+        x1, y1 = pt1[0]
+        x2, y2 = pt2[0]
+
+        d = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
+        if d > rightest_value:
+            rightest_value = d
+            rightest_idx = i
+            rightest_idx_2 = i2
+
+    cv2.line(frame, approx[rightest_idx][0], approx[rightest_idx_2][0], (255, 0, 255), 5)
+
+
+    cv2.drawContours(frame, [left_most[1]], 0, (255, 0, 0), 2)
+    cv2.drawContours(frame, [right_most[1]], 0, (255, 0, 0), 2)
+
+
+    # grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # cv2.imshow("grey", grey)
 
     cv2.imshow("frame", frame)
     cv2.imshow("dilated", dilated)

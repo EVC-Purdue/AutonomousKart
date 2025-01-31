@@ -4,9 +4,9 @@ Main codebase for the Autonomous kart project!
 
 ## Code Vision
 
-- Read from camera
+- [x] Read from camera
 	- gstreamer
-	- opencv
+	- [x] opencv
 - Identify edges of track
 	- opencv
 - Steering (and throttle) corrections

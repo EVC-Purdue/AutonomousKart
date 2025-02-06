@@ -48,7 +48,9 @@ CAP_ARGS = "v4l2src device=/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_2D4AA0A0-video
 #             break
 
 
-class Dectection:
+class Detection:
+    """Structure to hold detection information"""
+
     def __init__(self, id, cnt, approx, cx, cy):
         self.id = id
         self.cnt = cnt
@@ -56,11 +58,18 @@ class Dectection:
         self.cx = cx
         self.cy = cy
 
-def image_read(fname):
-    frame = cv2.imread(fname)
 
-    print(f"Camera opened...")
+def find_contours(frame):
+    """
+    Find contours by:
+    - Converting to hsv
+    - Hue thresholding
+    - Eroding (removing noise)
+    - Dilating (filling in holes)
+    - Finding contours
+    """
 
+    # hsv to use hue color detection
     frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
     # detect grass: yellow/green color
@@ -71,16 +80,27 @@ def image_read(fname):
     # frame_threshold_2 = cv2.inRange(frame_hsv, (80, 0, 0), (180, 255, 150))
     # frame_threshold = cv2.bitwise_or(frame_threshold_1, frame_threshold_2)
 
+    # Erode to remove noise
     erode_kernel = np.ones((5, 5), np.uint8)
     eroded = cv2.erode(frame_threshold, erode_kernel, iterations=2)
 
-    kernel = np.ones((10, 10), np.uint8)
-    dilated = cv2.dilate(eroded, kernel, iterations=2)
+    # Dilate to fill in the holes
+    dilate_kernel = np.ones((10, 10), np.uint8)
+    dilated = cv2.dilate(eroded, dilate_kernel, iterations=2)
 
     contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    return contours
+
+
+def image_read(fname):
+    frame = cv2.imread(fname)
+
+    contours = find_contours(frame)
     cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
 
-    all_dections = []
+
+    all_detections = []
 
     # for cnt in contours:
     for i, cnt in enumerate(contours):
@@ -94,12 +114,12 @@ def image_read(fname):
 
         cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
 
-        detection = Dectection(i, cnt, approx, cx, cy)
-        all_dections.append(detection)
+        detection = Detection(i, cnt, approx, cx, cy)
+        all_detections.append(detection)
 
 
-    left_most = min(all_dections, key=lambda x: x.cx)
-    right_most = max(all_dections, key=lambda x: x.cx)
+    left_most = min(all_detections, key=lambda x: x.cx)
+    right_most = max(all_detections, key=lambda x: x.cx)
 
     rightest_idx = 0
     rightest_value = 0
@@ -132,7 +152,7 @@ def image_read(fname):
     # cv2.imshow("grey", grey)
 
     cv2.imshow("frame", frame)
-    cv2.imshow("dilated", dilated)
+    # cv2.imshow("dilated", dilated)
 
     if cv2.waitKey(0) & 0xFF == ord('q'):
         pass
@@ -141,7 +161,7 @@ def image_read(fname):
 def main():
     ap = argparse.ArgumentParser()
     # ap.add_argument("-z", "--video-capture-zero", required=False, help="testing version", action="store_true")
-    ap.add_argument("-f", "--file", required=False, help="open file")
+    ap.add_argument("-f", "--file", required=True, help="open file")
     args = vars(ap.parse_args())
     # ------------------------------------------------------------------------ #
 

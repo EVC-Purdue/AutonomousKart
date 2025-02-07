@@ -5,6 +5,7 @@ import argparse
 import time
 import cv2
 import numpy as np
+import math
 
 
 
@@ -51,12 +52,16 @@ CAP_ARGS = "v4l2src device=/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_2D4AA0A0-video
 class Detection:
     """Structure to hold detection information"""
 
-    def __init__(self, id, cnt, approx, cx, cy):
+    def __init__(self, id, cnt, approx, cx, cy, max_dist_idx, slope, max_slope, lower_pt):
         self.id = id
         self.cnt = cnt
         self.approx = approx
         self.cx = cx
         self.cy = cy
+        self.max_dist_idx = max_dist_idx
+        self.slope = slope
+        self.max_slope = max_slope
+        self.lower_pt = lower_pt
 
 
 def find_contours(frame):
@@ -88,6 +93,8 @@ def find_contours(frame):
     dilate_kernel = np.ones((10, 10), np.uint8)
     dilated = cv2.dilate(eroded, dilate_kernel, iterations=2)
 
+    # edges = cv2.Canny(dilated, 50, 150)
+    # cv2.imshow("dilated", dilated)
     contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     return contours
@@ -96,8 +103,15 @@ def find_contours(frame):
 def image_read(fname):
     frame = cv2.imread(fname)
 
+    bottom_center = (frame.shape[1] // 2, frame.shape[0])
+
     contours = find_contours(frame)
+
+    # blank_frame = np.zeros(frame.shape, np.uint8)
+
     cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
+    # cv2.drawContours(blank_frame, contours, -1, (255, 255, 255), 2)
+
 
 
     all_detections = []
@@ -109,50 +123,146 @@ def image_read(fname):
         cv2.drawContours(frame, [approx], 0, (0, 255, 255), 2)
 
         center = cv2.moments(cnt)
+        if center["m00"] == 0:
+            center["m00"] = 1
         cx = int(center["m10"] / center["m00"])
         cy = int(center["m01"] / center["m00"])
 
         cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
 
-        detection = Detection(i, cnt, approx, cx, cy)
+        max_dist_idx = len(approx) - 1
+        max_dist_sq = 0
+        max_slope = 0
+
+        for i in range(len(approx)):
+            pt1 = approx[i]
+            i2 = (i + 1) % len(approx)
+            pt2 = approx[i2]
+
+            x1, y1 = pt1[0]
+            x2, y2 = pt2[0]
+
+            dist_sq = (x2 - x1)**2 + (y2 - y1)**2
+            if dist_sq >= max_dist_sq:
+                max_dist_idx = i
+                max_dist_sq = dist_sq
+                dx = x2 - x1
+                dy = y2 - y1
+                if dx == 0:
+                    slope = 999999
+                else:
+                    slope = dy / dx
+                max_slope = slope
+
+        
+        i2 = (max_dist_idx + 1) % len(approx)
+        cv2.line(frame, approx[max_dist_idx][0], approx[i2][0], (0, 0, 255), 5)
+
+        pt1 = approx[max_dist_idx][0]
+        pt2 = approx[i2][0]
+        lower_pt = pt1 if pt1[1] > pt2[1] else pt2
+
+        dx = lower_pt[0] - bottom_center[0]
+        dy = lower_pt[1] - bottom_center[1]
+        if dx == 0:
+            slope = 999999
+        else:
+            slope = dy / dx
+
+        # cv2.line(frame, (lower_y_pt[0], lower_y_pt[1]), bottom_center, (255, 0, 0), 5)
+
+
+        detection = Detection(i, cnt, approx, cx, cy, max_dist_idx, slope, max_slope, lower_pt)
         all_detections.append(detection)
 
 
-    left_most = min(all_detections, key=lambda x: x.cx)
-    right_most = max(all_detections, key=lambda x: x.cx)
+    # all_detections.sort(key=lambda x: abs(x.slope))
+    # for detection in all_detections[:min(2, len(all_detections))]:
+    #     # cv2.drawContours(frame, [detection.approx], 0, (255, 0, 0), 2)
+    #     # cv2.circle(frame, (detection.cx, detection.cy), 5, (255, 0, 0), -1)
+    #     # cv2.line(frame, (detection.cx, detection.cy), bottom_center, (255, 0, 0), 5)
+    #     cv2.line(frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 5)
 
-    rightest_idx = 0
-    rightest_value = 0
+    #     dist_pt1 = detection.approx[detection.max_dist_idx][0]
+    #     dist_pt2 = detection.approx[(detection.max_dist_idx + 1) % len(detection.approx)][0]
 
-    for i in range(len(left_most.approx)):
-        pt1 = left_most.approx[i]
-        i2 = (i + 1) % len(left_most.approx)
-        pt2 = left_most.approx[i2]
+    track_detections = sorted(all_detections, key=lambda x: abs(x.slope))
+    track_detections = track_detections[:min(2, len(track_detections))]
 
-        x1, y1 = pt1[0]
-        x2, y2 = pt2[0]
+    track_detections = sorted(track_detections, key=lambda x: abs(x.max_slope))
 
-        cv2.circle(frame, (x1, y1), 5, (255, 255, 0), -1)
+    closest_detection = track_detections[0]
 
-        d = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-
-        if d > rightest_value:
-            rightest_value = d
-            rightest_idx = i
-
-    rightest_idx_2 = (rightest_idx + 1) % len(left_most.approx)
-    cv2.line(frame, left_most.approx[rightest_idx][0], left_most.approx[rightest_idx_2][0], (255, 0, 255), 5)
+    cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 255, 0), 5)
 
 
-    cv2.drawContours(frame, [left_most.approx], 0, (255, 0, 0), 2)
-    cv2.drawContours(frame, [right_most.approx], 0, (255, 0, 0), 2)
 
 
-    # grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    # cv2.imshow("grey", grey)
+
+
+    # for detection in all_detections:
+    #     pt1 = detection.approx[detection.max_dist_idx]
+    #     pt2 = detection.approx[(detection.max_dist_idx + 1) % len(detection.approx)]
+    #     # x1, y1 = pt1[0]
+    #     # x2, y2 = pt2[0]
+    #     # mx, my = (x1 + x2) // 2, (y1 + y2) // 2
+    #     # cv2.line(frame, (mx, my), BOTTOM_CENTER, (255, 0, 0), 5)
+    #     lower_y_pt = pt1 if pt1[0][1] > pt2[0][1] else pt2
+    #     # cv2.line(frame, (x1, lower_y), BOTTOM_CENTER, (255, 0, 0), 5)
+    #     cv2.line(frame, (lower_y_pt[0][0], lower_y_pt[0][1]), bottom_center, (255, 0, 0), 5)
+
+
+
+    # left_most = min(all_detections, key=lambda x: x.cx)
+    # right_most = max(all_detections, key=lambda x: x.cx)
+
+    # rightest_idx = 0
+    # rightest_value = 0
+
+    # for i in range(len(left_most.approx)):
+    #     pt1 = left_most.approx[i]
+    #     i2 = (i + 1) % len(left_most.approx)
+    #     pt2 = left_most.approx[i2]
+
+    #     x1, y1 = pt1[0]
+    #     x2, y2 = pt2[0]
+
+    #     cv2.circle(frame, (x1, y1), 5, (255, 255, 0), -1)
+
+    #     d = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
+    #     if d > rightest_value:
+    #         rightest_value = d
+    #         rightest_idx = i
+
+    # rightest_idx_2 = (rightest_idx + 1) % len(left_most.approx)
+    # cv2.line(frame, left_most.approx[rightest_idx][0], left_most.approx[rightest_idx_2][0], (255, 0, 255), 5)
+
+
+    # cv2.drawContours(frame, [left_most.approx], 0, (255, 0, 0), 2)
+    # cv2.drawContours(frame, [right_most.approx], 0, (255, 0, 0), 2)
+
+    # # blank_frame = cv2.cvtColor(blank_frame, cv2.COLOR_BGR2GRAY)
+    # # lines = cv2.HoughLines(blank_frame, 1, np.pi / 180, 150, None, 0, 0)
+    
+    # # if lines is not None:
+    # #     for i in range(0, len(lines)):
+    # #         rho = lines[i][0][0]
+    # #         theta = lines[i][0][1]
+    # #         a = math.cos(theta)
+    # #         b = math.sin(theta)
+    # #         x0 = a * rho
+    # #         y0 = b * rho
+    # #         pt1 = (int(x0 + 1000*(-b)), int(y0 + 1000*(a)))
+    # #         pt2 = (int(x0 - 1000*(-b)), int(y0 - 1000*(a)))
+    # #         cv2.line(frame, pt1, pt2, (0,0,255), 3, cv2.LINE_AA)
+
+
+    # # grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # # cv2.imshow("grey", grey)
 
     cv2.imshow("frame", frame)
-    # cv2.imshow("dilated", dilated)
+    # # cv2.imshow("blank", blank_frame)
 
     if cv2.waitKey(0) & 0xFF == ord('q'):
         pass

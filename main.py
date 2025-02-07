@@ -127,7 +127,6 @@ def image_read(frame):
     # cv2.drawContours(blank_frame, contours, -1, (255, 255, 255), 2)
 
 
-
     all_detections = []
 
     # for cnt in contours:
@@ -194,16 +193,28 @@ def image_read(frame):
 
 
     track_detections = sorted(all_detections, key=lambda x: abs(x.camera_slope))
-    track_detections = track_detections[:min(2, len(track_detections))]
 
-    for detection in track_detections:
-        cv2.line(frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 5)
+    if len(track_detections) >= 2:
+        # track_detections = track_detections[:min(2, len(track_detections))]
+        edges = [track_detections[0]]
+        if edges[0].cx >= frame.shape[1] // 2:
+            track_detections = list(filter(lambda x: x.cx < frame.shape[1] // 2, track_detections[1:]))
+        else:
+            track_detections = list(filter(lambda x: x.cx > frame.shape[1] // 2, track_detections[1:]))
+        
+        if len(track_detections) > 0:
+            edges.append(track_detections[0])
 
-    track_detections = sorted(track_detections, key=lambda x: abs(x.edge_slope))
+            for detection in edges:
+                cv2.line(frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 5)
 
-    if len(track_detections) > 0:
-        closest_detection = track_detections[0]
-        cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 255, 0), 1)
+            edges = sorted(edges, key=lambda x: abs(x.edge_slope))
+            closest_detection = edges[0]
+            cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 255, 0), 1)
+        else:
+            print("DETECTIONS ON SAME SIDE")
+    else:
+        print(f"DETECTION LOST: {len(track_detections)}")
 
 
     cv2.imshow("frame", frame)

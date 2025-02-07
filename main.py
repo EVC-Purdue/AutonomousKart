@@ -78,7 +78,7 @@ def find_contours(frame):
     frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
     # detect grass: yellow/green color
-    frame_threshold = cv2.inRange(frame_hsv, (25, 25, 25), (80, 255,255))
+    frame_threshold = cv2.inRange(frame_hsv, (25, 40, 40), (80, 255,255))
 
     # detect: track: grey and black
     # frame_threshold_1 = cv2.inRange(frame_hsv, (0, 10, 25), (25, 255, 150))
@@ -86,7 +86,7 @@ def find_contours(frame):
     # frame_threshold = cv2.bitwise_or(frame_threshold_1, frame_threshold_2)
 
     # Erode to remove noise
-    erode_kernel = np.ones((5, 5), np.uint8)
+    erode_kernel = np.ones((7, 7), np.uint8)
     eroded = cv2.erode(frame_threshold, erode_kernel, iterations=2)
 
     # Dilate to fill in the holes
@@ -100,8 +100,23 @@ def find_contours(frame):
     return contours
 
 
-def image_read(fname):
-    frame = cv2.imread(fname)
+def handle_video(fname):
+    cap = cv2.VideoCapture(fname)
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Error reading frame...")
+            break
+
+        image_read(frame)
+
+        if cv2.waitKey(10) & 0xFF == ord('q'):
+            break
+
+
+def image_read(frame):
+    # frame = cv2.imread(fname)
 
     bottom_center = (frame.shape[1] // 2, frame.shape[0])
 
@@ -127,6 +142,12 @@ def image_read(fname):
             center["m00"] = 1
         cx = int(center["m10"] / center["m00"])
         cy = int(center["m01"] / center["m00"])
+
+        left_33 = int(frame.shape[1] * (1/3))
+        right_33 = int(frame.shape[1] * (2/3))
+        if left_33 < cx < right_33:
+            continue
+
 
         cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
 
@@ -189,11 +210,16 @@ def image_read(fname):
     track_detections = sorted(all_detections, key=lambda x: abs(x.slope))
     track_detections = track_detections[:min(2, len(track_detections))]
 
+    for detection in track_detections:
+        cv2.line(frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 5)
+
     track_detections = sorted(track_detections, key=lambda x: abs(x.max_slope))
 
-    closest_detection = track_detections[0]
 
-    cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 255, 0), 5)
+    if len(track_detections) > 0:
+        closest_detection = track_detections[0]
+
+        cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 255, 0), 2)
 
 
 
@@ -242,21 +268,6 @@ def image_read(fname):
     # cv2.drawContours(frame, [left_most.approx], 0, (255, 0, 0), 2)
     # cv2.drawContours(frame, [right_most.approx], 0, (255, 0, 0), 2)
 
-    # # blank_frame = cv2.cvtColor(blank_frame, cv2.COLOR_BGR2GRAY)
-    # # lines = cv2.HoughLines(blank_frame, 1, np.pi / 180, 150, None, 0, 0)
-    
-    # # if lines is not None:
-    # #     for i in range(0, len(lines)):
-    # #         rho = lines[i][0][0]
-    # #         theta = lines[i][0][1]
-    # #         a = math.cos(theta)
-    # #         b = math.sin(theta)
-    # #         x0 = a * rho
-    # #         y0 = b * rho
-    # #         pt1 = (int(x0 + 1000*(-b)), int(y0 + 1000*(a)))
-    # #         pt2 = (int(x0 - 1000*(-b)), int(y0 - 1000*(a)))
-    # #         cv2.line(frame, pt1, pt2, (0,0,255), 3, cv2.LINE_AA)
-
 
     # # grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     # # cv2.imshow("grey", grey)
@@ -264,8 +275,8 @@ def image_read(fname):
     cv2.imshow("frame", frame)
     # # cv2.imshow("blank", blank_frame)
 
-    if cv2.waitKey(0) & 0xFF == ord('q'):
-        pass
+    # if cv2.waitKey(0) & 0xFF == ord('q'):
+    #     pass
 
 
 def main():
@@ -278,7 +289,8 @@ def main():
     # ------------------------------------------------------------------------ #
     # camera_loop(args["video_capture_zero"])
 
-    image_read(args["file"])
+    # image_read(args["file"])
+    handle_video(args["file"])
     # ------------------------------------------------------------------------ #
 
     print("\n\nExiting...\n\n")

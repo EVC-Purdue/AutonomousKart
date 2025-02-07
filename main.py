@@ -54,17 +54,16 @@ CAP_ARGS = "v4l2src device=/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_2D4AA0A0-video
 class Detection:
     """Structure to hold detection information"""
 
-    def __init__(self, id, cnt, approx, cx, cy, max_dist_idx, slope, max_slope, lower_pt):
+    def __init__(self, id, cnt, approx, cx, cy, line_start_idx, edge_slope, camera_slope, lower_pt):
         self.id = id
         self.cnt = cnt
         self.approx = approx
         self.cx = cx
         self.cy = cy
-        self.max_dist_idx = max_dist_idx
-        self.slope = slope
-        self.max_slope = max_slope
+        self.line_start_idx = line_start_idx
+        self.edge_slope = edge_slope
+        self.camera_slope = camera_slope
         self.lower_pt = lower_pt
-
     
 
 
@@ -153,7 +152,7 @@ def image_read(frame):
 
         intersection_idx = len(approx) - 1
         intersection_dist = float("inf")
-        max_slope = 0
+        edge_slope = 0
 
         for j in range(len(approx)):
             pt1 = approx[j][0]
@@ -170,10 +169,9 @@ def image_read(frame):
                     dx = pt2[0] - pt1[0]
                     dy = pt2[1] - pt1[1]
                     if dx == 0:
-                        slope = 999999
+                        edge_slope = 999999
                     else:
-                        slope = dy / dx
-                    max_slope = slope
+                        edge_slope = dy / dx
 
         
         i2 = (intersection_idx + 1) % len(approx)
@@ -186,34 +184,29 @@ def image_read(frame):
         dx = lower_pt[0] - bottom_center[0]
         dy = lower_pt[1] - bottom_center[1]
         if dx == 0:
-            slope = 999999
+            camera_slope = 999999
         else:
-            slope = dy / dx
-
-        # cv2.line(frame, (lower_y_pt[0], lower_y_pt[1]), bottom_center, (255, 0, 0), 5)
+            camera_slope = dy / dx
 
 
-        detection = Detection(i, cnt, approx, cx, cy, intersection_idx, slope, max_slope, lower_pt)
+        detection = Detection(i, cnt, approx, cx, cy, intersection_idx, edge_slope, camera_slope, lower_pt)
         all_detections.append(detection)
 
 
-    track_detections = sorted(all_detections, key=lambda x: abs(x.slope))
+    track_detections = sorted(all_detections, key=lambda x: abs(x.camera_slope))
     track_detections = track_detections[:min(2, len(track_detections))]
 
     for detection in track_detections:
         cv2.line(frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 5)
 
-    track_detections = sorted(track_detections, key=lambda x: abs(x.max_slope))
-
+    track_detections = sorted(track_detections, key=lambda x: abs(x.edge_slope))
 
     if len(track_detections) > 0:
         closest_detection = track_detections[0]
-
         cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 255, 0), 1)
 
 
     cv2.imshow("frame", frame)
-    # # cv2.imshow("blank", blank_frame)
 
     # if cv2.waitKey(0) & 0xFF == ord('q'):
     #     pass

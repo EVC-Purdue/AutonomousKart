@@ -7,6 +7,8 @@ import cv2
 import numpy as np
 import math
 
+import util
+
 
 
 
@@ -63,6 +65,8 @@ class Detection:
         self.max_slope = max_slope
         self.lower_pt = lower_pt
 
+    
+
 
 def find_contours(frame):
     """
@@ -111,6 +115,7 @@ def handle_video(fname):
 
 
 def image_read(frame):
+# def image_read(fname):
     # frame = cv2.imread(fname)
 
     bottom_center = (frame.shape[1] // 2, frame.shape[0])
@@ -146,35 +151,35 @@ def image_read(frame):
 
         cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
 
-        max_dist_idx = len(approx) - 1
-        max_dist_sq = 0
+        intersection_idx = len(approx) - 1
+        intersection_dist = float("inf")
         max_slope = 0
 
-        for i in range(len(approx)):
-            pt1 = approx[i]
-            i2 = (i + 1) % len(approx)
-            pt2 = approx[i2]
+        for j in range(len(approx)):
+            pt1 = approx[j][0]
+            i2 = (j + 1) % len(approx)
+            pt2 = approx[i2][0]
 
-            x1, y1 = pt1[0]
-            x2, y2 = pt2[0]
+            intersection = util.line_intersection(pt1, pt2, bottom_center, (cx, cy))
+            if intersection is not None:
+                dist = math.dist(bottom_center, intersection)
+                if dist < intersection_dist:
+                    intersection_dist = dist
+                    intersection_idx = j
 
-            dist_sq = (x2 - x1)**2 + (y2 - y1)**2
-            if dist_sq >= max_dist_sq:
-                max_dist_idx = i
-                max_dist_sq = dist_sq
-                dx = x2 - x1
-                dy = y2 - y1
-                if dx == 0:
-                    slope = 999999
-                else:
-                    slope = dy / dx
-                max_slope = slope
+                    dx = pt2[0] - pt1[0]
+                    dy = pt2[1] - pt1[1]
+                    if dx == 0:
+                        slope = 999999
+                    else:
+                        slope = dy / dx
+                    max_slope = slope
 
         
-        i2 = (max_dist_idx + 1) % len(approx)
-        cv2.line(frame, approx[max_dist_idx][0], approx[i2][0], (0, 0, 255), 5)
+        i2 = (intersection_idx + 1) % len(approx)
+        cv2.line(frame, approx[intersection_idx][0], approx[i2][0], (0, 0, 255), 5)
 
-        pt1 = approx[max_dist_idx][0]
+        pt1 = approx[intersection_idx][0]
         pt2 = approx[i2][0]
         lower_pt = pt1 if pt1[1] > pt2[1] else pt2
 
@@ -188,7 +193,7 @@ def image_read(frame):
         # cv2.line(frame, (lower_y_pt[0], lower_y_pt[1]), bottom_center, (255, 0, 0), 5)
 
 
-        detection = Detection(i, cnt, approx, cx, cy, max_dist_idx, slope, max_slope, lower_pt)
+        detection = Detection(i, cnt, approx, cx, cy, intersection_idx, slope, max_slope, lower_pt)
         all_detections.append(detection)
 
 
@@ -204,7 +209,7 @@ def image_read(frame):
     if len(track_detections) > 0:
         closest_detection = track_detections[0]
 
-        cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 255, 0), 2)
+        cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 255, 0), 1)
 
 
     cv2.imshow("frame", frame)

@@ -208,7 +208,7 @@ def image_read(frame):
             for detection in edges:
                 cv2.line(frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 5)
 
-            edges = sorted(edges, key=lambda x: abs(x.edge_slope))
+            edges = sorted(edges, key=lambda x: abs(x.edge_slope), reverse=True)
             closest_detection = edges[0]
             cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 255, 0), 1)
         else:

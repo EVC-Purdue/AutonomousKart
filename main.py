@@ -80,11 +80,6 @@ def find_contours(frame):
     # detect grass: yellow/green color
     frame_threshold = cv2.inRange(frame_hsv, (25, 40, 40), (80, 255,255))
 
-    # detect: track: grey and black
-    # frame_threshold_1 = cv2.inRange(frame_hsv, (0, 10, 25), (25, 255, 150))
-    # frame_threshold_2 = cv2.inRange(frame_hsv, (80, 0, 0), (180, 255, 150))
-    # frame_threshold = cv2.bitwise_or(frame_threshold_1, frame_threshold_2)
-
     # Erode to remove noise
     erode_kernel = np.ones((7, 7), np.uint8)
     eroded = cv2.erode(frame_threshold, erode_kernel, iterations=2)
@@ -197,16 +192,6 @@ def image_read(frame):
         all_detections.append(detection)
 
 
-    # all_detections.sort(key=lambda x: abs(x.slope))
-    # for detection in all_detections[:min(2, len(all_detections))]:
-    #     # cv2.drawContours(frame, [detection.approx], 0, (255, 0, 0), 2)
-    #     # cv2.circle(frame, (detection.cx, detection.cy), 5, (255, 0, 0), -1)
-    #     # cv2.line(frame, (detection.cx, detection.cy), bottom_center, (255, 0, 0), 5)
-    #     cv2.line(frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 5)
-
-    #     dist_pt1 = detection.approx[detection.max_dist_idx][0]
-    #     dist_pt2 = detection.approx[(detection.max_dist_idx + 1) % len(detection.approx)][0]
-
     track_detections = sorted(all_detections, key=lambda x: abs(x.slope))
     track_detections = track_detections[:min(2, len(track_detections))]
 
@@ -221,56 +206,6 @@ def image_read(frame):
 
         cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 255, 0), 2)
 
-
-
-
-
-
-    # for detection in all_detections:
-    #     pt1 = detection.approx[detection.max_dist_idx]
-    #     pt2 = detection.approx[(detection.max_dist_idx + 1) % len(detection.approx)]
-    #     # x1, y1 = pt1[0]
-    #     # x2, y2 = pt2[0]
-    #     # mx, my = (x1 + x2) // 2, (y1 + y2) // 2
-    #     # cv2.line(frame, (mx, my), BOTTOM_CENTER, (255, 0, 0), 5)
-    #     lower_y_pt = pt1 if pt1[0][1] > pt2[0][1] else pt2
-    #     # cv2.line(frame, (x1, lower_y), BOTTOM_CENTER, (255, 0, 0), 5)
-    #     cv2.line(frame, (lower_y_pt[0][0], lower_y_pt[0][1]), bottom_center, (255, 0, 0), 5)
-
-
-
-    # left_most = min(all_detections, key=lambda x: x.cx)
-    # right_most = max(all_detections, key=lambda x: x.cx)
-
-    # rightest_idx = 0
-    # rightest_value = 0
-
-    # for i in range(len(left_most.approx)):
-    #     pt1 = left_most.approx[i]
-    #     i2 = (i + 1) % len(left_most.approx)
-    #     pt2 = left_most.approx[i2]
-
-    #     x1, y1 = pt1[0]
-    #     x2, y2 = pt2[0]
-
-    #     cv2.circle(frame, (x1, y1), 5, (255, 255, 0), -1)
-
-    #     d = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-
-    #     if d > rightest_value:
-    #         rightest_value = d
-    #         rightest_idx = i
-
-    # rightest_idx_2 = (rightest_idx + 1) % len(left_most.approx)
-    # cv2.line(frame, left_most.approx[rightest_idx][0], left_most.approx[rightest_idx_2][0], (255, 0, 255), 5)
-
-
-    # cv2.drawContours(frame, [left_most.approx], 0, (255, 0, 0), 2)
-    # cv2.drawContours(frame, [right_most.approx], 0, (255, 0, 0), 2)
-
-
-    # # grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    # # cv2.imshow("grey", grey)
 
     cv2.imshow("frame", frame)
     # # cv2.imshow("blank", blank_frame)

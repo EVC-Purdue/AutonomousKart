@@ -54,7 +54,7 @@ CAP_ARGS = "v4l2src device=/dev/v4l/by-id/usb-046d_C270_HD_WEBCAM_2D4AA0A0-video
 class Detection:
     """Structure to hold detection information"""
 
-    def __init__(self, id, cnt, approx, cx, cy, line_start_idx, edge_slope, camera_slope, lower_pt):
+    def __init__(self, id, cnt, approx, cx, cy, line_start_idx, edge_slope, camera_slope, lower_pt, higher_pt):
         self.id = id
         self.cnt = cnt
         self.approx = approx
@@ -64,6 +64,7 @@ class Detection:
         self.edge_slope = edge_slope
         self.camera_slope = camera_slope
         self.lower_pt = lower_pt
+        self.higher_pt = higher_pt
     
 
 
@@ -179,6 +180,7 @@ def image_read(frame):
         pt1 = approx[intersection_idx][0]
         pt2 = approx[i2][0]
         lower_pt = pt1 if pt1[1] > pt2[1] else pt2
+        higher_pt = pt1 if pt1[1] < pt2[1] else pt2
 
         dx = lower_pt[0] - bottom_center[0]
         dy = lower_pt[1] - bottom_center[1]
@@ -188,7 +190,7 @@ def image_read(frame):
             camera_slope = dy / dx
 
 
-        detection = Detection(i, cnt, approx, cx, cy, intersection_idx, edge_slope, camera_slope, lower_pt)
+        detection = Detection(i, cnt, approx, cx, cy, intersection_idx, edge_slope, camera_slope, lower_pt, higher_pt)
         all_detections.append(detection)
 
 
@@ -211,6 +213,10 @@ def image_read(frame):
             edges = sorted(edges, key=lambda x: abs(x.edge_slope), reverse=True)
             closest_detection = edges[0]
             cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 255, 0), 1)
+
+            lower_midpoint = ((edges[0].lower_pt[0] + edges[1].lower_pt[0]) // 2, (edges[0].lower_pt[1] + edges[1].lower_pt[1]) // 2)
+            higher_midpoint = ((edges[0].higher_pt[0] + edges[1].higher_pt[0]) // 2, (edges[0].higher_pt[1] + edges[1].higher_pt[1]) // 2)
+            cv2.line(frame, lower_midpoint, higher_midpoint, (255, 0, 255), 5)
         else:
             print("DETECTIONS ON SAME SIDE")
     else:

@@ -61,6 +61,7 @@ class Detection:
         self.cx = cx
         self.cy = cy
         self.line_start_idx = line_start_idx
+        self.line_end_idx = (line_start_idx + 1) % len(approx)
         self.edge_slope = edge_slope
         self.camera_slope = camera_slope
         self.lower_pt = lower_pt
@@ -110,8 +111,18 @@ def handle_video(fname):
 
         image_read(frame)
 
-        if cv2.waitKey(10) & 0xFF == ord('q'):
+        # if cv2.waitKey(33) & 0xFF == ord('q'):
+        #     break
+        # w to pause
+        key = cv2.waitKey(33) & 0xFF
+        if key == ord('w'):
+            cv2.waitKey(-1)
+        elif key == ord('q'):
             break
+        # if cv2.waitKey(30) & 0xFF == ord('w'):
+        #     cv2.waitKey(-1)
+        # elif cv2.waitKey(1) & 0xFF == ord('q'):
+        #     break
 
 
 def image_read(frame):
@@ -124,7 +135,7 @@ def image_read(frame):
 
     # blank_frame = np.zeros(frame.shape, np.uint8)
 
-    cv2.drawContours(frame, contours, -1, (0, 255, 0), 2)
+    cv2.drawContours(frame, contours, -1, (0, 255, 0), 1)
     # cv2.drawContours(blank_frame, contours, -1, (255, 255, 255), 2)
 
 
@@ -175,7 +186,7 @@ def image_read(frame):
 
         
         i2 = (intersection_idx + 1) % len(approx)
-        cv2.line(frame, approx[intersection_idx][0], approx[i2][0], (0, 0, 255), 5)
+        cv2.line(frame, approx[intersection_idx][0], approx[i2][0], (0, 0, 255), 3)
 
         pt1 = approx[intersection_idx][0]
         pt2 = approx[i2][0]
@@ -208,14 +219,25 @@ def image_read(frame):
             edges.append(track_detections[0])
 
             for detection in edges:
-                cv2.line(frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 5)
+                # cv2.line(frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 2)
+                cv2.line(frame, (detection.cx, detection.cy), bottom_center, (255, 0, 0), 2)
 
-            edges = sorted(edges, key=lambda x: abs(x.edge_slope), reverse=True)
-            closest_detection = edges[0]
-            cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 255, 0), 1)
 
-            lower_midpoint = ((edges[0].lower_pt[0] + edges[1].lower_pt[0]) // 2, (edges[0].lower_pt[1] + edges[1].lower_pt[1]) // 2)
-            higher_midpoint = ((edges[0].higher_pt[0] + edges[1].higher_pt[0]) // 2, (edges[0].higher_pt[1] + edges[1].higher_pt[1]) // 2)
+            # edges = sorted(edges, key=lambda x: abs(x.edge_slope), reverse=True)
+            # closest_detection = edges[0]
+            # cv2.line(frame, (closest_detection.lower_pt[0], closest_detection.lower_pt[1]), bottom_center, (255, 100, 0), 3)
+
+            lowest_point = edges[0].lower_pt if edges[0].lower_pt[1] > edges[1].lower_pt[1] else edges[1].lower_pt
+            highest_point = edges[0].higher_pt if edges[0].higher_pt[1] < edges[1].higher_pt[1] else edges[1].higher_pt
+
+            edge_0_ext = util.extend_segment(edges[0].lower_pt, edges[0].higher_pt, lowest_point[1], highest_point[1])
+            edge_1_ext = util.extend_segment(edges[1].lower_pt, edges[1].higher_pt, lowest_point[1], highest_point[1])
+
+            cv2.line(frame, (int(edge_0_ext[0][0]), int(edge_0_ext[0][1])), (int(edge_0_ext[1][0]), int(edge_0_ext[1][1])), (0, 128, 255), 2)
+            cv2.line(frame, (int(edge_1_ext[0][0]), int(edge_1_ext[0][1])), (int(edge_1_ext[1][0]), int(edge_1_ext[1][1])), (0, 128, 255), 2)
+
+            lower_midpoint = ((int(edge_0_ext[0][0]) + int(edge_1_ext[0][0])) // 2, (int(edge_0_ext[0][1]) + int(edge_1_ext[0][1])) // 2)
+            higher_midpoint = ((int(edge_0_ext[1][0]) + int(edge_1_ext[1][0])) // 2, (int(edge_0_ext[1][1]) + int(edge_1_ext[1][1])) // 2)
             cv2.line(frame, lower_midpoint, higher_midpoint, (255, 0, 255), 5)
         else:
             print("DETECTIONS ON SAME SIDE")

@@ -117,7 +117,7 @@ def image_read(frame):
 # def image_read(fname):
     # frame = cv2.imread(fname)
 
-    bottom_center = (frame.shape[1] // 2, frame.shape[0])
+    bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * (9/10)))
 
     contours = find_contours(frame)
 

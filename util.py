@@ -23,3 +23,21 @@ def line_intersection(p1, p2, p3, p4):
         return (intersection_x, intersection_y)
     
     return None
+
+def extend_segment(p1, p2, y_low, y_high):
+    x1, y1 = p1
+    x2, y2 = p2
+    
+    if y1 == y2:
+        # Horizontal line case: return extended horizontally at y_low and y_high
+        return (x1, y_low), (x2, y_high)
+        # return p1, p2
+    
+    # Compute slope
+    slope = (x2 - x1) / (y2 - y1)
+    
+    # Compute new x-coordinates
+    x_low = x1 + slope * (y_low - y1)
+    x_high = x1 + slope * (y_high - y1)
+    
+    return (x_low, y_low), (x_high, y_high)

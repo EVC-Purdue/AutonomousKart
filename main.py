@@ -93,11 +93,13 @@ def find_contours(frame):
     dilate_kernel = np.ones((10, 10), np.uint8)
     dilated = cv2.dilate(eroded, dilate_kernel, iterations=2)
 
+    cv2.imshow("dilated", dilated)
+
     # edges = cv2.Canny(dilated, 50, 150)
     # cv2.imshow("dilated", dilated)
     contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    return contours
+    return contours, dilated
 
 
 def handle_video(fname):
@@ -119,24 +121,25 @@ def handle_video(fname):
             cv2.waitKey(-1)
         elif key == ord('q'):
             break
-        # if cv2.waitKey(30) & 0xFF == ord('w'):
-        #     cv2.waitKey(-1)
-        # elif cv2.waitKey(1) & 0xFF == ord('q'):
-        #     break
 
 
 def image_read(frame):
 # def image_read(fname):
     # frame = cv2.imread(fname)
 
-    bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * (19/20)))
+    bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * (9/10)))
+    target_y = int(frame.shape[0] * (6/10))
 
-    contours = find_contours(frame)
+    contours, dilated = find_contours(frame)
+    frame = cv2.bitwise_and(frame, frame, mask=dilated)
 
     # blank_frame = np.zeros(frame.shape, np.uint8)
 
     cv2.drawContours(frame, contours, -1, (0, 255, 0), 1)
     # cv2.drawContours(blank_frame, contours, -1, (255, 255, 255), 2)
+
+    cv2.line(frame, (frame.shape[1] // 2, frame.shape[0]), (frame.shape[1] // 2, 0), (255, 255, 0), 1)
+    cv2.line(frame, (0, target_y), (frame.shape[1], target_y), (255, 255, 0), 2)
 
 
     all_detections = []
@@ -200,6 +203,10 @@ def image_read(frame):
         else:
             camera_slope = dy / dx
 
+        # if (camera_slope < 0 and edge_slope < 0) or (camera_slope > 0 and edge_slope > 0):
+        #     continue
+        # if (camera_slope > 0 and cx > frame.shape[1] // 2) or (camera_slope < 0 and cx < frame.shape[1] // 2):
+        #     continue
 
         detection = Detection(i, cnt, approx, cx, cy, intersection_idx, edge_slope, camera_slope, lower_pt, higher_pt)
         all_detections.append(detection)
@@ -220,8 +227,7 @@ def image_read(frame):
 
             for detection in edges:
                 # cv2.line(frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 2)
-                cv2.line(frame, (detection.cx, detection.cy), bottom_center, (255, 0, 0), 2)
-
+                cv2.line(frame, (detection.cx, detection.cy), bottom_center, (255, 0, 0), 1)
 
             # edges = sorted(edges, key=lambda x: abs(x.edge_slope), reverse=True)
             # closest_detection = edges[0]
@@ -236,9 +242,10 @@ def image_read(frame):
             cv2.line(frame, (int(edge_0_ext[0][0]), int(edge_0_ext[0][1])), (int(edge_0_ext[1][0]), int(edge_0_ext[1][1])), (0, 128, 255), 2)
             cv2.line(frame, (int(edge_1_ext[0][0]), int(edge_1_ext[0][1])), (int(edge_1_ext[1][0]), int(edge_1_ext[1][1])), (0, 128, 255), 2)
 
+
             lower_midpoint = ((int(edge_0_ext[0][0]) + int(edge_1_ext[0][0])) // 2, (int(edge_0_ext[0][1]) + int(edge_1_ext[0][1])) // 2)
             higher_midpoint = ((int(edge_0_ext[1][0]) + int(edge_1_ext[1][0])) // 2, (int(edge_0_ext[1][1]) + int(edge_1_ext[1][1])) // 2)
-            cv2.line(frame, lower_midpoint, higher_midpoint, (255, 0, 255), 5)
+            cv2.line(frame, lower_midpoint, higher_midpoint, (255, 0, 255), 4)
 
 
             bot_point = edges[0].lower_pt if edges[0].lower_pt[1] < edges[1].lower_pt[1] else edges[1].lower_pt
@@ -247,12 +254,16 @@ def image_read(frame):
             edge_0_ext = util.extend_segment(edges[0].lower_pt, edges[0].higher_pt, bot_point[1], top_point[1])
             edge_1_ext = util.extend_segment(edges[1].lower_pt, edges[1].higher_pt, bot_point[1], top_point[1])
 
-            cv2.line(frame, (int(edge_0_ext[0][0]), int(edge_0_ext[0][1])), (int(edge_0_ext[1][0]), int(edge_0_ext[1][1])), (0, 128, 255), 2)
-            cv2.line(frame, (int(edge_1_ext[0][0]), int(edge_1_ext[0][1])), (int(edge_1_ext[1][0]), int(edge_1_ext[1][1])), (0, 128, 255), 2)
-
             lower_midpoint = ((int(edge_0_ext[0][0]) + int(edge_1_ext[0][0])) // 2, (int(edge_0_ext[0][1]) + int(edge_1_ext[0][1])) // 2)
             higher_midpoint = ((int(edge_0_ext[1][0]) + int(edge_1_ext[1][0])) // 2, (int(edge_0_ext[1][1]) + int(edge_1_ext[1][1])) // 2)
-            cv2.line(frame, lower_midpoint, higher_midpoint, (255, 0, 128), 5)
+            cv2.line(frame, lower_midpoint, higher_midpoint, (255, 0, 128), 4)
+
+
+            fully_extended = util.extend_segment(lower_midpoint, higher_midpoint, 0, frame.shape[0])
+            intersection = util.line_intersection(fully_extended[0], fully_extended[1], (0, target_y), (frame.shape[1], target_y))
+            if intersection is not None:
+                cv2.circle(frame, (int(intersection[0]), int(intersection[1])), 9, (255, 255, 255), -1)
+                cv2.line(frame, bottom_center, (int(intersection[0]), int(intersection[1])), (255, 255, 255), 2)
         else:
             print("DETECTIONS ON SAME SIDE")
     else:

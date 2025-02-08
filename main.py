@@ -11,7 +11,8 @@ import util
 
 
 # ---------------------------------------------------------------------------- #
-# TODO: global constants
+BOTTOM_RATIO = 9/10
+TARGET_Y_RATIO = 6/10
 # ---------------------------------------------------------------------------- #
 
 
@@ -99,8 +100,8 @@ def image_read(frame, old_dilated):
 # def image_read(fname):
     # frame = cv2.imread(fname)
 
-    bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * (9/10)))
-    target_y = int(frame.shape[0] * (6/10))
+    bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * BOTTOM_RATIO))
+    target_y = int(frame.shape[0] * TARGET_Y_RATIO)
 
     contours, dilated, total_diated = find_contours(frame, old_dilated)
     frame = cv2.bitwise_and(frame, frame, mask=total_diated)

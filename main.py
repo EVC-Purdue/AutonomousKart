@@ -182,8 +182,8 @@ def image_read(frame, old_dilated):
         # dx = cx - bottom_center[0]
         # dy = cy - bottom_center[1]
 
-        # dx = lower_pt[0] - bottom_center[0]
-        # dy = lower_pt[1] - bottom_center[1]
+        dx = lower_pt[0] - bottom_center[0]
+        dy = lower_pt[1] - bottom_center[1]
         if dx == 0:
             camera_slope = 999999
         else:

@@ -106,10 +106,8 @@ def image_read(frame, old_dilated):
     contours, dilated, total_diated = find_contours(frame, old_dilated)
     frame = cv2.bitwise_and(frame, frame, mask=total_diated)
 
-    # blank_frame = np.zeros(frame.shape, np.uint8)
 
     cv2.drawContours(frame, contours, -1, (0, 255, 0), 1)
-    # cv2.drawContours(blank_frame, contours, -1, (255, 255, 255), 2)
 
     cv2.line(frame, (frame.shape[1] // 2, frame.shape[0]), (frame.shape[1] // 2, 0), (255, 255, 0), 1)
     cv2.line(frame, (0, target_y), (frame.shape[1], target_y), (255, 255, 0), 2)

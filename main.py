@@ -89,7 +89,7 @@ def handle_video(fname):
         dilated = image_read(frame, last_dilated)
         last_dilated = dilated
 
-        # w to toggle pause, q to quit
+        # w to pause (and key to unpause), q to quit
         key = cv2.waitKey(33) & 0xFF
         if key == ord('w'):
             cv2.waitKey(-1)
@@ -110,7 +110,7 @@ def image_read(frame, old_dilated):
     contours, dilated, total_diated = find_contours(frame, old_dilated)
 
     # Debug drawining
-    frame = cv2.bitwise_and(frame, frame, mask=total_diated) # only show the detected area
+    # frame = cv2.bitwise_and(frame, frame, mask=total_diated) # only show the detected area
     cv2.drawContours(frame, contours, -1, (0, 255, 0), 1) # draw perfect outlines of grass
 
     cv2.line(frame, (frame.shape[1] // 2, frame.shape[0]), (frame.shape[1] // 2, 0), (255, 255, 0), 1) # vertical center line

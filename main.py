@@ -69,7 +69,7 @@ class Detection:
     
 
 
-def find_contours(frame):
+def find_contours(frame, old_dilated):
     """
     Find contours by:
     - Converting to hsv
@@ -93,17 +93,22 @@ def find_contours(frame):
     dilate_kernel = np.ones((10, 10), np.uint8)
     dilated = cv2.dilate(eroded, dilate_kernel, iterations=2)
 
-    cv2.imshow("dilated", dilated)
 
     # edges = cv2.Canny(dilated, 50, 150)
     # cv2.imshow("dilated", dilated)
-    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    return contours, dilated
+    total_diated = cv2.bitwise_or(dilated, old_dilated) if old_dilated is not None else dilated
+    cv2.imshow("dilated", total_diated)
+
+    contours, _ = cv2.findContours(total_diated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    return contours, dilated, total_diated
 
 
 def handle_video(fname):
     cap = cv2.VideoCapture(fname)
+
+    last_dilated = None
 
     while True:
         ret, frame = cap.read()
@@ -111,7 +116,8 @@ def handle_video(fname):
             print("Error reading frame...")
             break
 
-        image_read(frame)
+        dilated = image_read(frame, last_dilated)
+        last_dilated = dilated
 
         # if cv2.waitKey(33) & 0xFF == ord('q'):
         #     break
@@ -123,15 +129,15 @@ def handle_video(fname):
             break
 
 
-def image_read(frame):
+def image_read(frame, old_dilated):
 # def image_read(fname):
     # frame = cv2.imread(fname)
 
     bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * (9/10)))
     target_y = int(frame.shape[0] * (6/10))
 
-    contours, dilated = find_contours(frame)
-    frame = cv2.bitwise_and(frame, frame, mask=dilated)
+    contours, dilated, total_diated = find_contours(frame, old_dilated)
+    frame = cv2.bitwise_and(frame, frame, mask=total_diated)
 
     # blank_frame = np.zeros(frame.shape, np.uint8)
 
@@ -271,6 +277,7 @@ def image_read(frame):
 
 
     cv2.imshow("frame", frame)
+    return dilated
 
     # if cv2.waitKey(0) & 0xFF == ord('q'):
     #     pass

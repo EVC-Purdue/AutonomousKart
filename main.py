@@ -13,6 +13,10 @@ import util
 # ---------------------------------------------------------------------------- #
 BOTTOM_RATIO = 19/20
 TARGET_Y_RATIO = 6/10
+
+# PID constants
+K_P = 0.2
+# K_D = 0.1
 # ---------------------------------------------------------------------------- #
 
 
@@ -78,6 +82,7 @@ def handle_video(fname):
 
     # Will combine last dilated mask with the current to improve detection
     last_dilated = None
+    last_target_x = None
 
     while True:
         ret, frame = cap.read()
@@ -86,8 +91,9 @@ def handle_video(fname):
             print("Error reading frame...")
             break
 
-        dilated = image_read(frame, last_dilated)
+        dilated, target_x = image_read(frame, last_dilated, last_target_x)
         last_dilated = dilated
+        last_target_x = target_x
 
         # w to pause (and key to unpause), q to quit
         key = cv2.waitKey(33) & 0xFF
@@ -100,14 +106,16 @@ def handle_video(fname):
 # def image_read(fname):
 # frame = cv2.imread(fname)
 
-def image_read(frame, old_dilated):
+def image_read(frame, old_dilated, last_target_x):
+    target_x = None
+
     # Calculate the bottom center of the frame: used for drawing intersection lines with polygon edges to find the track edges
     bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * BOTTOM_RATIO))
     # Calculate the target y which is a constant distance from the kart
     target_y = int(frame.shape[0] * TARGET_Y_RATIO)
 
     # Find contours
-    contours, dilated, total_diated = find_contours(frame, old_dilated)
+    contours, dilated, _total_diated = find_contours(frame, old_dilated)
 
     # Debug drawining
     # frame = cv2.bitwise_and(frame, frame, mask=total_diated) # only show the detected area
@@ -261,8 +269,24 @@ def image_read(frame, old_dilated):
             fully_extended = util.extend_segment(lower_midpoint, higher_midpoint, 0, frame.shape[0])
             intersection = util.line_intersection(fully_extended[0], fully_extended[1], (0, target_y), (frame.shape[1], target_y))
             if intersection is not None:
+                new_target_x = intersection[0]
+
                 cv2.circle(frame, (int(intersection[0]), int(intersection[1])), 9, (255, 255, 255), -1)
                 cv2.line(frame, bottom_center, (int(intersection[0]), int(intersection[1])), (255, 255, 255), 2)
+
+                if last_target_x is None:
+                    target_x = new_target_x
+                else:
+                    # error_x = new_target_x - frame.shape[1] / 2
+                    # error_d = error_x - (last_target_x - frame.shape[1] / 2)
+                    # target_x = last_target_x + K_p * error_x # + K_D * error_d
+                    error_x = new_target_x - last_target_x
+                    target_x = last_target_x + K_P * error_x
+
+                    cv2.circle(frame, (int(target_x), target_y), 10, (0, 0, 0), -1)
+                    cv2.circle(frame, (int(target_x), target_y), 6, (0, 0, 255), -1)
+                    cv2.line(frame, (int(target_x), target_y), bottom_center, (0, 0, 0), 2)
+
         else:
             print("DETECTIONS ON SAME SIDE")
     else:
@@ -272,7 +296,7 @@ def image_read(frame, old_dilated):
     cv2.imshow("frame", frame)
 
     # Return the dilated mask for the next frame
-    return dilated
+    return dilated, target_x
 
     # if cv2.waitKey(0) & 0xFF == ord('q'):
     #     pass

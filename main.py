@@ -289,8 +289,10 @@ def image_read(frame, old_dilated, last_target_x):
 
         else:
             print("DETECTIONS ON SAME SIDE")
+            cv2.rectangle(frame, (0, 0), (frame.shape[1], frame.shape[0]), (128, 0, 255), 4)
     else:
         print(f"DETECTION LOST: {len(track_detections)}")
+        cv2.rectangle(frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 4)
 
     # Display the resulting frame
     cv2.imshow("frame", frame)

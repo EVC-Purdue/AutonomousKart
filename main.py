@@ -98,7 +98,7 @@ def handle_video(fname):
         image_read(frame, history)
 
         # w to pause (and key to unpause), q to quit
-        key = cv2.waitKey(5) & 0xFF
+        key = cv2.waitKey(20) & 0xFF
         if key == ord('w'):
             cv2.waitKey(-1)
         elif key == ord('q'):
@@ -133,7 +133,7 @@ def image_read(frame, history):
     for cnt in contours:
         # Approximate the contour to a polygon (find straight edges)
         approx = cv2.approxPolyDP(cnt, 0.03*cv2.arcLength(cnt, True), True)
-        cv2.drawContours(frame, [approx], 0, (0, 255, 255), 2) #  draw the approximated polygon
+        cv2.drawContours(frame, [approx], 0, (0, 255, 255), 1) #  draw the approximated polygon
 
         # Calculate the center of the contour
         center = cv2.moments(cnt)
@@ -150,7 +150,7 @@ def image_read(frame, history):
             continue
 
         # Debug drawing: center of contour
-        cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
+        cv2.circle(frame, (cx, cy), 4, (0, 0, 255), -1)
 
 
         # Find the edge of the polygon that that is the track edge
@@ -181,7 +181,7 @@ def image_read(frame, history):
 
         # Debug drawing: the track side edge
         i2 = (intersection_idx + 1) % len(approx)
-        cv2.line(frame, approx[intersection_idx][0], approx[i2][0], (0, 0, 255), 3)
+        cv2.line(frame, approx[intersection_idx][0], approx[i2][0], (0, 0, 255), 2)
 
         # Calculate the lower and higher point of the edge
         # Needed for later, but also using it to pick which contour to track if multiple contours are detected
@@ -262,11 +262,11 @@ def image_read(frame, history):
                 # Calculate the change in x and y from the last frame
                 dx_top = higher_midpoint[0] - history["last_top_x"]
                 dy_top = higher_midpoint[1] - history["last_top_y"]
-                x_top = history["last_top_x"] + dx_top * K_P
-                y_top = history["last_top_y"] + dy_top * K_P
-
                 dx_bottom = lower_midpoint[0] - history["last_bottom_x"]
                 dy_bottom = lower_midpoint[1] - history["last_bottom_y"]
+
+                x_top = history["last_top_x"] + dx_top * K_P
+                y_top = history["last_top_y"] + dy_top * K_P
                 x_bottom = history["last_bottom_x"] + dx_bottom * K_P
                 y_bottom = history["last_bottom_y"] + dy_bottom * K_P
 
@@ -275,8 +275,9 @@ def image_read(frame, history):
                 history["last_bottom_x"] = x_bottom
                 history["last_bottom_y"] = y_bottom
 
-                cv2.line(frame, (int(x_bottom), int(y_bottom)), (int(x_top), int(y_top)), (0, 0, 0), 4) # draw the middle of the track
-                cv2.line(frame, (int(x_bottom), int(y_bottom)), (int(x_top), int(y_top)), (255, 255, 255), 2) # draw the middle of the track
+                # Draw the middle of the track
+                cv2.line(frame, (int(x_bottom), int(y_bottom)), (int(x_top), int(y_top)), (0, 0, 0), 4)
+                cv2.line(frame, (int(x_bottom), int(y_bottom)), (int(x_top), int(y_top)), (255, 255, 255), 2)
 
             # Find the higher low and the lower high point of the two edges
             bot_point = edges[0].lower_pt if edges[0].lower_pt[1] < edges[1].lower_pt[1] else edges[1].lower_pt

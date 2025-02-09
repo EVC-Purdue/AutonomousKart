@@ -15,7 +15,7 @@ BOTTOM_RATIO = 19/20
 TARGET_Y_RATIO = 6/10
 
 # PID constants
-K_P = 0.2
+K_P = 0.1
 # K_D = 0.1
 # ---------------------------------------------------------------------------- #
 
@@ -80,9 +80,13 @@ def handle_video(fname):
 
     cap = cv2.VideoCapture(fname)
 
-    # Will combine last dilated mask with the current to improve detection
-    last_dilated = None
-    last_target_x = None
+    history = {
+        "last_dilated": None, # Will combine last dilated mask with the current to improve detection
+        "last_top_x": None,
+        "last_top_y": None,
+        "last_bottom_x": None,
+        "last_bottom_y": None
+    }
 
     while True:
         ret, frame = cap.read()
@@ -91,12 +95,10 @@ def handle_video(fname):
             print("Error reading frame...")
             break
 
-        dilated, target_x = image_read(frame, last_dilated, last_target_x)
-        last_dilated = dilated
-        last_target_x = target_x
+        image_read(frame, history)
 
         # w to pause (and key to unpause), q to quit
-        key = cv2.waitKey(33) & 0xFF
+        key = cv2.waitKey(5) & 0xFF
         if key == ord('w'):
             cv2.waitKey(-1)
         elif key == ord('q'):
@@ -106,7 +108,7 @@ def handle_video(fname):
 # def image_read(fname):
 # frame = cv2.imread(fname)
 
-def image_read(frame, old_dilated, last_target_x):
+def image_read(frame, history):
     target_x = None
 
     # Calculate the bottom center of the frame: used for drawing intersection lines with polygon edges to find the track edges
@@ -115,7 +117,8 @@ def image_read(frame, old_dilated, last_target_x):
     target_y = int(frame.shape[0] * TARGET_Y_RATIO)
 
     # Find contours
-    contours, dilated, _total_diated = find_contours(frame, old_dilated)
+    contours, dilated, _total_diated = find_contours(frame, history["last_dilated"])
+    history["last_dilated"] = dilated
 
     # Debug drawining
     # frame = cv2.bitwise_and(frame, frame, mask=total_diated) # only show the detected area
@@ -187,19 +190,19 @@ def image_read(frame, old_dilated, last_target_x):
         lower_pt = pt1 if pt1[1] > pt2[1] else pt2
         higher_pt = pt1 if pt1[1] < pt2[1] else pt2
 
-        # dx = cx - bottom_center[0]
-        # dy = cy - bottom_center[1]
+        dx = cx - bottom_center[0]
+        dy = cy - bottom_center[1]
 
-        dx = lower_pt[0] - bottom_center[0]
-        dy = lower_pt[1] - bottom_center[1]
+        # dx = lower_pt[0] - bottom_center[0]
+        # dy = lower_pt[1] - bottom_center[1]
         if dx == 0:
             camera_slope = 999999
         else:
             camera_slope = dy / dx
 
         # Trying to throw out contours that are probably noise
-        # if (camera_slope < 0 and edge_slope < 0) or (camera_slope > 0 and edge_slope > 0):
-        #     continue
+        if (camera_slope < 0 and edge_slope < 0) or (camera_slope > 0 and edge_slope > 0):
+            continue
         # if (camera_slope > 0 and cx > frame.shape[1] // 2) or (camera_slope < 0 and cx < frame.shape[1] // 2):
         #     continue
 
@@ -243,7 +246,37 @@ def image_read(frame, old_dilated, last_target_x):
             # Find the midpoint of the two extended edges which should be the middle of the track
             lower_midpoint = ((int(edge_0_ext[0][0]) + int(edge_1_ext[0][0])) // 2, (int(edge_0_ext[0][1]) + int(edge_1_ext[0][1])) // 2)
             higher_midpoint = ((int(edge_0_ext[1][0]) + int(edge_1_ext[1][0])) // 2, (int(edge_0_ext[1][1]) + int(edge_1_ext[1][1])) // 2)
-            cv2.line(frame, lower_midpoint, higher_midpoint, (255, 0, 255), 4) # draw the middle of the track
+            cv2.line(frame, lower_midpoint, higher_midpoint, (255, 0, 255), 2) # draw the middle of the track
+
+            if history["last_top_x"] is None:
+                history["last_top_x"] = higher_midpoint[0]
+                history["last_top_y"] = higher_midpoint[1]
+                history["last_bottom_x"] = lower_midpoint[0]
+                history["last_bottom_y"] = lower_midpoint[1]
+
+                x_top = history["last_top_x"]
+                y_top = history["last_top_y"]
+                x_bottom = history["last_bottom_x"]
+                y_bottom = history["last_bottom_y"]
+            else:
+                # Calculate the change in x and y from the last frame
+                dx_top = higher_midpoint[0] - history["last_top_x"]
+                dy_top = higher_midpoint[1] - history["last_top_y"]
+                x_top = history["last_top_x"] + dx_top * K_P
+                y_top = history["last_top_y"] + dy_top * K_P
+
+                dx_bottom = lower_midpoint[0] - history["last_bottom_x"]
+                dy_bottom = lower_midpoint[1] - history["last_bottom_y"]
+                x_bottom = history["last_bottom_x"] + dx_bottom * K_P
+                y_bottom = history["last_bottom_y"] + dy_bottom * K_P
+
+                history["last_top_x"] = x_top
+                history["last_top_y"] = y_top
+                history["last_bottom_x"] = x_bottom
+                history["last_bottom_y"] = y_bottom
+
+                cv2.line(frame, (int(x_bottom), int(y_bottom)), (int(x_top), int(y_top)), (0, 0, 0), 4) # draw the middle of the track
+                cv2.line(frame, (int(x_bottom), int(y_bottom)), (int(x_top), int(y_top)), (255, 255, 255), 2) # draw the middle of the track
 
             # Find the higher low and the lower high point of the two edges
             bot_point = edges[0].lower_pt if edges[0].lower_pt[1] < edges[1].lower_pt[1] else edges[1].lower_pt
@@ -261,31 +294,18 @@ def image_read(frame, old_dilated, last_target_x):
             # This is on the same line as the longer line, but it is a good debug reference
             lower_midpoint = ((int(edge_0_ext[0][0]) + int(edge_1_ext[0][0])) // 2, (int(edge_0_ext[0][1]) + int(edge_1_ext[0][1])) // 2)
             higher_midpoint = ((int(edge_0_ext[1][0]) + int(edge_1_ext[1][0])) // 2, (int(edge_0_ext[1][1]) + int(edge_1_ext[1][1])) // 2)
-            cv2.line(frame, lower_midpoint, higher_midpoint, (255, 0, 128), 4)
+            cv2.line(frame, lower_midpoint, higher_midpoint, (255, 0, 128), 2)
 
             # Calculate (in camera space) where we want to go
             # This is the intersection of the middle of the track and the target line (which is a constant y value or
             #   a constant distance from the kart)
-            fully_extended = util.extend_segment(lower_midpoint, higher_midpoint, 0, frame.shape[0])
+            # fully_extended = util.extend_segment(lower_midpoint, higher_midpoint, 0, frame.shape[0])
+            fully_extended = util.extend_segment((x_bottom, y_bottom), (x_top, y_top), 0, frame.shape[0])
             intersection = util.line_intersection(fully_extended[0], fully_extended[1], (0, target_y), (frame.shape[1], target_y))
             if intersection is not None:
-                new_target_x = intersection[0]
-
+                cv2.circle(frame, (int(intersection[0]), int(intersection[1])), 10, (0, 0, 0), -1)
                 cv2.circle(frame, (int(intersection[0]), int(intersection[1])), 9, (255, 255, 255), -1)
                 cv2.line(frame, bottom_center, (int(intersection[0]), int(intersection[1])), (255, 255, 255), 2)
-
-                if last_target_x is None:
-                    target_x = new_target_x
-                else:
-                    # error_x = new_target_x - frame.shape[1] / 2
-                    # error_d = error_x - (last_target_x - frame.shape[1] / 2)
-                    # target_x = last_target_x + K_p * error_x # + K_D * error_d
-                    error_x = new_target_x - last_target_x
-                    target_x = last_target_x + K_P * error_x
-
-                    cv2.circle(frame, (int(target_x), target_y), 10, (0, 0, 0), -1)
-                    cv2.circle(frame, (int(target_x), target_y), 6, (0, 0, 255), -1)
-                    cv2.line(frame, (int(target_x), target_y), bottom_center, (0, 0, 0), 2)
 
         else:
             print("DETECTIONS ON SAME SIDE")

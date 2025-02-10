@@ -9,11 +9,13 @@ import math
 import util
 
 import torch
+# import torchvision
 import torchvision.transforms as T
 from PIL import Image
 import torchvision.models.segmentation as models
 import matplotlib.pyplot as plt
-import fast_scnn
+# import fast_scnn
+import network
 # ---------------------------------------------------------------------------- #
 
 
@@ -111,21 +113,30 @@ def handle_video(fname):
     # model = torch.load(model_path, map_location=torch.device("cpu"))
     # model.eval()
 
-    model_path = "fast_scnn.pth"  # Update this path with the actual model file
-    model = fast_scnn.FastSCNN(19)
-    model.load_state_dict(torch.load(model_path, map_location="cpu"))
+    # model_path = "fast_scnn.pth"  # Update this path with the actual model file
+    # model = fast_scnn.FastSCNN(19)
+    # model.load_state_dict(torch.load(model_path, map_location="cpu"))
+    # model.eval()
+
+    model_name = "best_deeplabv3plus_mobilenet_cityscapes_os16.pth"
+    model = network.deeplabv3plus_mobilenet(num_classes=19, output_stride=16)
+    model.load_state_dict(torch.load(model_name, map_location="cpu", weights_only=False)["model_state"])
     model.eval()
 
     # colors = [np.random.randint(0, 255, size=3) for _ in range(x)]
     colors = generate_hsv_colors(19)
 
-
+    i = 0
     while True:
+        i += 1
         ret, frame = cap.read()
 
         if not ret:
             print("Error reading frame...")
             break
+
+        if i % 50 != 0:
+            continue
 
         img = Image.fromarray(frame)
         # transform = T.Compose([
@@ -134,30 +145,49 @@ def handle_video(fname):
         #     T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         # ])
         transform = T.Compose([
-            T.Resize((512, 512)),
+            T.Resize((768, 768)),
             T.ToTensor(),
             T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
         input_tensor = transform(img).unsqueeze(0)
 
-        outputs = model(input_tensor)
-        pred = torch.argmax(outputs[0], 1)
-        # print(pred)
-        pred = pred.cpu().data.numpy()
-        # print(pred)
-        predict = pred.squeeze(0)
-        # print(predict)
+        # outputs = model(input_tensor)
+        # pred = torch.argmax(outputs[0], 1)
+        # # print(pred)
+        # pred = pred.cpu().data.numpy()
+        # # print(pred)
+        # predict = pred.squeeze(0)
+        # # print(predict)
 
-        out_img = predict.astype('uint8')
-        out_img = cv2.resize(out_img, (frame.shape[1], frame.shape[0]), interpolation=cv2.INTER_NEAREST)
-        # cv2.imshow("segmentation", predict.astype('uint8'))
-        frame_c = frame.copy()
+        # Perform inference
+        with torch.no_grad():
+            output = model(input_tensor)
+        segmentation_mask = torch.argmax(output.squeeze(), dim=0).numpy()
+
+        classes = np.unique(segmentation_mask)
+        print(classes)
+
+        # frame_c = frame.copy()
         frame_c = np.zeros_like(frame)
-        # for i in range(5):
-        #     frame_c[out_img == i] = colors[i]
-        frame_c[out_img == 10] = colors[10]
+        for i in range(2):
+            binary_mask = (segmentation_mask == i).astype(np.uint8) * 255
+            mask = cv2.resize(binary_mask, (frame.shape[1], frame.shape[0]), interpolation=cv2.INTER_NEAREST)
+            # frame_c[mask == 255] = colors[i]
+            frame_c = cv2.bitwise_or(frame_c, cv2.bitwise_and(frame, frame, mask=mask))
         cv2.imshow("segmentation", frame_c)
         cv2.imshow("frame", frame)
+
+
+        # out_img = predict.astype('uint8')
+        # out_img = cv2.resize(out_img, (frame.shape[1], frame.shape[0]), interpolation=cv2.INTER_NEAREST)
+        # # cv2.imshow("segmentation", predict.astype('uint8'))
+        # frame_c = frame.copy()
+        # frame_c = np.zeros_like(frame)
+        # # for i in range(5):
+        # #     frame_c[out_img == i] = colors[i]
+        # frame_c[out_img == 10] = colors[10]
+        # cv2.imshow("segmentation", frame_c)
+        # cv2.imshow("frame", frame)
         # out_img = Image.fromarray(predict.astype('uint8'))
         # out_img.show()
 

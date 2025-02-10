@@ -7,6 +7,13 @@ import numpy as np
 import math
 
 import util
+
+import torch
+import torchvision.transforms as T
+from PIL import Image
+import torchvision.models.segmentation as models
+import matplotlib.pyplot as plt
+import fast_scnn
 # ---------------------------------------------------------------------------- #
 
 
@@ -74,6 +81,17 @@ def find_contours(frame, old_dilated):
 
     return contours, dilated, total_diated
 
+def generate_hsv_colors(num_classes):
+    """Generate evenly spaced colors in HSV space and convert them to RGB."""
+    colors = []
+    for i in range(num_classes):
+        hue = int(180 * (i / num_classes))  # OpenCV HSV range: [0, 179]
+        saturation = 255  # Full saturation for vivid colors
+        value = 255  # Full brightness
+        hsv_color = np.uint8([[[hue, saturation, value]]])  # OpenCV format
+        rgb_color = cv2.cvtColor(hsv_color, cv2.COLOR_HSV2BGR)[0][0]  # Convert to RGB
+        colors.append((int(rgb_color[0]), int(rgb_color[1]), int(rgb_color[2])))
+    return colors
 
 def handle_video(fname):
     """Open video, read frames, process each frame, and display"""
@@ -88,6 +106,20 @@ def handle_video(fname):
         "last_bottom_y": None
     }
 
+    # model = models.deeplabv3_resnet101(pretrained=True).eval()
+    # model_path = "fast_scnn.pth"  # Update this path with the actual model file
+    # model = torch.load(model_path, map_location=torch.device("cpu"))
+    # model.eval()
+
+    model_path = "fast_scnn.pth"  # Update this path with the actual model file
+    model = fast_scnn.FastSCNN(19)
+    model.load_state_dict(torch.load(model_path, map_location="cpu"))
+    model.eval()
+
+    # colors = [np.random.randint(0, 255, size=3) for _ in range(x)]
+    colors = generate_hsv_colors(19)
+
+
     while True:
         ret, frame = cap.read()
 
@@ -95,10 +127,59 @@ def handle_video(fname):
             print("Error reading frame...")
             break
 
-        image_read(frame, history)
+        img = Image.fromarray(frame)
+        # transform = T.Compose([
+        #     T.Resize((1024, 512)),  # Resize to match model input size
+        #     T.ToTensor(),
+        #     T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        # ])
+        transform = T.Compose([
+            T.Resize((512, 512)),
+            T.ToTensor(),
+            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+        input_tensor = transform(img).unsqueeze(0)
+
+        outputs = model(input_tensor)
+        pred = torch.argmax(outputs[0], 1)
+        # print(pred)
+        pred = pred.cpu().data.numpy()
+        # print(pred)
+        predict = pred.squeeze(0)
+        # print(predict)
+
+        out_img = predict.astype('uint8')
+        out_img = cv2.resize(out_img, (frame.shape[1], frame.shape[0]), interpolation=cv2.INTER_NEAREST)
+        # cv2.imshow("segmentation", predict.astype('uint8'))
+        frame_c = frame.copy()
+        frame_c = np.zeros_like(frame)
+        # for i in range(5):
+        #     frame_c[out_img == i] = colors[i]
+        frame_c[out_img == 10] = colors[10]
+        cv2.imshow("segmentation", frame_c)
+        cv2.imshow("frame", frame)
+        # out_img = Image.fromarray(predict.astype('uint8'))
+        # out_img.show()
+
+        # print(output)
+        # print(type(output))
+        # output_mask = torch.argmax(output.squeeze(), dim=0).cpu().numpy()
+        # output_mask = (output_mask * 255).astype(np.uint8)
+
+        # output_mask = cv2.resize(output_mask, (frame.shape[1], frame.shape[0]), interpolation=cv2.INTER_NEAREST)
+        # cv2.imshow("segmentation", output_mask)
+
+        print(".", end="", flush=True)
+
+        # road_class_index = 1  # You may need to experiment with this
+        # binary_mask = (segmentation_mask == road_class_index).astype(np.uint8) * 255  # Convert to 0-255
+        # cv2.imshow("segmentation", binary_mask)
+        # print(".", end="", flush=True)
+
+        # image_read(frame, history)
 
         # w to pause (and key to unpause), q to quit
-        key = cv2.waitKey(20) & 0xFF
+        key = cv2.waitKey(1) & 0xFF
         if key == ord('w'):
             cv2.waitKey(-1)
         elif key == ord('q'):

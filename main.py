@@ -95,6 +95,9 @@ def handle_video(fname):
             print("Error reading frame...")
             break
 
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        cv2.imshow("hsv", hsv)
+
         image_read(frame, history)
 
         # w to pause (and key to unpause), q to quit

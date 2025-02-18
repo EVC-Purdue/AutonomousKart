@@ -39,6 +39,42 @@ class Detection:
 
 
 # ---------------------------------------------------------------------------- #
+def find_track(frame):
+    MAX_TOTAL_DIFF = 85
+    MAX_INDIVIDUAL_DIFF = 45
+    MAX_INTENSITY = 200
+
+    b_frame, g_frame, r_frame = cv2.split(frame)
+    total_diff = cv2.absdiff(r_frame, g_frame) + cv2.absdiff(g_frame, b_frame) + cv2.absdiff(b_frame, r_frame)
+
+    bg_diff = cv2.absdiff(b_frame, g_frame)
+    gr_diff = cv2.absdiff(g_frame, r_frame)
+    rb_diff = cv2.absdiff(r_frame, b_frame)
+    total_diff = bg_diff + gr_diff + rb_diff
+
+    cv2.imshow("total_diff", total_diff)
+
+    track_thresh = np.ones_like(total_diff) * 255
+
+    track_thresh[total_diff > MAX_TOTAL_DIFF] = 0
+
+    track_thresh[bg_diff > MAX_INDIVIDUAL_DIFF] = 0
+    track_thresh[gr_diff > MAX_INDIVIDUAL_DIFF] = 0
+    track_thresh[rb_diff > MAX_INDIVIDUAL_DIFF] = 0
+
+    track_thresh[b_frame > MAX_INTENSITY] = 0
+    track_thresh[g_frame > MAX_INTENSITY] = 0
+    track_thresh[r_frame > MAX_INTENSITY] = 0
+
+    erode_kernel = np.ones((5, 5), np.uint8)
+    eroded = cv2.erode(track_thresh, erode_kernel, iterations=5)
+
+    dilate_kernel = np.ones((3, 3), np.uint8)
+    track_thresh = cv2.dilate(eroded, dilate_kernel, iterations=7)
+
+    return track_thresh
+
+
 def find_contours(frame, old_dilated):
     """
     Find contours by:
@@ -53,26 +89,26 @@ def find_contours(frame, old_dilated):
     frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
     # detect grass: yellow/green color
-    frame_threshold = cv2.inRange(frame_hsv, (25, 40, 40), (80, 255,255))
+    grass_thresh = cv2.inRange(frame_hsv, (25, 40, 40), (80, 255,255))
 
     # Erode to remove noise
     erode_kernel = np.ones((7, 7), np.uint8)
-    eroded = cv2.erode(frame_threshold, erode_kernel, iterations=2)
+    eroded = cv2.erode(grass_thresh, erode_kernel, iterations=2)
 
     # Dilate to fill in the holes
     dilate_kernel = np.ones((10, 10), np.uint8)
-    dilated = cv2.dilate(eroded, dilate_kernel, iterations=2)
+    grass_thresh = cv2.dilate(eroded, dilate_kernel, iterations=2)
 
+    # Subtract the grass from the track_thresh
+    # track_thresh = cv2.bitwise_and(track_thresh, cv2.bitwise_not(grass_thresh))
+    # grass_thresh = cv2.bitwise_not(track_thresh)
 
-    # edges = cv2.Canny(dilated, 50, 150)
-    # cv2.imshow("dilated", dilated)
-
-    total_diated = cv2.bitwise_or(dilated, old_dilated) if old_dilated is not None else dilated
+    total_diated = cv2.bitwise_or(grass_thresh, old_dilated) if old_dilated is not None else grass_thresh
     cv2.imshow("dilated", total_diated)
 
     contours, _ = cv2.findContours(total_diated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    return contours, dilated, total_diated
+    return contours, grass_thresh, total_diated
 
 
 def handle_video(fname):
@@ -95,13 +131,55 @@ def handle_video(fname):
             print("Error reading frame...")
             break
 
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        cv2.imshow("hsv", hsv)
+        # hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        # cv2.imshow("hsv", hsv)
+
+
+        track_thresh = find_track(frame)
 
         image_read(frame, history)
 
+        # subtract the grass from the track_thresh
+        track_thresh = cv2.bitwise_and(track_thresh, cv2.bitwise_not(history["last_dilated"]))
+
+        # Overlay: merge the track mask as green using an alpha value
+        track_colored = np.zeros_like(frame, dtype=np.uint8)
+        track_colored[:, :, 1] = track_thresh
+        overlay = cv2.addWeighted(frame, 1.0, track_colored, 0.5, 0)
+
+
+        track_mask = np.zeros_like(frame[:, :, 0], dtype=np.uint8)
+        contours, _ = cv2.findContours(track_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * BOTTOM_RATIO))
+
+        best_cnt = None
+        for cnt in contours:
+            result = cv2.pointPolygonTest(cnt, bottom_center, False)
+            if result == 1:
+                best_cnt = cnt
+                break
+        # TODO: pick closest contour to the bottom center
+
+
+        if best_cnt is not None:
+            cv2.drawContours(track_mask, [best_cnt], 0, 255, -1)
+            cv2.drawContours(overlay, [best_cnt], 0, (255, 0, 0), 2)
+
+            y_coords, x_coords = np.where(track_mask > 0)
+            unique_y = np.unique(y_coords)
+            medians = [(np.median(x_coords[y_coords == y]), y) for y in unique_y]
+
+            for x, y in medians:
+                cv2.circle(overlay, (int(x), int(y)), 4, (0, 0, 255), -1)
+
+        cv2.circle(overlay, bottom_center, 4, (0, 255, 255), -1)
+
+        cv2.imshow("track", overlay)
+
+
+
         # w to pause (and key to unpause), q to quit
-        key = cv2.waitKey(20) & 0xFF
+        key = cv2.waitKey(1) & 0xFF
         if key == ord('w'):
             cv2.waitKey(-1)
         elif key == ord('q'):

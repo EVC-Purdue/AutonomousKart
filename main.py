@@ -11,7 +11,7 @@ import util
 
 
 # ---------------------------------------------------------------------------- #
-BOTTOM_RATIO = 19/20
+BOTTOM_RATIO = 18/20
 TARGET_Y_RATIO = 6/10
 
 # PID constants
@@ -121,7 +121,8 @@ def handle_video(fname):
         "last_top_x": None,
         "last_top_y": None,
         "last_bottom_x": None,
-        "last_bottom_y": None
+        "last_bottom_y": None,
+        "last_medians": {}
     }
 
     while True:
@@ -167,10 +168,21 @@ def handle_video(fname):
 
             y_coords, x_coords = np.where(track_mask > 0)
             unique_y = np.unique(y_coords)
-            medians = [(np.median(x_coords[y_coords == y]), y) for y in unique_y]
+            medians = {y: np.median(x_coords[y_coords == y]) for y in unique_y}
 
-            for x, y in medians:
-                cv2.circle(overlay, (int(x), int(y)), 4, (0, 0, 255), -1)
+            for y, x in medians.items():
+                last_x = history["last_medians"].get(y, None)
+                cv2.circle(overlay, (int(x), int(y)), 3, (255, 0, 255), -1)
+
+                if last_x is None:
+                    history["last_medians"][y] = x
+                else:
+                    dx = x - last_x
+                    x = last_x + dx * K_P
+                    history["last_medians"][y] = x
+
+                    cv2.circle(overlay, (int(x), int(y)), 4, (0, 0, 255), -1)
+
 
         cv2.circle(overlay, bottom_center, 4, (0, 255, 255), -1)
 

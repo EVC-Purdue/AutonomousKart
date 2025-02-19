@@ -32,7 +32,7 @@ TARGET_Y_RATIO = 6/10
 # ON_TRACK_Y_RATIO = 18/36 # Used in track detection
 # TARGET_Y_RATIO = 3.5/10
 
-MEMORY_TIME = 2.0 # seconds
+MEMORY_TIME = 1.0 # seconds
 
 
 # Track thresh constants 
@@ -202,7 +202,7 @@ def handle_video(fname):
         "last_bottom_x": None,
         "last_bottom_y": None,
 
-        # last_medians[y] = x, last median x per y for the track detection
+        # last_medians[y] = (x, time), last median x per y for the track detection
         "last_medians": {}
     }
 
@@ -480,6 +480,10 @@ def image_read(frame, history):
             break
     # TODO: pick closest contour to the bottom center if no contour contains the point
 
+    # Filter old medians
+    now = time.time()
+    history["last_medians"] = {y: (x, t) for y, (x, t) in history["last_medians"].items() if now - t < MEMORY_TIME}
+
     if best_cnt is not None:
         # Fill in the track mask with only the best contour
         cv2.drawContours(track_mask, [best_cnt], 0, 255, -1)
@@ -498,18 +502,18 @@ def image_read(frame, history):
             cv2.circle(marked_frame, (int(x), int(y)), 2, (255, 0, 255), -1)
 
             if last_x is None:
-                history["last_medians"][y] = x
+                history["last_medians"][y] = (x, time.time())
             else:
-                dx = x - last_x
-                x = last_x + dx * K_P
-                history["last_medians"][y] = x
+                dx = x - last_x[0]
+                x = last_x[0] + dx * K_P
+                history["last_medians"][y] = (x, time.time())
 
                 cv2.circle(marked_frame, (int(x), int(y)), 3, (0, 0, 255), -1)
 
         target_y = int(frame.shape[0] * TARGET_Y_RATIO)
         target_x = history["last_medians"].get(target_y, None)
         if target_x is not None:
-            cv2.circle(marked_frame, (int(target_x), target_y), 10, (0, 255, 255), -1)
+            cv2.circle(marked_frame, (int(target_x[0]), target_y), 10, (0, 255, 255), -1)
 
         # Debug drawing: the point we are checking must be on the track
         cv2.circle(marked_frame, on_track_pt, 4, (0, 255, 255), -1)

@@ -208,12 +208,17 @@ def handle_video(fname):
 
     t0 = time.time()
 
+    i = 0
+
     while True:
         ret, frame = cap.read()
 
         if not ret:
             print("Error reading frame...")
             break
+
+        if i % 100 != 0:
+            continue
 
         frame_time_start = time.time()
         marked_frame = image_read(frame, history)

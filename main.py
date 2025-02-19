@@ -305,6 +305,11 @@ def image_read(frame, history):
         cx = int(center["m10"] / center["m00"])
         cy = int(center["m01"] / center["m00"])
 
+        # Throw out all contours that are are in the horizon (sky)
+        horizon_y = int(frame.shape[0] * HORIZON_Y_RATIO)
+        if cy < horizon_y:
+            continue
+
         # Throw out all contours that are in the center
         # In the center means it is probably not a track edge but trees or other objects
         left_edge = int(frame.shape[1] * GRASS_EDGE_RATIO)

@@ -23,6 +23,16 @@ ON_TRACK_Y_RATIO = 30/36 # Used in track detection
 
 TARGET_Y_RATIO = 6/10
 
+
+
+# Constants for "pov.mp4"
+# HORIZON_Y_RATIO = 10/36
+# KART_Y_RATIO = 32/36
+# BOTTOM_Y_RATIO = 19/20   # Used in grass detection
+# ON_TRACK_Y_RATIO = 18/36 # Used in track detection
+# TARGET_Y_RATIO = 3.5/10
+
+
 # Track thresh constants 
 TRACK_MAX_TOTAL_DIFF = 85 
 TRACK_MAX_INDIVIDUAL_DIFF = 45

@@ -469,6 +469,8 @@ def image_read(frame, history):
     # Find the contours of the track mask
     on_track_pt = (frame.shape[1] // 2, int(frame.shape[0] * ON_TRACK_Y_RATIO))
 
+    track_mask = np.zeros_like(track_thresh)
+
     # Choose the contour that contains the bottom center (the kart)
     best_cnt = None
     for cnt in contours:
@@ -479,11 +481,14 @@ def image_read(frame, history):
     # TODO: pick closest contour to the bottom center if no contour contains the point
 
     if best_cnt is not None:
+        # Fill in the track mask with only the best contour
+        cv2.drawContours(track_mask, [best_cnt], 0, 255, -1)
+
         # Debug drawing: the track contour
         cv2.drawContours(marked_frame, [best_cnt], 0, (255, 0, 0), 2)
 
         # For every y, find the median x of the track
-        y_coords, x_coords = np.where(track_thresh > 0)
+        y_coords, x_coords = np.where(track_mask > 0)
         unique_y = np.unique(y_coords)
         medians = {y: np.median(x_coords[y_coords == y]) for y in unique_y}
 

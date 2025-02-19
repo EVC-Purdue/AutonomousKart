@@ -11,10 +11,12 @@ import util
 
 
 # ---------------------------------------------------------------------------- #
+SHOW_DEBUG_FRAMES = False
+
+
 BOTTOM_RATIO = 18/20
 TARGET_Y_RATIO = 6/10
 
-# PID constants
 K_P = 0.1
 # K_D = 0.1
 # ---------------------------------------------------------------------------- #
@@ -52,7 +54,8 @@ def find_track(frame):
     rb_diff = cv2.absdiff(r_frame, b_frame)
     total_diff = bg_diff + gr_diff + rb_diff
 
-    cv2.imshow("total_diff", total_diff)
+    if SHOW_DEBUG_FRAMES:
+        cv2.imshow("total_diff", total_diff)
 
     track_thresh = np.ones_like(total_diff) * 255
 
@@ -99,15 +102,16 @@ def find_contours(frame, old_dilated):
     dilate_kernel = np.ones((10, 10), np.uint8)
     grass_thresh = cv2.dilate(eroded, dilate_kernel, iterations=2)
 
-    # Subtract the grass from the track_thresh
-    # track_thresh = cv2.bitwise_and(track_thresh, cv2.bitwise_not(grass_thresh))
-    # grass_thresh = cv2.bitwise_not(track_thresh)
-
+    # Try to fill in the holes/inconsistencies in the grass mask with the old dilated mask
     total_diated = cv2.bitwise_or(grass_thresh, old_dilated) if old_dilated is not None else grass_thresh
-    cv2.imshow("dilated", total_diated)
 
+    if SHOW_DEBUG_FRAMES:
+        cv2.imshow("dilated", total_diated)
+
+    # Find the outlines from the final mask
     contours, _ = cv2.findContours(total_diated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+    # Outlines, just the grass mask, and the mask with the grass and the old dilated mask
     return contours, grass_thresh, total_diated
 
 
@@ -117,11 +121,16 @@ def handle_video(fname):
     cap = cv2.VideoCapture(fname)
 
     history = {
-        "last_dilated": None, # Will combine last dilated mask with the current to improve detection
+        # Will combine last dilated mask with the current to improve detection
+        "last_dilated": None,
+        
+        # For the track centerline based on the grass edges
         "last_top_x": None,
         "last_top_y": None,
         "last_bottom_x": None,
         "last_bottom_y": None,
+
+        # last_medians[y] = x, last median x per y for the track detection
         "last_medians": {}
     }
 
@@ -132,10 +141,7 @@ def handle_video(fname):
             print("Error reading frame...")
             break
 
-        # hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        # cv2.imshow("hsv", hsv)
-
-
+        # Do this before we mark up frame
         track_thresh = find_track(frame)
 
         image_read(frame, history)
@@ -148,11 +154,12 @@ def handle_video(fname):
         track_colored[:, :, 1] = track_thresh
         overlay = cv2.addWeighted(frame, 1.0, track_colored, 0.5, 0)
 
-
+        # Find the contours of the track mask
         track_mask = np.zeros_like(frame[:, :, 0], dtype=np.uint8)
         contours, _ = cv2.findContours(track_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * BOTTOM_RATIO))
 
+        # Choose the contour that contains the bottom center (the kart)
         best_cnt = None
         for cnt in contours:
             result = cv2.pointPolygonTest(cnt, bottom_center, False)
@@ -163,9 +170,11 @@ def handle_video(fname):
 
 
         if best_cnt is not None:
+            # Debug drawing: the track contour
             cv2.drawContours(track_mask, [best_cnt], 0, 255, -1)
             cv2.drawContours(overlay, [best_cnt], 0, (255, 0, 0), 2)
 
+            # For every y, find the median x of the track
             y_coords, x_coords = np.where(track_mask > 0)
             unique_y = np.unique(y_coords)
             medians = {y: np.median(x_coords[y_coords == y]) for y in unique_y}
@@ -186,8 +195,7 @@ def handle_video(fname):
 
         cv2.circle(overlay, bottom_center, 4, (0, 255, 255), -1)
 
-        cv2.imshow("track", overlay)
-
+        cv2.imshow("Frame", overlay)
 
 
         # w to pause (and key to unpause), q to quit
@@ -197,9 +205,6 @@ def handle_video(fname):
         elif key == ord('q'):
             break
 
-
-# def image_read(fname):
-# frame = cv2.imread(fname)
 
 def image_read(frame, history):
     target_x = None
@@ -214,7 +219,6 @@ def image_read(frame, history):
     history["last_dilated"] = dilated
 
     # Debug drawining
-    # frame = cv2.bitwise_and(frame, frame, mask=total_diated) # only show the detected area
     cv2.drawContours(frame, contours, -1, (0, 255, 0), 1) # draw perfect outlines of grass
 
     cv2.line(frame, (frame.shape[1] // 2, frame.shape[0]), (frame.shape[1] // 2, 0), (255, 255, 0), 1) # vertical center line
@@ -407,9 +411,6 @@ def image_read(frame, history):
     else:
         print(f"DETECTION LOST: {len(track_detections)}")
         cv2.rectangle(frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 4)
-
-    # Display the resulting frame
-    cv2.imshow("frame", frame)
 
     # Return the dilated mask for the next frame
     return dilated, target_x

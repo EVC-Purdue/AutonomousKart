@@ -16,6 +16,8 @@ SHOW_DEBUG_FRAMES = False
 
 
 BOTTOM_RATIO = 19/20
+HORIZON_Y_RATIO = 17/36
+
 TARGET_Y_RATIO = 6/10
 
 K_P = 0.1
@@ -48,6 +50,7 @@ def find_track_thresh(frame):
     - Removing portions of the frame that have too much overall color difference
     - Removing portions of the frame that have too much color difference between channels (blue, green, red)
     - Removing portions of the frame that are too bright
+    - Removing portions of the frame that are in the horizon (sky)
     - Eroding (removing noise)
     - Dilating (filling in holes)
     """
@@ -86,6 +89,10 @@ def find_track_thresh(frame):
     track_thresh[b_frame > MAX_INTENSITY] = 0
     track_thresh[g_frame > MAX_INTENSITY] = 0
     track_thresh[r_frame > MAX_INTENSITY] = 0
+
+    # Remove: the horizon (sky)
+    horizon_y = int(frame.shape[0] * HORIZON_Y_RATIO)
+    track_thresh[:horizon_y] = 0
 
     # Erode to remove noise
     erode_kernel = np.ones((5, 5), np.uint8)

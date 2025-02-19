@@ -15,9 +15,11 @@ import util
 SHOW_DEBUG_FRAMES = False
 
 
-BOTTOM_Y_RATIO = 30/36
 HORIZON_Y_RATIO = 17/36
 KART_Y_RATIO = 32/36
+
+BOTTOM_Y_RATIO = 19/20   # Used in grass detection
+ON_TRACK_Y_RATIO = 30/36 # Used in track detection
 
 TARGET_Y_RATIO = 6/10
 
@@ -207,12 +209,12 @@ def handle_video(fname):
         # Find the contours of the track mask
         track_mask = np.zeros_like(frame[:, :, 0], dtype=np.uint8)
         contours, _ = cv2.findContours(track_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * BOTTOM_Y_RATIO))
+        on_track_pt = (frame.shape[1] // 2, int(frame.shape[0] * ON_TRACK_Y_RATIO))
 
         # Choose the contour that contains the bottom center (the kart)
         best_cnt = None
         for cnt in contours:
-            result = cv2.pointPolygonTest(cnt, bottom_center, False)
+            result = cv2.pointPolygonTest(cnt, on_track_pt, False)
             if result == 1:
                 best_cnt = cnt
                 break
@@ -252,8 +254,8 @@ def handle_video(fname):
             # righty = int(((track_mask.shape[1] - x) * vy / vx) + y)
             # cv2.line(marked_frame, (track_mask.shape[1] - 1, righty), (0, lefty), (255, 255, 255), 4)
 
-        # Debug drawing: the bottom center (the kart)
-        cv2.circle(marked_frame, bottom_center, 4, (0, 255, 255), -1)
+        # Debug drawing: the point we are checking must be on the track
+        cv2.circle(marked_frame, on_track_pt, 4, (0, 255, 255), -1)
 
 
 
@@ -329,7 +331,6 @@ def image_read(frame, history):
 
         # Debug drawing: center of contour
         cv2.circle(marked_frame, (cx, cy), 4, (0, 0, 255), -1)
-
 
         # Find the edge of the polygon that that is the track edge
         # Works by drawing a line from the bottom center to the center of the contour

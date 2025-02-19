@@ -143,8 +143,9 @@ def find_track_contours(frame, grass_thresh):
 
     # Return the contours and the track mask
     return contours, track_thresh
+# ---------------------------------------------------------------------------- #
 
-
+# ---------------------------------------------------------------------------- #
 def find_grass_contours(frame, old_dilated):
     """
     Find contours by:
@@ -180,8 +181,10 @@ def find_grass_contours(frame, old_dilated):
 
     # Outlines, just the grass mask
     return contours, grass_thresh
+# ---------------------------------------------------------------------------- #
 
 
+# ---------------------------------------------------------------------------- #
 def handle_video(fname):
     """Open video, read frames, process each frame, and display"""
 
@@ -233,11 +236,14 @@ def handle_video(fname):
             cv2.waitKey(-1)
         elif key == ord('q'):
             break
+# ---------------------------------------------------------------------------- #
 
 
+# ---------------------------------------------------------------------------- #
 def image_read(frame, history):
     marked_frame = frame.copy()
 
+    # ------------------------------------------------------------------------ #
     # Calculate the bottom center of the frame: used for drawing intersection lines with polygon edges to find the track edges
     bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * BOTTOM_Y_RATIO))
     # Calculate the target y which is a constant distance from the kart
@@ -445,7 +451,9 @@ def image_read(frame, history):
                 cv2.circle(marked_frame, (int(intersection[0]), int(intersection[1])), 9, (255, 255, 255), -1)
                 cv2.line(marked_frame, bottom_center, (int(intersection[0]), int(intersection[1])), (255, 255, 255), 2)
                 grass_detection_success = True
+    # ------------------------------------------------------------------------ #
 
+    # ------------------------------------------------------------------------ #
     # If we didn't find 2 valid grass edges (track edges), we will try to find the track itself
     # if not grass_detection_success:
     # cv2.rectangle(marked_frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 4)
@@ -498,6 +506,7 @@ def image_read(frame, history):
 
         # Debug drawing: the point we are checking must be on the track
         cv2.circle(marked_frame, on_track_pt, 4, (0, 255, 255), -1)
+    # ------------------------------------------------------------------------ #
 
     # Return the frame with all the debug drawings
     return marked_frame

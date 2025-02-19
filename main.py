@@ -75,7 +75,7 @@ class Detection:
 
 
 # ---------------------------------------------------------------------------- #
-def find_track_thresh(frame, grass_thresh):
+def find_track_contours(frame, grass_thresh):
     """
     Find the track by:
     - Removing portions of the frame that have too much overall color difference
@@ -85,6 +85,7 @@ def find_track_thresh(frame, grass_thresh):
     - Removing portions of the frame that are too close to the kart
     - Eroding (removing noise)
     - Dilating (filling in holes)
+    - Removing the portion of the frame that is grass
     """
 
     # Split the frame into the three color channels
@@ -136,8 +137,11 @@ def find_track_thresh(frame, grass_thresh):
     # subtract the grass from the track_thresh
     track_thresh = cv2.bitwise_and(track_thresh, cv2.bitwise_not(grass_thresh))
 
-    # Return the mask of the track
-    return track_thresh
+    # Find the contours (outlines) of the track
+    contours, _ = cv2.findContours(track_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Return the contours and the track mask
+    return contours, track_thresh
 
 
 def find_grass_contours(frame, old_dilated):
@@ -207,7 +211,7 @@ def handle_video(fname):
 
         marked_frame = image_read(frame, history)
 
-        track_thresh = find_track_thresh(frame, history["last_dilated"])
+        contours, track_thresh = find_track_contours(frame, history["last_dilated"])
 
         # Debug drawing: overlay the track mask as green using an alpha value
         track_colored = np.zeros_like(frame, dtype=np.uint8)
@@ -215,8 +219,6 @@ def handle_video(fname):
         marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 0.5, 0)
 
         # Find the contours of the track mask
-        track_mask = np.zeros_like(frame[:, :, 0], dtype=np.uint8)
-        contours, _ = cv2.findContours(track_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         on_track_pt = (frame.shape[1] // 2, int(frame.shape[0] * ON_TRACK_Y_RATIO))
 
         # Choose the contour that contains the bottom center (the kart)
@@ -230,11 +232,10 @@ def handle_video(fname):
 
         if best_cnt is not None:
             # Debug drawing: the track contour
-            cv2.drawContours(track_mask, [best_cnt], 0, 255, -1)
             cv2.drawContours(marked_frame, [best_cnt], 0, (255, 0, 0), 2)
 
             # For every y, find the median x of the track
-            y_coords, x_coords = np.where(track_mask > 0)
+            y_coords, x_coords = np.where(track_thresh > 0)
             unique_y = np.unique(y_coords)
             medians = {y: np.median(x_coords[y_coords == y]) for y in unique_y}
 

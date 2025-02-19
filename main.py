@@ -308,7 +308,7 @@ def image_read(frame, history):
 
             intersection = util.line_intersection(pt1, pt2, bottom_center, (cx, cy))
             if intersection is not None:
-                dist = math.dist(bottom_center, intersection)
+                dist = (bottom_center[0] - intersection[0]) ** 2 + (bottom_center[1] - intersection[1]) ** 2
                 if dist < intersection_dist:
                     intersection_dist = dist
                     intersection_idx = j

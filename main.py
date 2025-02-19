@@ -245,14 +245,11 @@ def handle_video(fname):
 
                     cv2.circle(marked_frame, (int(x), int(y)), 3, (0, 0, 255), -1)
 
-            # Draw a best fit line through the medians
-            # pts_list = list(history["last_medians"].items())
-            # [vy, vx, y, x] = cv2.fitLine(np.array(pts_list), cv2.DIST_L2, 0, 0.01, 0.01)
-            # if vx == 0:
-            #     vx = 0.0001
-            # lefty = int((-x * vy / vx) + y)
-            # righty = int(((track_mask.shape[1] - x) * vy / vx) + y)
-            # cv2.line(marked_frame, (track_mask.shape[1] - 1, righty), (0, lefty), (255, 255, 255), 4)
+            target_y = int(frame.shape[0] * TARGET_Y_RATIO)
+            target_x = history["last_medians"].get(target_y, None)
+            if target_x is not None:
+                cv2.circle(marked_frame, (int(target_x), target_y), 10, (0, 255, 255), -1)
+
 
         # Debug drawing: the point we are checking must be on the track
         cv2.circle(marked_frame, on_track_pt, 4, (0, 255, 255), -1)

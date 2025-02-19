@@ -16,14 +16,12 @@ SHOW_DEBUG_FRAMES = False
 TARGET_FPS = 60
 
 
+# Constants for "trackvideo.mp4"
 HORIZON_Y_RATIO = 17/36
 KART_Y_RATIO = 32/36
-
 BOTTOM_Y_RATIO = 19/20   # Used in grass detection
 ON_TRACK_Y_RATIO = 30/36 # Used in track detection
-
 TARGET_Y_RATIO = 6/10
-
 
 # Constants for "pov.mp4"
 # HORIZON_Y_RATIO = 10/36
@@ -373,8 +371,8 @@ def image_read(frame, history):
 
             # Debug drawing: line between the bottom center and the bottom point of the track edge
             for detection in edges:
-                cv2.line(marked_frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 2)
-                # cv2.line(frame, (detection.cx, detection.cy), bottom_center, (255, 0, 0), 1)
+                # cv2.line(marked_frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 2)
+                cv2.line(marked_frame, (detection.cx, detection.cy), bottom_center, (255, 0, 0), 1)
 
             # Find the lowest and highest points of the two edges
             lowest_point = edges[0].lower_pt if edges[0].lower_pt[1] > edges[1].lower_pt[1] else edges[1].lower_pt
@@ -513,7 +511,8 @@ def image_read(frame, history):
         target_y = int(frame.shape[0] * TARGET_Y_RATIO)
         target_x = history["last_medians"].get(target_y, None)
         if target_x is not None:
-            cv2.circle(marked_frame, (int(target_x[0]), target_y), 10, (0, 255, 255), -1)
+            cv2.circle(marked_frame, (int(target_x[0]), target_y), 10, (0, 0, 0), -1)
+            cv2.circle(marked_frame, (int(target_x[0]), target_y), 9, (255, 255, 255), -1)
 
         # Debug drawing: the point we are checking must be on the track
         cv2.circle(marked_frame, on_track_pt, 4, (0, 255, 255), -1)

@@ -24,7 +24,6 @@ ON_TRACK_Y_RATIO = 30/36 # Used in track detection
 TARGET_Y_RATIO = 6/10
 
 
-
 # Constants for "pov.mp4"
 # HORIZON_Y_RATIO = 10/36
 # KART_Y_RATIO = 32/36
@@ -210,7 +209,7 @@ def handle_video(fname):
 
         track_thresh = find_track_thresh(frame, history["last_dilated"])
 
-        # Overlay: merge the track mask as green using an alpha value
+        # Debug drawing: overlay the track mask as green using an alpha value
         track_colored = np.zeros_like(frame, dtype=np.uint8)
         track_colored[:, :, 1] = track_thresh
         marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 0.5, 0)
@@ -227,8 +226,7 @@ def handle_video(fname):
             if result == 1:
                 best_cnt = cnt
                 break
-        # TODO: pick closest contour to the bottom center
-
+        # TODO: pick closest contour to the bottom center if no contour contains the point
 
         if best_cnt is not None:
             # Debug drawing: the track contour
@@ -240,7 +238,7 @@ def handle_video(fname):
             unique_y = np.unique(y_coords)
             medians = {y: np.median(x_coords[y_coords == y]) for y in unique_y}
 
-            # Debug drawing: the medians (supposed centerline of the track)
+            # The medians = supposed centerline of the track
             for y, x in medians.items():
                 last_x = history["last_medians"].get(y, None)
                 cv2.circle(marked_frame, (int(x), int(y)), 2, (255, 0, 255), -1)

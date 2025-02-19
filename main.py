@@ -32,6 +32,8 @@ TARGET_Y_RATIO = 6/10
 # ON_TRACK_Y_RATIO = 18/36 # Used in track detection
 # TARGET_Y_RATIO = 3.5/10
 
+MEMORY_TIME = 2.0 # seconds
+
 
 # Track thresh constants 
 TRACK_MAX_TOTAL_DIFF = 85 
@@ -191,8 +193,8 @@ def handle_video(fname):
     cap = cv2.VideoCapture(fname)
 
     history = {
-        # Will combine last dilated mask with the current to improve detection
-        "last_dilated": None,
+        # Will combine last mask with the current to improve detection
+        "grass_thresh": None,
         
         # For the track centerline based on the grass edges
         "last_top_x": None,
@@ -250,8 +252,8 @@ def image_read(frame, history):
     target_y = int(frame.shape[0] * TARGET_Y_RATIO)
 
     # Find contours
-    grass_contours, dilated = find_grass_contours(frame, history["last_dilated"])
-    history["last_dilated"] = dilated
+    grass_contours, grass_thresh = find_grass_contours(frame, history["grass_thresh"])
+    history["grass_thresh"] = grass_thresh
 
     # Debug drawining
     cv2.drawContours(marked_frame, grass_contours, -1, (0, 255, 0), 1) # draw perfect outlines of grass
@@ -354,7 +356,7 @@ def image_read(frame, history):
     # Lower number means lower on the screen
     track_detections = sorted(all_detections, key=lambda x: abs(x.camera_slope))
 
-    grass_detection_success = False
+    # grass_detection_success = False
 
     # Right now only handling the cases were we know both edges
     if len(track_detections) >= 2:
@@ -458,7 +460,7 @@ def image_read(frame, history):
     # if not grass_detection_success:
     # cv2.rectangle(marked_frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 4)
 
-    contours, track_thresh = find_track_contours(frame, dilated)
+    contours, track_thresh = find_track_contours(frame, grass_thresh)
 
     track_colored = np.zeros_like(frame, dtype=np.uint8)
     track_colored[:, :, 1] = track_thresh

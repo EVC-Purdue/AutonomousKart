@@ -318,7 +318,7 @@ def image_read(frame, history):
         #     continue
 
         # Debug drawing: center of contour
-        cv2.circle(frame, (cx, cy), 4, (0, 0, 255), -1)
+        cv2.circle(marked_frame, (cx, cy), 4, (0, 0, 255), -1)
 
 
         # Find the edge of the polygon that that is the track edge

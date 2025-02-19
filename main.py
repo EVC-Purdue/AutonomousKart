@@ -29,6 +29,15 @@ TRACK_ERODE_ITERATIONS = 5
 TRACK_DILATE_KERNEL = (3, 3)
 TRACK_DILATE_ITERATIONS = 7
 
+# Grass thresh constants
+GRASS_HSV_LOW = (25, 40, 40)
+GRASS_HSV_HIGH = (80, 255, 255)
+GRASS_ERODE_KERNEL = (7, 7)
+GRASS_ERODE_ITERATIONS = 2
+GRASS_DILATE_KERNEL = (10, 10)
+GRASS_DILATE_ITERATIONS = 2
+
+
 
 K_P = 0.1
 # K_D = 0.1
@@ -125,15 +134,15 @@ def find_grass_contours(frame, old_dilated):
     frame_hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
     # detect grass: yellow/green color
-    grass_thresh = cv2.inRange(frame_hsv, (25, 40, 40), (80, 255,255))
+    grass_thresh = cv2.inRange(frame_hsv, GRASS_HSV_LOW, GRASS_HSV_HIGH)
 
     # Erode to remove noise
-    erode_kernel = np.ones((7, 7), np.uint8)
-    eroded = cv2.erode(grass_thresh, erode_kernel, iterations=2)
+    erode_kernel = np.ones(GRASS_ERODE_KERNEL, np.uint8)
+    eroded = cv2.erode(grass_thresh, erode_kernel, iterations=GRASS_ERODE_ITERATIONS)
 
     # Dilate to fill in the holes
     dilate_kernel = np.ones((10, 10), np.uint8)
-    grass_thresh = cv2.dilate(eroded, dilate_kernel, iterations=2)
+    grass_thresh = cv2.dilate(eroded, dilate_kernel, iterations=GRASS_DILATE_ITERATIONS)
 
     # Try to fill in the holes/inconsistencies in the grass mask with the old dilated mask
     total_diated = cv2.bitwise_or(grass_thresh, old_dilated) if old_dilated is not None else grass_thresh

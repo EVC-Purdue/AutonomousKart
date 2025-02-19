@@ -42,9 +42,8 @@ GRASS_DILATE_ITERATIONS = 2
 # GRASS_EDGE_RATIO = 1/3
 
 
-
+# The new value chances by K_P times the change from the previous value
 K_P = 0.1
-# K_D = 0.1
 # ---------------------------------------------------------------------------- #
 
 

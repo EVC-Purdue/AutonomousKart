@@ -15,7 +15,7 @@ import util
 SHOW_DEBUG_FRAMES = False
 
 
-BOTTOM_Y_RATIO = 19/20
+BOTTOM_Y_RATIO = 30/36
 HORIZON_Y_RATIO = 17/36
 KART_Y_RATIO = 32/36
 
@@ -72,6 +72,7 @@ def find_track_thresh(frame):
     - Removing portions of the frame that have too much color difference between channels (blue, green, red)
     - Removing portions of the frame that are too bright
     - Removing portions of the frame that are in the horizon (sky)
+    - Removing portions of the frame that are too close to the kart
     - Eroding (removing noise)
     - Dilating (filling in holes)
     """
@@ -109,6 +110,10 @@ def find_track_thresh(frame):
     # Remove: the horizon (sky)
     horizon_y = int(frame.shape[0] * HORIZON_Y_RATIO)
     track_thresh[:horizon_y] = 0
+
+    # Remove: the kart
+    kart_y = int(frame.shape[0] * KART_Y_RATIO)
+    track_thresh[kart_y:] = 0
 
     # Erode to remove noise
     erode_kernel = np.ones(TRACK_ERODE_KERNEL, np.uint8)

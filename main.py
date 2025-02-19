@@ -13,6 +13,7 @@ import util
 
 # ---------------------------------------------------------------------------- #
 SHOW_DEBUG_FRAMES = False
+TARGET_FPS = 60
 
 
 HORIZON_Y_RATIO = 17/36
@@ -209,60 +210,9 @@ def handle_video(fname):
             print("Error reading frame...")
             break
 
+        frame_time_start = time.time()
         marked_frame = image_read(frame, history)
-
-        contours, track_thresh = find_track_contours(frame, history["last_dilated"])
-
-        # Debug drawing: overlay the track mask as green using an alpha value
-        track_colored = np.zeros_like(frame, dtype=np.uint8)
-        track_colored[:, :, 1] = track_thresh
-        marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 0.5, 0)
-
-        # Find the contours of the track mask
-        on_track_pt = (frame.shape[1] // 2, int(frame.shape[0] * ON_TRACK_Y_RATIO))
-
-        # Choose the contour that contains the bottom center (the kart)
-        best_cnt = None
-        for cnt in contours:
-            result = cv2.pointPolygonTest(cnt, on_track_pt, False)
-            if result == 1:
-                best_cnt = cnt
-                break
-        # TODO: pick closest contour to the bottom center if no contour contains the point
-
-        if best_cnt is not None:
-            # Debug drawing: the track contour
-            cv2.drawContours(marked_frame, [best_cnt], 0, (255, 0, 0), 2)
-
-            # For every y, find the median x of the track
-            y_coords, x_coords = np.where(track_thresh > 0)
-            unique_y = np.unique(y_coords)
-            medians = {y: np.median(x_coords[y_coords == y]) for y in unique_y}
-
-            # The medians = supposed centerline of the track
-            for y, x in medians.items():
-                last_x = history["last_medians"].get(y, None)
-                cv2.circle(marked_frame, (int(x), int(y)), 2, (255, 0, 255), -1)
-
-                if last_x is None:
-                    history["last_medians"][y] = x
-                else:
-                    dx = x - last_x
-                    x = last_x + dx * K_P
-                    history["last_medians"][y] = x
-
-                    cv2.circle(marked_frame, (int(x), int(y)), 3, (0, 0, 255), -1)
-
-            target_y = int(frame.shape[0] * TARGET_Y_RATIO)
-            target_x = history["last_medians"].get(target_y, None)
-            if target_x is not None:
-                cv2.circle(marked_frame, (int(target_x), target_y), 10, (0, 255, 255), -1)
-
-
-        # Debug drawing: the point we are checking must be on the track
-        cv2.circle(marked_frame, on_track_pt, 4, (0, 255, 255), -1)
-
-
+        frame_time_end = time.time()
 
         # Calculate the FPS
         t1 = time.time()
@@ -272,12 +222,13 @@ def handle_video(fname):
         # Debug drawing: the FPS
         cv2.putText(marked_frame, f"FPS: {fps:.0f}", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-
         # Finally, show the frame
         cv2.imshow("Frame", marked_frame)
 
         # w to pause (and key to unpause), q to quit
-        key = cv2.waitKey(1) & 0xFF
+        frame_time = frame_time_end - frame_time_start
+        wait_time = max(1, int(1000 / TARGET_FPS) - int(frame_time * 1000))
+        key = cv2.waitKey(wait_time) & 0xFF
         if key == ord('w'):
             cv2.waitKey(-1)
         elif key == ord('q'):
@@ -397,6 +348,8 @@ def image_read(frame, history):
     # Lower number means lower on the screen
     track_detections = sorted(all_detections, key=lambda x: abs(x.camera_slope))
 
+    grass_detection_success = False
+
     # Right now only handling the cases were we know both edges
     if len(track_detections) >= 2:
         edges = [track_detections[0]]
@@ -491,13 +444,60 @@ def image_read(frame, history):
                 cv2.circle(marked_frame, (int(intersection[0]), int(intersection[1])), 10, (0, 0, 0), -1)
                 cv2.circle(marked_frame, (int(intersection[0]), int(intersection[1])), 9, (255, 255, 255), -1)
                 cv2.line(marked_frame, bottom_center, (int(intersection[0]), int(intersection[1])), (255, 255, 255), 2)
+                grass_detection_success = True
 
-        else:
-            print("DETECTIONS ON SAME SIDE")
-            cv2.rectangle(marked_frame, (0, 0), (frame.shape[1], frame.shape[0]), (128, 0, 255), 4)
-    else:
-        print(f"DETECTION LOST: {len(track_detections)}")
-        cv2.rectangle(marked_frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 4)
+    # If we didn't find 2 valid grass edges (track edges), we will try to find the track itself
+    # if not grass_detection_success:
+    # cv2.rectangle(marked_frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 4)
+
+    contours, track_thresh = find_track_contours(frame, dilated)
+
+    track_colored = np.zeros_like(frame, dtype=np.uint8)
+    track_colored[:, :, 1] = track_thresh
+    marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 0.5, 0)
+
+    # Find the contours of the track mask
+    on_track_pt = (frame.shape[1] // 2, int(frame.shape[0] * ON_TRACK_Y_RATIO))
+
+    # Choose the contour that contains the bottom center (the kart)
+    best_cnt = None
+    for cnt in contours:
+        result = cv2.pointPolygonTest(cnt, on_track_pt, False)
+        if result == 1:
+            best_cnt = cnt
+            break
+    # TODO: pick closest contour to the bottom center if no contour contains the point
+
+    if best_cnt is not None:
+        # Debug drawing: the track contour
+        cv2.drawContours(marked_frame, [best_cnt], 0, (255, 0, 0), 2)
+
+        # For every y, find the median x of the track
+        y_coords, x_coords = np.where(track_thresh > 0)
+        unique_y = np.unique(y_coords)
+        medians = {y: np.median(x_coords[y_coords == y]) for y in unique_y}
+
+        # The medians = supposed centerline of the track
+        for y, x in medians.items():
+            last_x = history["last_medians"].get(y, None)
+            cv2.circle(marked_frame, (int(x), int(y)), 2, (255, 0, 255), -1)
+
+            if last_x is None:
+                history["last_medians"][y] = x
+            else:
+                dx = x - last_x
+                x = last_x + dx * K_P
+                history["last_medians"][y] = x
+
+                cv2.circle(marked_frame, (int(x), int(y)), 3, (0, 0, 255), -1)
+
+        target_y = int(frame.shape[0] * TARGET_Y_RATIO)
+        target_x = history["last_medians"].get(target_y, None)
+        if target_x is not None:
+            cv2.circle(marked_frame, (int(target_x), target_y), 10, (0, 255, 255), -1)
+
+        # Debug drawing: the point we are checking must be on the track
+        cv2.circle(marked_frame, on_track_pt, 4, (0, 255, 255), -1)
 
     # Return the frame with all the debug drawings
     return marked_frame

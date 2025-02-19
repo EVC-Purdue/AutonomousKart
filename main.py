@@ -65,7 +65,7 @@ class Detection:
 
 
 # ---------------------------------------------------------------------------- #
-def find_track_thresh(frame):
+def find_track_thresh(frame, grass_thresh):
     """
     Find the track by:
     - Removing portions of the frame that have too much overall color difference
@@ -122,6 +122,9 @@ def find_track_thresh(frame):
     # Dilate to fill in the holes
     dilate_kernel = np.ones(TRACK_DILATE_KERNEL, np.uint8)
     track_thresh = cv2.dilate(eroded, dilate_kernel, iterations=TRACK_DILATE_ITERATIONS)
+
+    # subtract the grass from the track_thresh
+    track_thresh = cv2.bitwise_and(track_thresh, cv2.bitwise_not(grass_thresh))
 
     # Return the mask of the track
     return track_thresh
@@ -192,13 +195,9 @@ def handle_video(fname):
             print("Error reading frame...")
             break
 
-        # Do this before we mark up frame
-        track_thresh = find_track_thresh(frame)
-
         marked_frame = image_read(frame, history)
 
-        # subtract the grass from the track_thresh
-        track_thresh = cv2.bitwise_and(track_thresh, cv2.bitwise_not(history["last_dilated"]))
+        track_thresh = find_track_thresh(frame, history["last_dilated"])
 
         # Overlay: merge the track mask as green using an alpha value
         track_colored = np.zeros_like(frame, dtype=np.uint8)

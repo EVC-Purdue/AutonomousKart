@@ -153,7 +153,7 @@ def handle_video(fname):
         # Do this before we mark up frame
         track_thresh = find_track_thresh(frame)
 
-        image_read(frame, history)
+        marked_frame = image_read(frame, history)
 
         # subtract the grass from the track_thresh
         track_thresh = cv2.bitwise_and(track_thresh, cv2.bitwise_not(history["last_dilated"]))
@@ -161,7 +161,7 @@ def handle_video(fname):
         # Overlay: merge the track mask as green using an alpha value
         track_colored = np.zeros_like(frame, dtype=np.uint8)
         track_colored[:, :, 1] = track_thresh
-        overlay = cv2.addWeighted(frame, 1.0, track_colored, 0.5, 0)
+        marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 0.5, 0)
 
         # Find the contours of the track mask
         track_mask = np.zeros_like(frame[:, :, 0], dtype=np.uint8)
@@ -181,7 +181,7 @@ def handle_video(fname):
         if best_cnt is not None:
             # Debug drawing: the track contour
             cv2.drawContours(track_mask, [best_cnt], 0, 255, -1)
-            cv2.drawContours(overlay, [best_cnt], 0, (255, 0, 0), 2)
+            cv2.drawContours(marked_frame, [best_cnt], 0, (255, 0, 0), 2)
 
             # For every y, find the median x of the track
             y_coords, x_coords = np.where(track_mask > 0)
@@ -190,7 +190,7 @@ def handle_video(fname):
 
             for y, x in medians.items():
                 last_x = history["last_medians"].get(y, None)
-                cv2.circle(overlay, (int(x), int(y)), 3, (255, 0, 255), -1)
+                cv2.circle(marked_frame, (int(x), int(y)), 3, (255, 0, 255), -1)
 
                 if last_x is None:
                     history["last_medians"][y] = x
@@ -199,12 +199,12 @@ def handle_video(fname):
                     x = last_x + dx * K_P
                     history["last_medians"][y] = x
 
-                    cv2.circle(overlay, (int(x), int(y)), 4, (0, 0, 255), -1)
+                    cv2.circle(marked_frame, (int(x), int(y)), 4, (0, 0, 255), -1)
 
 
-        cv2.circle(overlay, bottom_center, 4, (0, 255, 255), -1)
+        cv2.circle(marked_frame, bottom_center, 4, (0, 255, 255), -1)
 
-        cv2.imshow("Frame", overlay)
+        cv2.imshow("Frame", marked_frame)
 
 
         # w to pause (and key to unpause), q to quit
@@ -216,7 +216,7 @@ def handle_video(fname):
 
 
 def image_read(frame, history):
-    target_x = None
+    marked_frame = frame.copy()
 
     # Calculate the bottom center of the frame: used for drawing intersection lines with polygon edges to find the track edges
     bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * BOTTOM_RATIO))
@@ -224,22 +224,22 @@ def image_read(frame, history):
     target_y = int(frame.shape[0] * TARGET_Y_RATIO)
 
     # Find contours
-    contours, dilated, _total_diated = find_grass_contours(frame, history["last_dilated"])
+    grass_contours, dilated, _total_diated = find_grass_contours(frame, history["last_dilated"])
     history["last_dilated"] = dilated
 
     # Debug drawining
-    cv2.drawContours(frame, contours, -1, (0, 255, 0), 1) # draw perfect outlines of grass
+    cv2.drawContours(marked_frame, grass_contours, -1, (0, 255, 0), 1) # draw perfect outlines of grass
 
-    cv2.line(frame, (frame.shape[1] // 2, frame.shape[0]), (frame.shape[1] // 2, 0), (255, 255, 0), 1) # vertical center line
-    cv2.line(frame, (0, target_y), (frame.shape[1], target_y), (255, 255, 0), 2) # horizontal target line
+    cv2.line(marked_frame, (frame.shape[1] // 2, frame.shape[0]), (frame.shape[1] // 2, 0), (255, 255, 0), 1) # vertical center line
+    cv2.line(marked_frame, (0, target_y), (frame.shape[1], target_y), (255, 255, 0), 2) # horizontal target line
 
 
     all_detections = []
 
-    for cnt in contours:
+    for cnt in grass_contours:
         # Approximate the contour to a polygon (find straight edges)
         approx = cv2.approxPolyDP(cnt, 0.03*cv2.arcLength(cnt, True), True)
-        cv2.drawContours(frame, [approx], 0, (0, 255, 255), 1) #  draw the approximated polygon
+        cv2.drawContours(marked_frame, [approx], 0, (0, 255, 255), 1) #  draw the approximated polygon
 
         # Calculate the center of the contour
         center = cv2.moments(cnt)
@@ -287,7 +287,7 @@ def image_read(frame, history):
 
         # Debug drawing: the track side edge
         i2 = (intersection_idx + 1) % len(approx)
-        cv2.line(frame, approx[intersection_idx][0], approx[i2][0], (0, 0, 255), 2)
+        cv2.line(marked_frame, approx[intersection_idx][0], approx[i2][0], (0, 0, 255), 2)
 
         # Calculate the lower and higher point of the edge
         # Needed for later, but also using it to pick which contour to track if multiple contours are detected
@@ -334,7 +334,7 @@ def image_read(frame, history):
 
             # Debug drawing: line between the bottom center and the bottom point of the track edge
             for detection in edges:
-                cv2.line(frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 2)
+                cv2.line(marked_frame, (detection.lower_pt[0], detection.lower_pt[1]), bottom_center, (255, 0, 0), 2)
                 # cv2.line(frame, (detection.cx, detection.cy), bottom_center, (255, 0, 0), 1)
 
             # Find the lowest and highest points of the two edges
@@ -346,13 +346,13 @@ def image_read(frame, history):
             edge_1_ext = util.extend_segment(edges[1].lower_pt, edges[1].higher_pt, lowest_point[1], highest_point[1])
 
             # Debug drawing: extended edges
-            cv2.line(frame, (int(edge_0_ext[0][0]), int(edge_0_ext[0][1])), (int(edge_0_ext[1][0]), int(edge_0_ext[1][1])), (0, 128, 255), 2)
-            cv2.line(frame, (int(edge_1_ext[0][0]), int(edge_1_ext[0][1])), (int(edge_1_ext[1][0]), int(edge_1_ext[1][1])), (0, 128, 255), 2)
+            cv2.line(marked_frame, (int(edge_0_ext[0][0]), int(edge_0_ext[0][1])), (int(edge_0_ext[1][0]), int(edge_0_ext[1][1])), (0, 128, 255), 2)
+            cv2.line(marked_frame, (int(edge_1_ext[0][0]), int(edge_1_ext[0][1])), (int(edge_1_ext[1][0]), int(edge_1_ext[1][1])), (0, 128, 255), 2)
 
             # Find the midpoint of the two extended edges which should be the middle of the track
             lower_midpoint = ((int(edge_0_ext[0][0]) + int(edge_1_ext[0][0])) // 2, (int(edge_0_ext[0][1]) + int(edge_1_ext[0][1])) // 2)
             higher_midpoint = ((int(edge_0_ext[1][0]) + int(edge_1_ext[1][0])) // 2, (int(edge_0_ext[1][1]) + int(edge_1_ext[1][1])) // 2)
-            cv2.line(frame, lower_midpoint, higher_midpoint, (255, 0, 255), 2) # draw the middle of the track
+            cv2.line(marked_frame, lower_midpoint, higher_midpoint, (255, 0, 255), 2) # draw the middle of the track
 
             if history["last_top_x"] is None:
                 history["last_top_x"] = higher_midpoint[0]
@@ -382,8 +382,8 @@ def image_read(frame, history):
                 history["last_bottom_y"] = y_bottom
 
                 # Draw the middle of the track
-                cv2.line(frame, (int(x_bottom), int(y_bottom)), (int(x_top), int(y_top)), (0, 0, 0), 4)
-                cv2.line(frame, (int(x_bottom), int(y_bottom)), (int(x_top), int(y_top)), (255, 255, 255), 2)
+                cv2.line(marked_frame, (int(x_bottom), int(y_bottom)), (int(x_top), int(y_top)), (0, 0, 0), 4)
+                cv2.line(marked_frame, (int(x_bottom), int(y_bottom)), (int(x_top), int(y_top)), (255, 255, 255), 2)
 
             # Find the higher low and the lower high point of the two edges
             bot_point = edges[0].lower_pt if edges[0].lower_pt[1] < edges[1].lower_pt[1] else edges[1].lower_pt
@@ -394,14 +394,14 @@ def image_read(frame, history):
             edge_1_ext = util.extend_segment(edges[1].lower_pt, edges[1].higher_pt, bot_point[1], top_point[1])
 
             # Debug drawing: shortened edges
-            cv2.line(frame, (int(edge_0_ext[0][0]), int(edge_0_ext[0][1])), (int(edge_0_ext[1][0]), int(edge_0_ext[1][1])), (128, 255, 128), 2)
-            cv2.line(frame, (int(edge_1_ext[0][0]), int(edge_1_ext[0][1])), (int(edge_1_ext[1][0]), int(edge_1_ext[1][1])), (128, 255, 128), 2)
+            cv2.line(marked_frame, (int(edge_0_ext[0][0]), int(edge_0_ext[0][1])), (int(edge_0_ext[1][0]), int(edge_0_ext[1][1])), (128, 255, 128), 2)
+            cv2.line(marked_frame, (int(edge_1_ext[0][0]), int(edge_1_ext[0][1])), (int(edge_1_ext[1][0]), int(edge_1_ext[1][1])), (128, 255, 128), 2)
 
             # Find the midpoint of the two shortened edges which should be the middle of the track
             # This is on the same line as the longer line, but it is a good debug reference
             lower_midpoint = ((int(edge_0_ext[0][0]) + int(edge_1_ext[0][0])) // 2, (int(edge_0_ext[0][1]) + int(edge_1_ext[0][1])) // 2)
             higher_midpoint = ((int(edge_0_ext[1][0]) + int(edge_1_ext[1][0])) // 2, (int(edge_0_ext[1][1]) + int(edge_1_ext[1][1])) // 2)
-            cv2.line(frame, lower_midpoint, higher_midpoint, (255, 0, 128), 2)
+            cv2.line(marked_frame, lower_midpoint, higher_midpoint, (255, 0, 128), 2)
 
             # Calculate (in camera space) where we want to go
             # This is the intersection of the middle of the track and the target line (which is a constant y value or
@@ -410,22 +410,19 @@ def image_read(frame, history):
             fully_extended = util.extend_segment((x_bottom, y_bottom), (x_top, y_top), 0, frame.shape[0])
             intersection = util.line_intersection(fully_extended[0], fully_extended[1], (0, target_y), (frame.shape[1], target_y))
             if intersection is not None:
-                cv2.circle(frame, (int(intersection[0]), int(intersection[1])), 10, (0, 0, 0), -1)
-                cv2.circle(frame, (int(intersection[0]), int(intersection[1])), 9, (255, 255, 255), -1)
-                cv2.line(frame, bottom_center, (int(intersection[0]), int(intersection[1])), (255, 255, 255), 2)
+                cv2.circle(marked_frame, (int(intersection[0]), int(intersection[1])), 10, (0, 0, 0), -1)
+                cv2.circle(marked_frame, (int(intersection[0]), int(intersection[1])), 9, (255, 255, 255), -1)
+                cv2.line(marked_frame, bottom_center, (int(intersection[0]), int(intersection[1])), (255, 255, 255), 2)
 
         else:
             print("DETECTIONS ON SAME SIDE")
-            cv2.rectangle(frame, (0, 0), (frame.shape[1], frame.shape[0]), (128, 0, 255), 4)
+            cv2.rectangle(marked_frame, (0, 0), (frame.shape[1], frame.shape[0]), (128, 0, 255), 4)
     else:
         print(f"DETECTION LOST: {len(track_detections)}")
-        cv2.rectangle(frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 4)
+        cv2.rectangle(marked_frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 4)
 
-    # Return the dilated mask for the next frame
-    return dilated, target_x
-
-    # if cv2.waitKey(0) & 0xFF == ord('q'):
-    #     pass
+    # Return the frame with all the debug drawings
+    return marked_frame
 # ---------------------------------------------------------------------------- #
 
 

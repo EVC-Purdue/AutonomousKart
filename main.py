@@ -190,7 +190,7 @@ def handle_video(fname):
 
             for y, x in medians.items():
                 last_x = history["last_medians"].get(y, None)
-                cv2.circle(marked_frame, (int(x), int(y)), 3, (255, 0, 255), -1)
+                cv2.circle(marked_frame, (int(x), int(y)), 2, (255, 0, 255), -1)
 
                 if last_x is None:
                     history["last_medians"][y] = x
@@ -199,7 +199,7 @@ def handle_video(fname):
                     x = last_x + dx * K_P
                     history["last_medians"][y] = x
 
-                    cv2.circle(marked_frame, (int(x), int(y)), 4, (0, 0, 255), -1)
+                    cv2.circle(marked_frame, (int(x), int(y)), 3, (0, 0, 255), -1)
 
 
         cv2.circle(marked_frame, bottom_center, 4, (0, 255, 255), -1)

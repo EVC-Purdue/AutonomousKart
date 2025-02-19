@@ -44,46 +44,57 @@ class Detection:
 def find_track_thresh(frame):
     """
     Find the track by:
+    - Removing portions of the frame that have too much overall color difference
+    - Removing portions of the frame that have too much color difference between channels (blue, green, red)
     - Removing portions of the frame that are too bright
-    - Removing portions of the frame that have too much color difference
-    - Removing portions of the frame that have too much color difference between channels
     - Eroding (removing noise)
     - Dilating (filling in holes)
     """
 
+    # Constants (0-255)
     MAX_TOTAL_DIFF = 85
     MAX_INDIVIDUAL_DIFF = 45
     MAX_INTENSITY = 200
 
+    # Split the frame into the three color channels
     b_frame, g_frame, r_frame = cv2.split(frame)
-    total_diff = cv2.absdiff(r_frame, g_frame) + cv2.absdiff(g_frame, b_frame) + cv2.absdiff(b_frame, r_frame)
-
+    
+    # Calculate the difference between the channels
     bg_diff = cv2.absdiff(b_frame, g_frame)
     gr_diff = cv2.absdiff(g_frame, r_frame)
     rb_diff = cv2.absdiff(r_frame, b_frame)
+
+    # Calculate the total difference
     total_diff = bg_diff + gr_diff + rb_diff
 
     if SHOW_DEBUG_FRAMES:
         cv2.imshow("total_diff", total_diff)
 
+    # By default, assume everything is track
     track_thresh = np.ones_like(total_diff) * 255
 
+    # Remove: the total difference is too high
     track_thresh[total_diff > MAX_TOTAL_DIFF] = 0
 
+    # Remove: the individual differences are too high
     track_thresh[bg_diff > MAX_INDIVIDUAL_DIFF] = 0
     track_thresh[gr_diff > MAX_INDIVIDUAL_DIFF] = 0
     track_thresh[rb_diff > MAX_INDIVIDUAL_DIFF] = 0
 
+    # Remove: the intensity is too high
     track_thresh[b_frame > MAX_INTENSITY] = 0
     track_thresh[g_frame > MAX_INTENSITY] = 0
     track_thresh[r_frame > MAX_INTENSITY] = 0
 
+    # Erode to remove noise
     erode_kernel = np.ones((5, 5), np.uint8)
     eroded = cv2.erode(track_thresh, erode_kernel, iterations=5)
 
+    # Dilate to fill in the holes
     dilate_kernel = np.ones((3, 3), np.uint8)
     track_thresh = cv2.dilate(eroded, dilate_kernel, iterations=7)
 
+    # Return the mask of the track
     return track_thresh
 
 
@@ -120,8 +131,8 @@ def find_grass_contours(frame, old_dilated):
     # Find the outlines from the final mask
     contours, _ = cv2.findContours(total_diated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Outlines, just the grass mask, and the mask with the grass and the old dilated mask
-    return contours, grass_thresh, total_diated
+    # Outlines, just the grass mask
+    return contours, grass_thresh
 
 
 def handle_video(fname):
@@ -224,7 +235,7 @@ def image_read(frame, history):
     target_y = int(frame.shape[0] * TARGET_Y_RATIO)
 
     # Find contours
-    grass_contours, dilated, _total_diated = find_grass_contours(frame, history["last_dilated"])
+    grass_contours, dilated = find_grass_contours(frame, history["last_dilated"])
     history["last_dilated"] = dilated
 
     # Debug drawining

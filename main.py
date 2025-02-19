@@ -21,9 +21,9 @@ HORIZON_Y_RATIO = 17/36
 TARGET_Y_RATIO = 6/10
 
 # Track thresh constants 
-MAX_TOTAL_DIFF = 85 
-MAX_INDIVIDUAL_DIFF = 45
-MAX_INTENSITY = 200
+TRACK_MAX_TOTAL_DIFF = 85 
+TRACK_MAX_INDIVIDUAL_DIFF = 45
+TRACK_MAX_INTENSITY = 200
 TRACK_ERODE_KERNEL = (5, 5)
 TRACK_ERODE_ITERATIONS = 5
 TRACK_DILATE_KERNEL = (3, 3)
@@ -92,17 +92,17 @@ def find_track_thresh(frame):
     track_thresh = np.ones_like(total_diff) * 255
 
     # Remove: the total difference is too high
-    track_thresh[total_diff > MAX_TOTAL_DIFF] = 0
+    track_thresh[total_diff > TRACK_MAX_TOTAL_DIFF] = 0
 
     # Remove: the individual differences are too high
-    track_thresh[bg_diff > MAX_INDIVIDUAL_DIFF] = 0
-    track_thresh[gr_diff > MAX_INDIVIDUAL_DIFF] = 0
-    track_thresh[rb_diff > MAX_INDIVIDUAL_DIFF] = 0
+    track_thresh[bg_diff > TRACK_MAX_INDIVIDUAL_DIFF] = 0
+    track_thresh[gr_diff > TRACK_MAX_INDIVIDUAL_DIFF] = 0
+    track_thresh[rb_diff > TRACK_MAX_INDIVIDUAL_DIFF] = 0
 
     # Remove: the intensity is too high
-    track_thresh[b_frame > MAX_INTENSITY] = 0
-    track_thresh[g_frame > MAX_INTENSITY] = 0
-    track_thresh[r_frame > MAX_INTENSITY] = 0
+    track_thresh[b_frame > TRACK_MAX_INTENSITY] = 0
+    track_thresh[g_frame > TRACK_MAX_INTENSITY] = 0
+    track_thresh[r_frame > TRACK_MAX_INTENSITY] = 0
 
     # Remove: the horizon (sky)
     horizon_y = int(frame.shape[0] * HORIZON_Y_RATIO)

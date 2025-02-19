@@ -1,0 +1,3 @@
+[submodule "YOLOP"]
+	path = YOLOP
+	url = https://github.com/LelsersLasers/YOLOP

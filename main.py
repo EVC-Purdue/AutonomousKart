@@ -41,7 +41,16 @@ class Detection:
 
 
 # ---------------------------------------------------------------------------- #
-def find_track(frame):
+def find_track_thresh(frame):
+    """
+    Find the track by:
+    - Removing portions of the frame that are too bright
+    - Removing portions of the frame that have too much color difference
+    - Removing portions of the frame that have too much color difference between channels
+    - Eroding (removing noise)
+    - Dilating (filling in holes)
+    """
+
     MAX_TOTAL_DIFF = 85
     MAX_INDIVIDUAL_DIFF = 45
     MAX_INTENSITY = 200
@@ -78,7 +87,7 @@ def find_track(frame):
     return track_thresh
 
 
-def find_contours(frame, old_dilated):
+def find_grass_contours(frame, old_dilated):
     """
     Find contours by:
     - Converting to hsv
@@ -142,7 +151,7 @@ def handle_video(fname):
             break
 
         # Do this before we mark up frame
-        track_thresh = find_track(frame)
+        track_thresh = find_track_thresh(frame)
 
         image_read(frame, history)
 
@@ -215,7 +224,7 @@ def image_read(frame, history):
     target_y = int(frame.shape[0] * TARGET_Y_RATIO)
 
     # Find contours
-    contours, dilated, _total_diated = find_contours(frame, history["last_dilated"])
+    contours, dilated, _total_diated = find_grass_contours(frame, history["last_dilated"])
     history["last_dilated"] = dilated
 
     # Debug drawining

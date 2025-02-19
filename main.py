@@ -17,6 +17,7 @@ SHOW_DEBUG_FRAMES = False
 
 BOTTOM_Y_RATIO = 19/20
 HORIZON_Y_RATIO = 17/36
+KART_Y_RATIO = 32/36
 
 TARGET_Y_RATIO = 6/10
 
@@ -308,6 +309,11 @@ def image_read(frame, history):
         # Throw out all contours that are are in the horizon (sky)
         horizon_y = int(frame.shape[0] * HORIZON_Y_RATIO)
         if cy < horizon_y:
+            continue
+
+        # Throw out all contours that are in the kart
+        kart_y = int(frame.shape[0] * KART_Y_RATIO)
+        if cy > kart_y:
             continue
 
         # Throw out all contours that are in the center

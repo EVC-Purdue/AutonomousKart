@@ -7,6 +7,8 @@ import time
 import cv2
 import numpy as np
 
+import YOLOP.tools.demo as yolop_demo
+
 import util
 # ---------------------------------------------------------------------------- #
 
@@ -216,6 +218,9 @@ def handle_video(fname):
         frame_time_start = time.time()
         marked_frame = image_read(frame, history)
         frame_time_end = time.time()
+
+        f = yolop_demo.run_detection(frame)
+        cv2.imshow("YOLOP", f)
 
         # Calculate the FPS
         t1 = time.time()

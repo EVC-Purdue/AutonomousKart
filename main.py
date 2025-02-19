@@ -36,7 +36,7 @@ GRASS_ERODE_KERNEL = (7, 7)
 GRASS_ERODE_ITERATIONS = 2
 GRASS_DILATE_KERNEL = (10, 10)
 GRASS_DILATE_ITERATIONS = 2
-GRASS_EDGE_RATIO = 1/3
+# GRASS_EDGE_RATIO = 1/3
 
 
 
@@ -312,10 +312,10 @@ def image_read(frame, history):
 
         # Throw out all contours that are in the center
         # In the center means it is probably not a track edge but trees or other objects
-        left_edge = int(frame.shape[1] * GRASS_EDGE_RATIO)
-        right_edge = int(frame.shape[1] * (1 - GRASS_EDGE_RATIO))
-        if left_edge < cx < right_edge:
-            continue
+        # left_edge = int(frame.shape[1] * GRASS_EDGE_RATIO)
+        # right_edge = int(frame.shape[1] * (1 - GRASS_EDGE_RATIO))
+        # if left_edge < cx < right_edge:
+        #     continue
 
         # Debug drawing: center of contour
         cv2.circle(frame, (cx, cy), 4, (0, 0, 255), -1)

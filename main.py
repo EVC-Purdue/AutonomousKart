@@ -20,6 +20,16 @@ HORIZON_Y_RATIO = 17/36
 
 TARGET_Y_RATIO = 6/10
 
+# Track thresh constants 
+MAX_TOTAL_DIFF = 85 
+MAX_INDIVIDUAL_DIFF = 45
+MAX_INTENSITY = 200
+TRACK_ERODE_KERNEL = (5, 5)
+TRACK_ERODE_ITERATIONS = 5
+TRACK_DILATE_KERNEL = (3, 3)
+TRACK_DILATE_ITERATIONS = 7
+
+
 K_P = 0.1
 # K_D = 0.1
 # ---------------------------------------------------------------------------- #
@@ -54,11 +64,6 @@ def find_track_thresh(frame):
     - Eroding (removing noise)
     - Dilating (filling in holes)
     """
-
-    # Constants (0-255)
-    MAX_TOTAL_DIFF = 85
-    MAX_INDIVIDUAL_DIFF = 45
-    MAX_INTENSITY = 200
 
     # Split the frame into the three color channels
     b_frame, g_frame, r_frame = cv2.split(frame)
@@ -95,12 +100,12 @@ def find_track_thresh(frame):
     track_thresh[:horizon_y] = 0
 
     # Erode to remove noise
-    erode_kernel = np.ones((5, 5), np.uint8)
-    eroded = cv2.erode(track_thresh, erode_kernel, iterations=5)
+    erode_kernel = np.ones(TRACK_ERODE_KERNEL, np.uint8)
+    eroded = cv2.erode(track_thresh, erode_kernel, iterations=TRACK_ERODE_ITERATIONS)
 
     # Dilate to fill in the holes
-    dilate_kernel = np.ones((3, 3), np.uint8)
-    track_thresh = cv2.dilate(eroded, dilate_kernel, iterations=7)
+    dilate_kernel = np.ones(TRACK_DILATE_KERNEL, np.uint8)
+    track_thresh = cv2.dilate(eroded, dilate_kernel, iterations=TRACK_DILATE_ITERATIONS)
 
     # Return the mask of the track
     return track_thresh

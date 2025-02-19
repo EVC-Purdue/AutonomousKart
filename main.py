@@ -15,7 +15,7 @@ import util
 SHOW_DEBUG_FRAMES = False
 
 
-BOTTOM_RATIO = 19/20
+BOTTOM_Y_RATIO = 19/20
 HORIZON_Y_RATIO = 17/36
 
 TARGET_Y_RATIO = 6/10
@@ -187,7 +187,7 @@ def handle_video(fname):
         # Find the contours of the track mask
         track_mask = np.zeros_like(frame[:, :, 0], dtype=np.uint8)
         contours, _ = cv2.findContours(track_thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * BOTTOM_RATIO))
+        bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * BOTTOM_Y_RATIO))
 
         # Choose the contour that contains the bottom center (the kart)
         best_cnt = None
@@ -243,7 +243,7 @@ def handle_video(fname):
         t0 = t1
 
         # Debug drawing: the FPS
-        cv2.putText(marked_frame, f"FPS: {fps:.2f}", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        cv2.putText(marked_frame, f"FPS: {fps:.0f}", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
 
         # Finally, show the frame
@@ -261,7 +261,7 @@ def image_read(frame, history):
     marked_frame = frame.copy()
 
     # Calculate the bottom center of the frame: used for drawing intersection lines with polygon edges to find the track edges
-    bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * BOTTOM_RATIO))
+    bottom_center = (frame.shape[1] // 2, int(frame.shape[0] * BOTTOM_Y_RATIO))
     # Calculate the target y which is a constant distance from the kart
     target_y = int(frame.shape[0] * TARGET_Y_RATIO)
 

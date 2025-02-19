@@ -14,7 +14,7 @@ import util
 SHOW_DEBUG_FRAMES = False
 
 
-BOTTOM_RATIO = 18/20
+BOTTOM_RATIO = 19/20
 TARGET_Y_RATIO = 6/10
 
 K_P = 0.1
@@ -199,6 +199,7 @@ def handle_video(fname):
             unique_y = np.unique(y_coords)
             medians = {y: np.median(x_coords[y_coords == y]) for y in unique_y}
 
+            # Debug drawing: the medians (supposed centerline of the track)
             for y, x in medians.items():
                 last_x = history["last_medians"].get(y, None)
                 cv2.circle(marked_frame, (int(x), int(y)), 2, (255, 0, 255), -1)
@@ -211,6 +212,16 @@ def handle_video(fname):
                     history["last_medians"][y] = x
 
                     cv2.circle(marked_frame, (int(x), int(y)), 3, (0, 0, 255), -1)
+
+            # Draw a best fit line through the medians
+            # pts_list = list(history["last_medians"].items())
+            # [vy, vx, y, x] = cv2.fitLine(np.array(pts_list), cv2.DIST_L2, 0, 0.01, 0.01)
+            # if vx == 0:
+            #     vx = 0.0001
+            # lefty = int((-x * vy / vx) + y)
+            # righty = int(((track_mask.shape[1] - x) * vy / vx) + y)
+            # cv2.line(marked_frame, (track_mask.shape[1] - 1, righty), (0, lefty), (255, 255, 255), 4)
+
 
 
         cv2.circle(marked_frame, bottom_center, 4, (0, 255, 255), -1)

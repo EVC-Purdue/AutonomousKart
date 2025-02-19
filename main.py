@@ -16,6 +16,8 @@ import torchvision.models.segmentation as models
 import matplotlib.pyplot as plt
 # import fast_scnn
 import network
+
+import YOLOP.tools.demo as yolop_demo
 # ---------------------------------------------------------------------------- #
 
 
@@ -108,10 +110,10 @@ def handle_video(fname):
         "last_bottom_y": None
     }
 
-    model_name = "best_deeplabv3plus_mobilenet_cityscapes_os16.pth"
-    model = network.deeplabv3plus_mobilenet(num_classes=19, output_stride=16)
-    model.load_state_dict(torch.load(model_name, map_location="cpu", weights_only=False)["model_state"])
-    model.eval()
+    # model_name = "best_deeplabv3plus_mobilenet_cityscapes_os16.pth"
+    # model = network.deeplabv3plus_mobilenet(num_classes=19, output_stride=16)
+    # model.load_state_dict(torch.load(model_name, map_location="cpu", weights_only=False)["model_state"])
+    # model.eval()
 
     # colors = generate_hsv_colors(19)
 
@@ -120,55 +122,62 @@ def handle_video(fname):
         i += 1
         ret, frame = cap.read()
 
+        # frame = cv2.resize(frame, (320, 240))
+
         if not ret:
             print("Error reading frame...")
             break
 
-        if i % 20 != 0:
+        if i % 10 != 0:
             continue
 
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        img = Image.fromarray(rgb_frame)
+        # rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # img = Image.fromarray(rgb_frame)
 
-        transform = T.Compose([
-            # T.Resize((768, 768)),
-            T.ToTensor(),
-            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
-        input_tensor = transform(img).unsqueeze(0)
+        # transform = T.Compose([
+        #     # T.Resize((768, 768)),
+        #     T.ToTensor(),
+        #     T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        # ])
+        # input_tensor = transform(img).unsqueeze(0)
 
-        with torch.no_grad():
-            output = model(input_tensor)
-        segmentation_mask = torch.argmax(output.squeeze(), dim=0).numpy()
+        # with torch.no_grad():
+        #     output = model(input_tensor)
+        # segmentation_mask = torch.argmax(output.squeeze(), dim=0).numpy()
 
-        road_mask = np.zeros((frame.shape[0], frame.shape[1]), dtype=np.uint8)
-        # for i in range(2):
-        for i in range(1):
-            binary_mask = (segmentation_mask == i).astype(np.uint8) * 255
-            mask = cv2.resize(binary_mask, (frame.shape[1], frame.shape[0]), interpolation=cv2.INTER_NEAREST)
-            road_mask = cv2.bitwise_or(road_mask, mask)
-            # frame_c[mask == 255] = colors[i]
-            # m[binary_mask == 255] = colors[i]
+        # road_mask = np.zeros((frame.shape[0], frame.shape[1]), dtype=np.uint8)
+        # # for i in range(2):
+        # for i in range(1):
+        #     binary_mask = (segmentation_mask == i).astype(np.uint8) * 255
+        #     mask = cv2.resize(binary_mask, (frame.shape[1], frame.shape[0]), interpolation=cv2.INTER_NEAREST)
+        #     road_mask = cv2.bitwise_or(road_mask, mask)
+        #     # frame_c[mask == 255] = colors[i]
+        #     # m[binary_mask == 255] = colors[i]
 
-        erode_kernel = np.ones((2, 2), np.uint8)
-        eroded = cv2.erode(road_mask, erode_kernel, iterations=2)
+        # erode_kernel = np.ones((2, 2), np.uint8)
+        # eroded = cv2.erode(road_mask, erode_kernel, iterations=2)
 
-        dilate_kernel = np.ones((3, 3), np.uint8)
-        dilated = cv2.dilate(eroded, dilate_kernel, iterations=2)
+        # dilate_kernel = np.ones((3, 3), np.uint8)
+        # dilated = cv2.dilate(eroded, dilate_kernel, iterations=2)
 
-        frame_c = frame.copy()
-        contours = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
-        cv2.drawContours(frame_c, contours, -1, (0, 255, 255), 2)
+        # frame_c = frame.copy()
+        # contours = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+        # cv2.drawContours(frame_c, contours, -1, (0, 255, 255), 2)
 
 
-        road_mask = cv2.cvtColor(road_mask, cv2.COLOR_GRAY2BGR)
-        dilated = cv2.cvtColor(dilated, cv2.COLOR_GRAY2BGR)
+        # road_mask = cv2.cvtColor(road_mask, cv2.COLOR_GRAY2BGR)
+        # dilated = cv2.cvtColor(dilated, cv2.COLOR_GRAY2BGR)
 
-        row1 = cv2.hconcat([frame, road_mask])
-        row2 = cv2.hconcat([dilated, frame_c])
-        combined = cv2.vconcat([row1, row2])
+        # row1 = cv2.hconcat([frame, road_mask])
+        # row2 = cv2.hconcat([dilated, frame_c])
+        # combined = cv2.vconcat([row1, row2])
 
-        cv2.imshow("combined", combined)
+        # cv2.imshow("combined", combined)
+
+
+        f = yolop_demo.run_detection(frame)
+
+        cv2.imshow("frame", f)
 
 
         print(".", end="", flush=True)

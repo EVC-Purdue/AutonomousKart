@@ -1,10 +1,11 @@
 print("STARTING...")
 
 import argparse
+import math
+import time
 
 import cv2
 import numpy as np
-import math
 
 import util
 # ---------------------------------------------------------------------------- #
@@ -154,6 +155,8 @@ def handle_video(fname):
         "last_medians": {}
     }
 
+    t0 = time.time()
+
     while True:
         ret, frame = cap.read()
 
@@ -222,12 +225,22 @@ def handle_video(fname):
             # righty = int(((track_mask.shape[1] - x) * vy / vx) + y)
             # cv2.line(marked_frame, (track_mask.shape[1] - 1, righty), (0, lefty), (255, 255, 255), 4)
 
-
-
+        # Debug drawing: the bottom center (the kart)
         cv2.circle(marked_frame, bottom_center, 4, (0, 255, 255), -1)
 
-        cv2.imshow("Frame", marked_frame)
 
+
+        # Calculate the FPS
+        t1 = time.time()
+        fps = 1 / (t1 - t0)
+        t0 = t1
+
+        # Debug drawing: the FPS
+        cv2.putText(marked_frame, f"FPS: {fps:.2f}", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
+
+        # Finally, show the frame
+        cv2.imshow("Frame", marked_frame)
 
         # w to pause (and key to unpause), q to quit
         key = cv2.waitKey(1) & 0xFF

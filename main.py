@@ -228,6 +228,8 @@ def handle_video(fname):
         frame_time_end = time.time()
 
         f = yolop_detect.run_detection(model, device, opt, frame)
+        f = cv2.resize(f, (frame.shape[1], frame.shape[0]))
+
         cv2.imshow("YOLOP", f)
 
         # Calculate the FPS

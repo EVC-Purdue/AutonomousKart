@@ -203,7 +203,9 @@ def handle_video(fname):
         "last_bottom_y": None,
 
         # last_medians[y] = (x, time), last median x per y for the track detection
-        "last_medians": {}
+        "last_medians": {},
+
+        "last_drivable_area": None,
     }
 
     model, device, opt = yolop_detect.setup()
@@ -538,9 +540,12 @@ def image_read(model, device, opt, frame, history):
     drivable_area = cv2.resize(drivable_area, (frame.shape[1], frame.shape[0]))
     drivable_area = drivable_area.astype(np.uint8) * 255
 
+    total_drivable_area = cv2.bitwise_or(drivable_area, history["last_drivable_area"]) if history["last_drivable_area"] is not None else drivable_area
+    history["last_drivable_area"] = drivable_area
+
     # Debug drawing: yolop detection
     track_colored = np.zeros_like(frame, dtype=np.uint8)
-    track_colored[:, :, 2] = drivable_area
+    track_colored[:, :, 2] = total_drivable_area
     marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 1.0, 0)
     # ------------------------------------------------------------------------ #
 

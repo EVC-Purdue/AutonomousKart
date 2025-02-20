@@ -224,18 +224,8 @@ def handle_video(fname):
             continue
 
         frame_time_start = time.time()
-        marked_frame = image_read(frame, history)
+        marked_frame = image_read(model, device, opt, frame, history)
         frame_time_end = time.time()
-
-        drivable_area = yolop_detect.run_detection(model, device, opt, frame)
-        drivable_area = cv2.resize(drivable_area, (frame.shape[1], frame.shape[0]))
-        drivable_area = drivable_area.astype(np.uint8) * 255
-
-        # Debug drawing: yolop detection
-        track_colored = np.zeros_like(frame, dtype=np.uint8)
-        track_colored[:, :, 2] = drivable_area
-        marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 1.0, 0)
-
 
         # Calculate the FPS
         t1 = time.time()
@@ -261,7 +251,7 @@ def handle_video(fname):
 
 
 # ---------------------------------------------------------------------------- #
-def image_read(frame, history):
+def image_read(model, device, opt, frame, history):
     marked_frame = frame.copy()
 
     # ------------------------------------------------------------------------ #
@@ -474,6 +464,7 @@ def image_read(frame, history):
                 grass_detection_success = True
     # ------------------------------------------------------------------------ #
 
+
     # ------------------------------------------------------------------------ #
     # If we didn't find 2 valid grass edges (track edges), we will try to find the track itself
     # if not grass_detection_success:
@@ -538,6 +529,19 @@ def image_read(frame, history):
 
         # Debug drawing: the point we are checking must be on the track
         cv2.circle(marked_frame, on_track_pt, 4, (0, 255, 255), -1)
+    # ------------------------------------------------------------------------ #
+
+
+    # ------------------------------------------------------------------------ #
+    # Run YOLOP inference and convert the result to a compatible mask
+    drivable_area = yolop_detect.run_detection(model, device, opt, frame)
+    drivable_area = cv2.resize(drivable_area, (frame.shape[1], frame.shape[0]))
+    drivable_area = drivable_area.astype(np.uint8) * 255
+
+    # Debug drawing: yolop detection
+    track_colored = np.zeros_like(frame, dtype=np.uint8)
+    track_colored[:, :, 2] = drivable_area
+    marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 1.0, 0)
     # ------------------------------------------------------------------------ #
 
     # Return the frame with all the debug drawings

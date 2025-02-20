@@ -229,11 +229,12 @@ def handle_video(fname):
 
         # Calculate the FPS
         t1 = time.time()
-        fps = 1 / (t1 - t0)
+        dt = t1 - t0
+        fps = 1 / dt
         t0 = t1
 
         # Debug drawing: the FPS
-        cv2.putText(marked_frame, f"FPS: {fps:.0f}", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        cv2.putText(marked_frame, f"FPS: {fps:.0f} ({dt * 1000:.0f} ms)", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
         # Finally, show the frame
         cv2.imshow("Frame", marked_frame)

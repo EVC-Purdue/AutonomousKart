@@ -206,6 +206,8 @@ def handle_video(fname):
         "last_medians": {}
     }
 
+    model, device, opt = yolop_detect.setup()
+
     t0 = time.time()
 
     i = 0
@@ -224,7 +226,7 @@ def handle_video(fname):
         marked_frame = image_read(frame, history)
         frame_time_end = time.time()
 
-        f = yolop_detect.run_detection(frame)
+        f = yolop_detect.run_detection(model, device, opt, frame)
         cv2.imshow("YOLOP", f)
 
         # Calculate the FPS

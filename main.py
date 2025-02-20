@@ -227,10 +227,15 @@ def handle_video(fname):
         marked_frame = image_read(frame, history)
         frame_time_end = time.time()
 
-        f = yolop_detect.run_detection(model, device, opt, frame)
-        f = cv2.resize(f, (frame.shape[1], frame.shape[0]))
+        drivable_area = yolop_detect.run_detection(model, device, opt, frame)
+        drivable_area = cv2.resize(drivable_area, (frame.shape[1], frame.shape[0]))
+        drivable_area = drivable_area.astype(np.uint8) * 255
 
-        cv2.imshow("YOLOP", f)
+        # Debug drawing: yolop detection
+        track_colored = np.zeros_like(frame, dtype=np.uint8)
+        track_colored[:, :, 2] = drivable_area
+        marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 1.0, 0)
+
 
         # Calculate the FPS
         t1 = time.time()
@@ -476,6 +481,7 @@ def image_read(frame, history):
 
     contours, track_thresh = find_track_contours(frame, grass_thresh)
 
+    # Debug drawing: the track mask
     track_colored = np.zeros_like(frame, dtype=np.uint8)
     track_colored[:, :, 1] = track_thresh
     marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 0.5, 0)

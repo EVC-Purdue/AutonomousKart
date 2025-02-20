@@ -483,7 +483,6 @@ def image_read(frame, history):
     # Find the contours of the track mask
     on_track_pt = (frame.shape[1] // 2, int(frame.shape[0] * ON_TRACK_Y_RATIO))
 
-    track_mask = np.zeros_like(track_thresh)
 
     # Choose the contour that contains the bottom center (the kart)
     best_cnt = None
@@ -497,6 +496,8 @@ def image_read(frame, history):
     # Filter old medians
     now = time.time()
     history["last_medians"] = {y: (x, t) for y, (x, t) in history["last_medians"].items() if now - t < MEMORY_TIME}
+
+    track_mask = np.zeros_like(track_thresh)
 
     if best_cnt is not None:
         # Fill in the track mask with only the best contour

@@ -483,7 +483,6 @@ def image_read(frame, history):
     # Find the contours of the track mask
     on_track_pt = (frame.shape[1] // 2, int(frame.shape[0] * ON_TRACK_Y_RATIO))
 
-
     # Choose the contour that contains the bottom center (the kart)
     best_cnt = None
     for cnt in contours:
@@ -529,7 +528,7 @@ def image_read(frame, history):
         target_x = history["last_medians"].get(target_y, None)
         if target_x is not None:
             cv2.circle(marked_frame, (int(target_x[0]), target_y), 10, (0, 0, 0), -1)
-            cv2.circle(marked_frame, (int(target_x[0]), target_y), 9, (255, 255, 255), -1)
+            cv2.circle(marked_frame, (int(target_x[0]), target_y), 9, (0, 255, 255), -1)
 
         # Debug drawing: the point we are checking must be on the track
         cv2.circle(marked_frame, on_track_pt, 4, (0, 255, 255), -1)

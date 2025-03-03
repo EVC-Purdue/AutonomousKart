@@ -1,3 +1,6 @@
 [submodule "YOLOP"]
 	path = YOLOP
 	url = https://github.com/LelsersLasers/YOLOP.git
+[submodule "Deeplabv3"]
+	path = Deeplabv3
+	url = https://github.com/cc-ai/Deeplabv3.git

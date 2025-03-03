@@ -9,6 +9,14 @@ import numpy as np
 
 import YOLOP.tools.detect as yolop_detect
 
+import Deeplabv3.network as deeplabv3_network
+import torch
+
+import torchvision.transforms as transforms
+
+normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+transform = transforms.Compose([transforms.ToTensor(), normalize])
+
 import util
 # ---------------------------------------------------------------------------- #
 
@@ -19,18 +27,18 @@ TARGET_FPS = 60
 
 
 # Constants for "trackvideo.mp4"
-HORIZON_Y_RATIO = 17/36
-KART_Y_RATIO = 32/36
-BOTTOM_Y_RATIO = 19/20   # Used in grass detection
-ON_TRACK_Y_RATIO = 30/36 # Used in track detection
-TARGET_Y_RATIO = 6/10
-
-# Constants for "pov.mp4"
-# HORIZON_Y_RATIO = 10/36
+# HORIZON_Y_RATIO = 17/36
 # KART_Y_RATIO = 32/36
 # BOTTOM_Y_RATIO = 19/20   # Used in grass detection
-# ON_TRACK_Y_RATIO = 18/36 # Used in track detection
-# TARGET_Y_RATIO = 3.5/10
+# ON_TRACK_Y_RATIO = 30/36 # Used in track detection
+# TARGET_Y_RATIO = 6/10
+
+# Constants for "pov.mp4"
+HORIZON_Y_RATIO = 10/36
+KART_Y_RATIO = 32/36
+BOTTOM_Y_RATIO = 19/20   # Used in grass detection
+ON_TRACK_Y_RATIO = 18/36 # Used in track detection
+TARGET_Y_RATIO = 3.5/10
 
 MEMORY_TIME = 1.0 # seconds
 
@@ -186,6 +194,29 @@ def find_grass_contours(frame, old_dilated):
 # ---------------------------------------------------------------------------- #
 
 
+def infer_single_frame(frame, model, device):
+    """Runs inference on a single OpenCV frame and optionally saves the result."""
+    
+    # Define normalization (same as training)
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+
+    # Preprocess frame
+    frame_resized = cv2.resize(frame, (768, 768))  # Resize to match model input size
+    input_tensor = transform(frame_resized).unsqueeze(0).to(device)  # Add batch dimension
+
+    # Run inference
+    with torch.no_grad():
+        output = model(input_tensor)
+        pred = output.argmax(dim=1).squeeze().cpu().numpy()  # Get the predicted class per pixel
+
+    # Post-processing
+    pred_overlay = (pred == 0) | (pred == 1)
+    return pred_overlay
+
+
 # ---------------------------------------------------------------------------- #
 def handle_video(fname):
     """Open video, read frames, process each frame, and display"""
@@ -214,6 +245,11 @@ def handle_video(fname):
 
     i = 0
 
+    dl_model = deeplabv3_network.deeplabv3plus_mobilenet(num_classes=19, output_stride=16)
+    dl_model.load_state_dict(torch.load("best_deeplabv3plus_mobilenet_cityscapes_os16.pth", map_location=torch.device('cpu'))['model_state'])
+    
+    dl_model.eval()
+
     while True:
         ret, frame = cap.read()
 
@@ -222,11 +258,22 @@ def handle_video(fname):
             break
 
         i += 1
-        if i % 10 != 0:
+        if i % 6 != 0:
             continue
 
+
         frame_time_start = time.time()
-        marked_frame = image_read(model, device, opt, frame, history)
+        # marked_frame = image_read(model, device, opt, frame, history)
+
+        marked_frame = frame.copy()
+
+        res = infer_single_frame(frame, dl_model, device)
+        res = res.astype(np.uint8) * 255
+        res = cv2.resize(res, (frame.shape[1], frame.shape[0]))
+        track_colored = np.zeros_like(frame, dtype=np.uint8)
+        track_colored[:, :, 2] = res
+        marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 1.0, 0)
+
         frame_time_end = time.time()
 
         # Calculate the FPS
@@ -463,7 +510,7 @@ def image_read(model, device, opt, frame, history):
                 cv2.circle(marked_frame, (int(intersection[0]), int(intersection[1])), 10, (0, 0, 0), -1)
                 cv2.circle(marked_frame, (int(intersection[0]), int(intersection[1])), 9, (255, 255, 255), -1)
                 cv2.line(marked_frame, bottom_center, (int(intersection[0]), int(intersection[1])), (255, 255, 255), 2)
-                grass_detection_success = True
+                # grass_detection_success = True
     # ------------------------------------------------------------------------ #
 
 

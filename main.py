@@ -203,7 +203,8 @@ def handle_video(fname):
             "bot": {
                 "x": None,
                 "y": None
-            }
+            },
+            "time": time.time()
         },
 
         "track": {
@@ -412,7 +413,8 @@ def image_read(model, device, opt, frame, history):
             higher_midpoint = ((int(edge_0_ext[1][0]) + int(edge_1_ext[1][0])) // 2, (int(edge_0_ext[1][1]) + int(edge_1_ext[1][1])) // 2)
             cv2.line(marked_frame, lower_midpoint, higher_midpoint, (255, 0, 255), 2) # draw the middle of the track
 
-            if history["grass"]["top"]["x"] is None: # if one is None, they are all None
+            # if one of [top, bot][x, y] is None they all are
+            if history["grass"]["top"]["x"] is None or time.time()- history["grass"]["time"] > HISTORY_TIME:
                 x_top = higher_midpoint[0]
                 y_top = higher_midpoint[1]
                 x_bot = lower_midpoint[0]
@@ -433,6 +435,7 @@ def image_read(model, device, opt, frame, history):
             history["grass"]["top"]["y"] = y_top
             history["grass"]["bot"]["x"] = x_bot
             history["grass"]["bot"]["y"] = y_bot
+            history["grass"]["time"] = time.time()
 
             # Draw the middle of the track
             cv2.line(marked_frame, (int(x_bot), int(y_bot)), (int(x_top), int(y_top)), (0, 0, 0), 4)

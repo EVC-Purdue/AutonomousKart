@@ -193,14 +193,18 @@ def handle_video(fname):
     cap = cv2.VideoCapture(fname)
 
     history = {
-        # Will combine last mask with the current to improve detection
-        "grass_thresh": None,
-        
         # For the track centerline based on the grass edges
-        "last_top_x": None,
-        "last_top_y": None,
-        "last_bottom_x": None,
-        "last_bottom_y": None,
+        "grass": {
+            "thresh": None,
+            "top": {
+                "x": None,
+                "y": None
+            },
+            "bot": {
+                "x": None,
+                "y": None
+            }
+        },
 
         # last_medians[y] = (x, time), last median x per y for the track detection
         "last_medians": {},
@@ -263,8 +267,8 @@ def image_read(model, device, opt, frame, history):
     target_y = int(frame.shape[0] * TARGET_Y_RATIO)
 
     # Find contours
-    grass_contours, grass_thresh = find_grass_contours(frame, history["grass_thresh"])
-    history["grass_thresh"] = grass_thresh
+    grass_contours, grass_thresh = find_grass_contours(frame, history["grass"]["thresh"])
+    history["grass"]["thresh"] = grass_thresh
 
     # Debug drawining
     cv2.drawContours(marked_frame, grass_contours, -1, (0, 255, 0), 1) # draw perfect outlines of grass
@@ -404,36 +408,31 @@ def image_read(model, device, opt, frame, history):
             higher_midpoint = ((int(edge_0_ext[1][0]) + int(edge_1_ext[1][0])) // 2, (int(edge_0_ext[1][1]) + int(edge_1_ext[1][1])) // 2)
             cv2.line(marked_frame, lower_midpoint, higher_midpoint, (255, 0, 255), 2) # draw the middle of the track
 
-            if history["last_top_x"] is None:
-                history["last_top_x"] = higher_midpoint[0]
-                history["last_top_y"] = higher_midpoint[1]
-                history["last_bottom_x"] = lower_midpoint[0]
-                history["last_bottom_y"] = lower_midpoint[1]
-
-                x_top = history["last_top_x"]
-                y_top = history["last_top_y"]
-                x_bottom = history["last_bottom_x"]
-                y_bottom = history["last_bottom_y"]
+            if history["grass"]["top"]["x"] is None: # if one is None, they are all None
+                x_top = higher_midpoint[0]
+                y_top = higher_midpoint[1]
+                x_bot = lower_midpoint[0]
+                y_bot = lower_midpoint[1]
             else:
                 # Calculate the change in x and y from the last frame
-                dx_top = higher_midpoint[0] - history["last_top_x"]
-                dy_top = higher_midpoint[1] - history["last_top_y"]
-                dx_bottom = lower_midpoint[0] - history["last_bottom_x"]
-                dy_bottom = lower_midpoint[1] - history["last_bottom_y"]
+                dx_top = higher_midpoint[0] - history["grass"]["top"]["x"]
+                dy_top = higher_midpoint[1] - history["grass"]["top"]["y"]
+                dx_bottom = lower_midpoint[0] - history["grass"]["bot"]["x"]
+                dy_bottom = lower_midpoint[1] - history["grass"]["bot"]["y"]
 
-                x_top = history["last_top_x"] + dx_top * K_P
-                y_top = history["last_top_y"] + dy_top * K_P
-                x_bottom = history["last_bottom_x"] + dx_bottom * K_P
-                y_bottom = history["last_bottom_y"] + dy_bottom * K_P
+                x_top = history["grass"]["top"]["x"] + dx_top * K_P
+                y_top = history["grass"]["top"]["y"] + dy_top * K_P
+                x_bot = history["grass"]["bot"]["x"] + dx_bottom * K_P
+                y_bot = history["grass"]["bot"]["y"] + dy_bottom * K_P
 
-                history["last_top_x"] = x_top
-                history["last_top_y"] = y_top
-                history["last_bottom_x"] = x_bottom
-                history["last_bottom_y"] = y_bottom
+            history["grass"]["top"]["x"] = x_top
+            history["grass"]["top"]["y"] = y_top
+            history["grass"]["bot"]["x"] = x_bot
+            history["grass"]["bot"]["y"] = y_bot
 
-                # Draw the middle of the track
-                cv2.line(marked_frame, (int(x_bottom), int(y_bottom)), (int(x_top), int(y_top)), (0, 0, 0), 4)
-                cv2.line(marked_frame, (int(x_bottom), int(y_bottom)), (int(x_top), int(y_top)), (255, 255, 255), 2)
+            # Draw the middle of the track
+            cv2.line(marked_frame, (int(x_bot), int(y_bot)), (int(x_top), int(y_top)), (0, 0, 0), 4)
+            cv2.line(marked_frame, (int(x_bot), int(y_bot)), (int(x_top), int(y_top)), (255, 255, 255), 2)
 
             # Find the higher low and the lower high point of the two edges
             bot_point = edges[0].lower_pt if edges[0].lower_pt[1] < edges[1].lower_pt[1] else edges[1].lower_pt
@@ -457,13 +456,13 @@ def image_read(model, device, opt, frame, history):
             # This is the intersection of the middle of the track and the target line (which is a constant y value or
             #   a constant distance from the kart)
             # fully_extended = util.extend_segment(lower_midpoint, higher_midpoint, 0, frame.shape[0])
-            fully_extended = util.extend_segment((x_bottom, y_bottom), (x_top, y_top), 0, frame.shape[0])
+            fully_extended = util.extend_segment((x_bot, y_bot), (x_top, y_top), 0, frame.shape[0])
             intersection = util.line_intersection(fully_extended[0], fully_extended[1], (0, target_y), (frame.shape[1], target_y))
             if intersection is not None:
                 cv2.circle(marked_frame, (int(intersection[0]), int(intersection[1])), 10, (0, 0, 0), -1)
                 cv2.circle(marked_frame, (int(intersection[0]), int(intersection[1])), 9, (255, 255, 255), -1)
                 cv2.line(marked_frame, bottom_center, (int(intersection[0]), int(intersection[1])), (255, 255, 255), 2)
-                grass_detection_success = True
+                # grass_detection_success = True
     # ------------------------------------------------------------------------ #
 
 
@@ -535,18 +534,18 @@ def image_read(model, device, opt, frame, history):
 
 
     # ------------------------------------------------------------------------ #
-    # Run YOLOP inference and convert the result to a compatible mask
-    drivable_area = yolop_detect.run_detection(model, device, opt, frame)
-    drivable_area = cv2.resize(drivable_area, (frame.shape[1], frame.shape[0]))
-    drivable_area = drivable_area.astype(np.uint8) * 255
+    # # Run YOLOP inference and convert the result to a compatible mask
+    # drivable_area = yolop_detect.run_detection(model, device, opt, frame)
+    # drivable_area = cv2.resize(drivable_area, (frame.shape[1], frame.shape[0]))
+    # drivable_area = drivable_area.astype(np.uint8) * 255
 
-    total_drivable_area = cv2.bitwise_or(drivable_area, history["last_drivable_area"]) if history["last_drivable_area"] is not None else drivable_area
-    history["last_drivable_area"] = drivable_area
+    # total_drivable_area = cv2.bitwise_or(drivable_area, history["last_drivable_area"]) if history["last_drivable_area"] is not None else drivable_area
+    # history["last_drivable_area"] = drivable_area
 
-    # Debug drawing: yolop detection
-    track_colored = np.zeros_like(frame, dtype=np.uint8)
-    track_colored[:, :, 2] = total_drivable_area
-    marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 1.0, 0)
+    # # Debug drawing: yolop detection
+    # track_colored = np.zeros_like(frame, dtype=np.uint8)
+    # track_colored[:, :, 2] = total_drivable_area
+    # marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 1.0, 0)
     # ------------------------------------------------------------------------ #
 
     # Return the frame with all the debug drawings

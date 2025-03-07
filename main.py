@@ -529,11 +529,19 @@ def image_read(model, device, opt, frame, history):
 
                 cv2.circle(marked_frame, (int(x), int(y)), 3, (0, 0, 255), -1)
 
-        target_y = int(frame.shape[0] * TARGET_Y_RATIO)
-        target_x = history["track"]["medians"].get(target_y, None)
+        target_y = frame.shape[0] * TARGET_Y_RATIO
+        best_ys = sorted(medians.keys(), key=lambda y: abs(y - target_y))
+        target_x = None
+        best_y = None
+        for y in best_ys:
+            target_x, _t = history["track"]["medians"].get(y, (None, None))
+            if target_x is not None:
+                best_y = y
+                break
+       
         if target_x is not None:
-            cv2.circle(marked_frame, (int(target_x[0]), target_y), 10, (0, 0, 0), -1)
-            cv2.circle(marked_frame, (int(target_x[0]), target_y), 9, (0, 255, 255), -1)
+            cv2.circle(marked_frame, (int(target_x), int(target_y)), 10, (0, 0, 0), -1)
+            cv2.circle(marked_frame, (int(target_x), int(best_y)), 9, (0, 255, 255), -1)
 
         # Debug drawing: the point we are checking must be on the track
         cv2.circle(marked_frame, on_track_pt, 4, (0, 255, 255), -1)

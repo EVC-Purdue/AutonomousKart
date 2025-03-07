@@ -206,8 +206,10 @@ def handle_video(fname):
             }
         },
 
-        # last_medians[y] = (x, time), last median x per y for the track detection
-        "last_medians": {},
+        "track": {
+            # medians[y] = (x, time), last median x per y for the track detection
+            "medians": {},
+        },
 
         "last_drivable_area": None,
     }
@@ -492,7 +494,7 @@ def image_read(model, device, opt, frame, history):
 
     # Filter old medians
     now = time.time()
-    history["last_medians"] = {y: (x, t) for y, (x, t) in history["last_medians"].items() if now - t < HISTORY_TIME}
+    history["track"]["medians"] = {y: (x, t) for y, (x, t) in history["track"]["medians"].items() if now - t < HISTORY_TIME}
 
     track_mask = np.zeros_like(track_thresh)
 
@@ -510,20 +512,20 @@ def image_read(model, device, opt, frame, history):
 
         # The medians = supposed centerline of the track
         for y, x in medians.items():
-            last_x = history["last_medians"].get(y, None)
+            last_x = history["track"]["medians"].get(y, None)
             cv2.circle(marked_frame, (int(x), int(y)), 2, (255, 0, 255), -1)
 
             if last_x is None:
-                history["last_medians"][y] = (x, time.time())
+                history["track"]["medians"][y] = (x, time.time())
             else:
                 dx = x - last_x[0]
                 x = last_x[0] + dx * K_P
-                history["last_medians"][y] = (x, time.time())
+                history["track"]["medians"][y] = (x, time.time())
 
                 cv2.circle(marked_frame, (int(x), int(y)), 3, (0, 0, 255), -1)
 
         target_y = int(frame.shape[0] * TARGET_Y_RATIO)
-        target_x = history["last_medians"].get(target_y, None)
+        target_x = history["track"]["medians"].get(target_y, None)
         if target_x is not None:
             cv2.circle(marked_frame, (int(target_x[0]), target_y), 10, (0, 0, 0), -1)
             cv2.circle(marked_frame, (int(target_x[0]), target_y), 9, (0, 255, 255), -1)

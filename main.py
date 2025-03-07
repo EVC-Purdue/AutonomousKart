@@ -211,7 +211,9 @@ def handle_video(fname):
             "medians": {},
         },
 
-        "last_drivable_area": None,
+        "yolop": {
+            "drivable_area": None
+        }
     }
 
     model, device, opt = yolop_detect.setup()
@@ -536,18 +538,21 @@ def image_read(model, device, opt, frame, history):
 
 
     # ------------------------------------------------------------------------ #
-    # # Run YOLOP inference and convert the result to a compatible mask
-    # drivable_area = yolop_detect.run_detection(model, device, opt, frame)
-    # drivable_area = cv2.resize(drivable_area, (frame.shape[1], frame.shape[0]))
-    # drivable_area = drivable_area.astype(np.uint8) * 255
+    # Run YOLOP inference and convert the result to a compatible mask
+    drivable_area = yolop_detect.run_detection(model, device, opt, frame)
+    drivable_area = cv2.resize(drivable_area, (frame.shape[1], frame.shape[0]))
+    drivable_area = drivable_area.astype(np.uint8) * 255
 
-    # total_drivable_area = cv2.bitwise_or(drivable_area, history["last_drivable_area"]) if history["last_drivable_area"] is not None else drivable_area
-    # history["last_drivable_area"] = drivable_area
+    if history["yolop"]["drivable_area"] is not None:
+        total_drivable_area = cv2.bitwise_or(drivable_area, history["yolop"]["drivable_area"])
+    else:
+        total_drivable_area = drivable_area
+    history["yolop"]["drivable_area"] = drivable_area
 
-    # # Debug drawing: yolop detection
-    # track_colored = np.zeros_like(frame, dtype=np.uint8)
-    # track_colored[:, :, 2] = total_drivable_area
-    # marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 1.0, 0)
+    # Debug drawing: yolop detection
+    track_colored = np.zeros_like(frame, dtype=np.uint8)
+    track_colored[:, :, 2] = total_drivable_area
+    marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 1.0, 0)
     # ------------------------------------------------------------------------ #
 
     # Return the frame with all the debug drawings

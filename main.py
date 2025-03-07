@@ -32,7 +32,7 @@ TARGET_Y_RATIO = 6/10
 # ON_TRACK_Y_RATIO = 18/36 # Used in track detection
 # TARGET_Y_RATIO = 3.5/10
 
-MEMORY_TIME = 1.0 # seconds
+HISTORY_TIME = 1.0 # seconds
 
 
 # Track thresh constants 
@@ -492,7 +492,7 @@ def image_read(model, device, opt, frame, history):
 
     # Filter old medians
     now = time.time()
-    history["last_medians"] = {y: (x, t) for y, (x, t) in history["last_medians"].items() if now - t < MEMORY_TIME}
+    history["last_medians"] = {y: (x, t) for y, (x, t) in history["last_medians"].items() if now - t < HISTORY_TIME}
 
     track_mask = np.zeros_like(track_thresh)
 

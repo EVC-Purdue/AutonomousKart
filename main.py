@@ -215,16 +215,16 @@ def handle_video(fname):
             },
             "time": time.time()
         },
-
+        # For the track centerline based on the track itself
         "track": {
             # medians[y] = (x, time), last median x per y for the track detection
             "medians": {},
         },
-
+        # For the track centerline based on YOLOP
         "yolop": {
             "drivable_area": None
         },
-
+        # For the final output target
         "target": {
             "x": None,
             "error": None,

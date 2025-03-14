@@ -346,8 +346,6 @@ def handle_video(fname, vcz):
         calc_time_end = time.time()
         calc_time = calc_time_end - calc_time_start
 
-        SHARED["marked"] = base64.b64encode(cv2.imencode(".jpg", marked_frame)[1]).decode()
-
         # Calculate the FPS
         t1 = time.time()
         dt = t1 - t0
@@ -356,6 +354,8 @@ def handle_video(fname, vcz):
 
         # Debug drawing: the FPS
         cv2.putText(marked_frame, f"FPS: {fps:.0f} ({calc_time * 1000:.0f} ms)", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
+        SHARED["marked"] = base64.b64encode(cv2.imencode(".jpg", marked_frame)[1]).decode()
 
         # Finally, show the frame
         cv2.imshow("Frame", marked_frame)

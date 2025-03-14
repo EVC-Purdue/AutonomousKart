@@ -45,9 +45,10 @@ CAMERA_FOV = 60 # degrees
 CAMERA_FOV_SCALE_FACTOR = math.tan(util.deg_to_rad(CAMERA_FOV / 2.0))
 
 # SPI communication
-# SPI format: [sign, value] where
+# SPI format: [sign, steering, throttle] 
 #   sign = 1 if steering negative, 0 otherwise
 #   steering maps [0, CAMERA_FOV] angle to [0, 255] value
+#   throttle is the throttle percentage
 SPI_BUS = 1 # Jetson SPI1
 SPI_DEVICE = 0 # CS0
 SPI_SPEED = 500000 # 500kHz
@@ -56,6 +57,10 @@ SPI_MAX = 255 # 8 bit max value
 
 # Steering control
 DECAY_RATE = 0.3 # when the center is not found
+
+# Throttle control
+THROTTLE_LOW = 2 # percent
+THROTTLE_HIGH = 5 # percent
 
 
 # Track thresh constants 
@@ -82,6 +87,30 @@ NEW_WEIGHT = 0.1
 
 K_P = 0.6
 K_D = 0.1
+# ---------------------------------------------------------------------------- #
+
+
+# ---------------------------------------------------------------------------- #
+class ThrottleState:
+    REST = 0
+    LOW = 1
+    HIGH = 2
+
+    def __init__(self):
+        self.state = ThrottleState.REST
+
+    def set_state(self, state):
+        self.state = state
+
+    def to_spi(self):
+        if self.state == ThrottleState.REST:
+            return 0
+        elif self.state == ThrottleState.LOW:
+            return THROTTLE_LOW
+        elif self.state == ThrottleState.HIGH:
+            return THROTTLE_HIGH
+        else:
+            raise ValueError("Invalid throttle state")
 # ---------------------------------------------------------------------------- #
 
 
@@ -249,6 +278,7 @@ def handle_video(fname, vcz):
 
     state = {
         "steering": 0.0,
+        "throttle": ThrottleState(),
     }
 
     model, device, opt = yolop_detect.setup()
@@ -651,7 +681,7 @@ def image_read(model, device, opt, spi, frame, state, history):
     spi_angle = util.scale(abs(state["steering"] ), 0, CAMERA_FOV, 0, SPI_MAX)
     spi_angle = int(spi_angle)
     spi_sign = 1 if state["steering"]  < 0 else 0
-    spi_data = [spi_sign, spi_angle]
+    spi_data = [spi_sign, spi_angle, state["throttle"].to_spi()]
     if spi is not None:
         spi.xfer2(spi_data)
     print(state["steering"], spi_data)

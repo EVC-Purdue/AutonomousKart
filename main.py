@@ -7,6 +7,8 @@ import time
 import cv2
 import numpy as np
 
+import spidev
+
 import YOLOP.tools.detect as yolop_detect
 
 import util
@@ -41,6 +43,13 @@ TRACK_TARGET_WEIGHT = 1.0
 # Convert the target_x to degrees
 CAMERA_FOV = 60 # degrees
 CAMERA_FOV_SCALE_FACTOR = math.tan(util.deg_to_rad(CAMERA_FOV / 2.0))
+
+# SPI communication
+SPI_BUS = 1 # Jetson SPI1
+SPI_DEVICE = 0 # CS0
+SPI_SPEED = 500000 # 500kHz
+SPI_MODE = 0 # SPI mode 0 (CPOL=0, CPHA=0)
+SPI_MAX = 255 # 8 bit max value
 
 
 # Track thresh constants 
@@ -234,6 +243,12 @@ def handle_video(fname, vcz):
 
     model, device, opt = yolop_detect.setup()
 
+    if not vcz:
+        spi = spidev.SpiDev()
+        spi.open(0, 0)
+    else:
+        spi = None
+
     t0 = time.time()
 
     # i = 0
@@ -250,7 +265,7 @@ def handle_video(fname, vcz):
         #     continue
 
         frame_time_start = time.time()
-        marked_frame = image_read(model, device, opt, frame, history)
+        marked_frame = image_read(model, device, opt, spi, frame, history)
         frame_time_end = time.time()
 
         # Calculate the FPS
@@ -277,7 +292,7 @@ def handle_video(fname, vcz):
 
 
 # ---------------------------------------------------------------------------- #
-def image_read(model, device, opt, frame, history):
+def image_read(model, device, opt, spi, frame, history):
     marked_frame = frame.copy()
 
     # ------------------------------------------------------------------------ #
@@ -586,30 +601,27 @@ def image_read(model, device, opt, frame, history):
 
             target_x = history["target"]["x"] + dx * NEW_WEIGHT
 
-            # Convert the target_x to degrees
-            x_ratio = target_x / frame.shape[1]
-            error_x = x_ratio - 0.5
-            scaled_error_x = util.scale(error_x, -0.5, 0.5, -CAMERA_FOV_SCALE_FACTOR, CAMERA_FOV_SCALE_FACTOR)
-            angle_dif_rad_x = math.atan(scaled_error_x)
-            angle_dif_x = util.rad_to_deg(angle_dif_rad_x)
+        # Convert the target_x to degrees
+        x_ratio = target_x / frame.shape[1]
+        error_x = x_ratio - 0.5
+        scaled_error_x = util.scale(error_x, -0.5, 0.5, -CAMERA_FOV_SCALE_FACTOR, CAMERA_FOV_SCALE_FACTOR)
+        angle_dif_rad_x = math.atan(scaled_error_x)
+        angle_dif_x = util.rad_to_deg(angle_dif_rad_x)
 
-            if history["target"]["error"] is not None:
-                d_error_x = (angle_dif_x - history["target"]["error"]) / (time.time() - history["target"]["time"])
-            else:
-                d_error_x = 0.0
-            
-            history["target"]["error"] = angle_dif_x
+        if history["target"]["error"] is not None:
+            d_error_x = (angle_dif_x - history["target"]["error"]) / (time.time() - history["target"]["time"])
+        else:
+            d_error_x = 0.0
+        
+        history["target"]["error"] = angle_dif_x
 
-            total_error_x = K_P * angle_dif_x + K_D * d_error_x
-            print(f"{total_error_x:6.2}, {angle_dif_x:6.2}, {d_error_x:6.2}")
+        total_error_x = K_P * angle_dif_x + K_D * d_error_x
 
-
-            # Convert back to pixel space
-            angle_dif_rad_x = util.deg_to_rad(total_error_x)
-            pos_dif_scaled_x = math.tan(angle_dif_rad_x)
-            pos_dif_x = util.scale(pos_dif_scaled_x, -CAMERA_FOV_SCALE_FACTOR, CAMERA_FOV_SCALE_FACTOR, -0.5, 0.5)
-            pos_x = int(frame.shape[1] * (pos_dif_x + 0.5))
-            print(pos_x, target_x)
+        # Convert back to pixel space
+        angle_dif_rad_x = util.deg_to_rad(total_error_x)
+        pos_dif_scaled_x = math.tan(angle_dif_rad_x)
+        pos_dif_x = util.scale(pos_dif_scaled_x, -CAMERA_FOV_SCALE_FACTOR, CAMERA_FOV_SCALE_FACTOR, -0.5, 0.5)
+        pos_x = int(frame.shape[1] * (pos_dif_x + 0.5))
         
         history["target"]["x"] = target_x
         history["target"]["time"] = time.time()
@@ -618,6 +630,15 @@ def image_read(model, device, opt, frame, history):
         cv2.circle(marked_frame, (int(new_target_x), int(target_y)), 13, (0, 0, 0), -1)
         cv2.circle(marked_frame, (int(target_x), int(target_y)), 12, (255, 0, 255), -1)
         cv2.circle(marked_frame, (int(pos_x), int(target_y)), 10, (255, 255, 0), -1)
+
+        spi_angle = util.scale(abs(CAMERA_FOV), 0, CAMERA_FOV, 0, SPI_MAX)
+        spi_angle = int(spi_angle)
+        spi_sign = 1 if total_error_x < 0 else 0
+        spi_data = [spi_sign, spi_angle]
+        if spi is not None:
+            spi.xfer2(spi_data)
+        
+        print(total_error_x, spi_angle, spi_data)
     # ------------------------------------------------------------------------ #
 
 

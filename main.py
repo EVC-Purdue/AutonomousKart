@@ -48,7 +48,7 @@ CAMERA_FOV_SCALE_FACTOR = math.tan(util.deg_to_rad(CAMERA_FOV / 2.0))
 SPI_BUS = 1 # Jetson SPI1
 SPI_DEVICE = 0 # CS0
 SPI_SPEED = 500000 # 500kHz
-SPI_MODE = 0 # SPI mode 0 (CPOL=0, CPHA=0)
+SPI_MODE = 0b00 # SPI mode 0 (CPOL=0, CPHA=0)
 SPI_MAX = 255 # 8 bit max value
 
 
@@ -245,7 +245,7 @@ def handle_video(fname, vcz):
 
     if not vcz:
         spi = spidev.SpiDev()
-        spi.open(0, 0)
+        spi.open(SPI_BUS, SPI_DEVICE)
     else:
         spi = None
 

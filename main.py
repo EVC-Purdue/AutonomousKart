@@ -17,7 +17,7 @@ import util
 
 # ---------------------------------------------------------------------------- #
 SHOW_DEBUG_FRAMES = False
-TARGET_FPS = 60
+TARGET_FPS = 30
 
 
 # Constants for "trackvideo.mp4"
@@ -270,6 +270,7 @@ def handle_video(fname, vcz):
         frame_time_start = time.time()
         marked_frame = image_read(model, device, opt, spi, frame, history)
         frame_time_end = time.time()
+        frame_time = frame_time_end - frame_time_start
 
         # Calculate the FPS
         t1 = time.time()
@@ -278,13 +279,12 @@ def handle_video(fname, vcz):
         t0 = t1
 
         # Debug drawing: the FPS
-        cv2.putText(marked_frame, f"FPS: {fps:.0f} ({dt * 1000:.0f} ms)", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        cv2.putText(marked_frame, f"FPS: {fps:.0f} ({frame_time * 1000:.0f} ms)", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
         # Finally, show the frame
         cv2.imshow("Frame", marked_frame)
 
         # w to pause (and key to unpause), q to quit
-        frame_time = frame_time_end - frame_time_start
         wait_time = max(1, int(1000 / TARGET_FPS) - int(frame_time * 1000))
         key = cv2.waitKey(wait_time) & 0xFF
         if key == ord('w'):

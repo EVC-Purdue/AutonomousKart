@@ -46,13 +46,16 @@ CAMERA_FOV_SCALE_FACTOR = math.tan(util.deg_to_rad(CAMERA_FOV / 2.0))
 
 # SPI communication
 # SPI format: [sign, value] where
-#   sign = 1 if negative, 0 otherwise
-#   value maps [0, CAMERA_FOV] to [0, 255] 
+#   sign = 1 if steering negative, 0 otherwise
+#   steering maps [0, CAMERA_FOV] angle to [0, 255] value
 SPI_BUS = 1 # Jetson SPI1
 SPI_DEVICE = 0 # CS0
 SPI_SPEED = 500000 # 500kHz
 SPI_MODE = 0b00 # SPI mode 0 (CPOL=0, CPHA=0)
 SPI_MAX = 255 # 8 bit max value
+
+# Steering control
+DECAY_RATE = 0.3 # when the center is not found
 
 
 # Track thresh constants 
@@ -244,6 +247,10 @@ def handle_video(fname, vcz):
         }
     }
 
+    state = {
+        "steering": 0.0,
+    }
+
     model, device, opt = yolop_detect.setup()
 
     if not vcz:
@@ -268,7 +275,7 @@ def handle_video(fname, vcz):
         #     continue
 
         frame_time_start = time.time()
-        marked_frame = image_read(model, device, opt, spi, frame, history)
+        marked_frame = image_read(model, device, opt, spi, frame, state, history)
         frame_time_end = time.time()
         frame_time = frame_time_end - frame_time_start
 
@@ -295,7 +302,7 @@ def handle_video(fname, vcz):
 
 
 # ---------------------------------------------------------------------------- #
-def image_read(model, device, opt, spi, frame, history):
+def image_read(model, device, opt, spi, frame, state, history):
     marked_frame = frame.copy()
 
     # ------------------------------------------------------------------------ #
@@ -635,15 +642,19 @@ def image_read(model, device, opt, spi, frame, history):
         cv2.circle(marked_frame, (int(target_x), int(target_y)), 12, (255, 0, 255), -1)
         cv2.circle(marked_frame, (int(pos_x), int(target_y)), 10, (255, 255, 0), -1)
 
-        # Sent over SPI to the Nucleo
-        spi_angle = util.scale(abs(CAMERA_FOV), 0, CAMERA_FOV, 0, SPI_MAX)
-        spi_angle = int(spi_angle)
-        spi_sign = 1 if total_error_x < 0 else 0
-        spi_data = [spi_sign, spi_angle]
-        if spi is not None:
-            spi.xfer2(spi_data)
+        state["steering"] = total_error_x
         
-        print(total_error_x, spi_angle, spi_data)
+    else:
+        state["steering"] = state["steering"] * DECAY_RATE * (time.time() - history["target"]["time"])
+    
+    # Sent steering and throttle over SPI to the Nucleo
+    spi_angle = util.scale(abs(state["steering"] ), 0, CAMERA_FOV, 0, SPI_MAX)
+    spi_angle = int(spi_angle)
+    spi_sign = 1 if state["steering"]  < 0 else 0
+    spi_data = [spi_sign, spi_angle]
+    if spi is not None:
+        spi.xfer2(spi_data)
+    print(state["steering"], spi_data)
     # ------------------------------------------------------------------------ #
 
 

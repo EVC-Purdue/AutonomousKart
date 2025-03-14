@@ -27,12 +27,16 @@ TARGET_Y_RATIO = 6/10
 
 # Constants for "pov.mp4"
 # HORIZON_Y_RATIO = 10/36
-# KART_Y_RATIO = 32/36
+# KART_Y_RATIO = 20/36
 # BOTTOM_Y_RATIO = 19/20   # Used in grass detection
 # ON_TRACK_Y_RATIO = 18/36 # Used in track detection
 # TARGET_Y_RATIO = 3.5/10
 
 HISTORY_TIME = 1.0 # seconds
+
+# Determine the "true" target point
+GRASS_TARGET_WEIGHT = 2.0
+TRACK_TARGET_WEIGHT = 1.0
 
 
 # Track thresh constants 
@@ -68,8 +72,6 @@ class Detection:
         self.approx = approx # approximated polygon
         self.cx = cx # center x of contour
         self.cy = cy # center y of contour
-        # self.line_start_idx = line_start_idx # index in self.approx of the start of the track side edge
-        # self.line_end_idx = (line_start_idx + 1) % len(approx) # index in self.approx of the end of the track side edge
         self.edge_slope = edge_slope # slope of the track side edge
         self.camera_slope = camera_slope # slope between the bottom point and the bottom center
         self.lower_pt = lower_pt # the lower point of the track side edge
@@ -214,6 +216,11 @@ def handle_video(fname):
 
         "yolop": {
             "drivable_area": None
+        },
+
+        "target": {
+            "x": None,
+            "time": time.time()
         }
     }
 
@@ -221,7 +228,7 @@ def handle_video(fname):
 
     t0 = time.time()
 
-    i = 0
+    # i = 0
 
     while True:
         ret, frame = cap.read()
@@ -230,9 +237,9 @@ def handle_video(fname):
             print("Error reading frame...")
             break
 
-        i += 1
-        if i % 10 != 0:
-            continue
+        # i += 1
+        # if i % 10 != 0:
+        #     continue
 
         frame_time_start = time.time()
         marked_frame = image_read(model, device, opt, frame, history)
@@ -376,7 +383,7 @@ def image_read(model, device, opt, frame, history):
     # Lower number means lower on the screen
     track_detections = sorted(all_detections, key=lambda x: abs(x.camera_slope))
 
-    # grass_detection_success = False
+    grass_target_x = None
 
     # Right now only handling the cases were we know both edges
     if len(track_detections) >= 2:
@@ -469,15 +476,11 @@ def image_read(model, device, opt, frame, history):
                 cv2.circle(marked_frame, (int(intersection[0]), int(intersection[1])), 10, (0, 0, 0), -1)
                 cv2.circle(marked_frame, (int(intersection[0]), int(intersection[1])), 9, (255, 255, 255), -1)
                 cv2.line(marked_frame, bottom_center, (int(intersection[0]), int(intersection[1])), (255, 255, 255), 2)
-                # grass_detection_success = True
+                grass_target_x = intersection[0]
     # ------------------------------------------------------------------------ #
 
 
     # ------------------------------------------------------------------------ #
-    # If we didn't find 2 valid grass edges (track edges), we will try to find the track itself
-    # if not grass_detection_success:
-    # cv2.rectangle(marked_frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 4)
-
     contours, track_thresh = find_track_contours(frame, grass_thresh)
 
     # Debug drawing: the track mask
@@ -502,6 +505,8 @@ def image_read(model, device, opt, frame, history):
     history["track"]["medians"] = {y: (x, t) for y, (x, t) in history["track"]["medians"].items() if now - t < HISTORY_TIME}
 
     track_mask = np.zeros_like(track_thresh)
+
+    track_target_x = None
 
     if best_cnt is not None:
         # Fill in the track mask with only the best contour
@@ -542,6 +547,7 @@ def image_read(model, device, opt, frame, history):
         if target_x is not None:
             cv2.circle(marked_frame, (int(target_x), int(target_y)), 10, (0, 0, 0), -1)
             cv2.circle(marked_frame, (int(target_x), int(best_y)), 9, (0, 255, 255), -1)
+            track_target_x = target_x
 
         # Debug drawing: the point we are checking must be on the track
         cv2.circle(marked_frame, on_track_pt, 4, (0, 255, 255), -1)
@@ -549,21 +555,50 @@ def image_read(model, device, opt, frame, history):
 
 
     # ------------------------------------------------------------------------ #
-    # Run YOLOP inference and convert the result to a compatible mask
-    drivable_area = yolop_detect.run_detection(model, device, opt, frame)
-    drivable_area = cv2.resize(drivable_area, (frame.shape[1], frame.shape[0]))
-    drivable_area = drivable_area.astype(np.uint8) * 255
-
-    if history["yolop"]["drivable_area"] is not None:
-        total_drivable_area = cv2.bitwise_or(drivable_area, history["yolop"]["drivable_area"])
+    if grass_target_x is not None and track_target_x is not None:
+        total_x = grass_target_x * GRASS_TARGET_WEIGHT + track_target_x * TRACK_TARGET_WEIGHT
+        new_target_x = total_x / (GRASS_TARGET_WEIGHT + TRACK_TARGET_WEIGHT)
+    elif grass_target_x is not None:
+        new_target_x = grass_target_x
+    elif track_target_x is not None:
+        new_target_x = track_target_x
     else:
-        total_drivable_area = drivable_area
-    history["yolop"]["drivable_area"] = drivable_area
+        new_target_x = None
+        cv2.rectangle(marked_frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 20)
+    
+    if new_target_x is not None:
+        if history["target"]["x"] is None or time.time() - history["target"]["time"] > HISTORY_TIME:
+            target_x = new_target_x
+        else:
+            dx = new_target_x - history["target"]["x"]
 
-    # Debug drawing: yolop detection
-    track_colored = np.zeros_like(frame, dtype=np.uint8)
-    track_colored[:, :, 2] = total_drivable_area
-    marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 1.0, 0)
+            target_x = history["target"]["x"] + dx * K_P
+        
+        history["target"]["x"] = target_x
+        history["target"]["time"] = time.time()
+    
+    if target_x is not None:
+        cv2.circle(marked_frame, (int(new_target_x), int(target_y)), 13, (0, 0, 0), -1)
+        cv2.circle(marked_frame, (int(target_x), int(target_y)), 12, (255, 0, 255), -1)
+    # ------------------------------------------------------------------------ #
+
+
+    # ------------------------------------------------------------------------ #
+    # # Run YOLOP inference and convert the result to a compatible mask
+    # drivable_area = yolop_detect.run_detection(model, device, opt, frame)
+    # drivable_area = cv2.resize(drivable_area, (frame.shape[1], frame.shape[0]))
+    # drivable_area = drivable_area.astype(np.uint8) * 255
+
+    # if history["yolop"]["drivable_area"] is not None:
+    #     total_drivable_area = cv2.bitwise_or(drivable_area, history["yolop"]["drivable_area"])
+    # else:
+    #     total_drivable_area = drivable_area
+    # history["yolop"]["drivable_area"] = drivable_area
+
+    # # Debug drawing: yolop detection
+    # track_colored = np.zeros_like(frame, dtype=np.uint8)
+    # track_colored[:, :, 2] = total_drivable_area
+    # marked_frame = cv2.addWeighted(marked_frame, 1.0, track_colored, 1.0, 0)
     # ------------------------------------------------------------------------ #
 
     # Return the frame with all the debug drawings

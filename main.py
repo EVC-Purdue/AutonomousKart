@@ -564,8 +564,10 @@ def image_read(model, device, opt, frame, history):
         new_target_x = track_target_x
     else:
         new_target_x = None
-        cv2.rectangle(marked_frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 20)
+        cv2.rectangle(marked_frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 10)
     
+    target_x = None
+
     if new_target_x is not None:
         if history["target"]["x"] is None or time.time() - history["target"]["time"] > HISTORY_TIME:
             target_x = new_target_x

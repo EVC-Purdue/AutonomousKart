@@ -620,7 +620,7 @@ def image_read(model, device, opt, spi, frame, history):
 
         total_error_x = K_P * angle_dif_x + K_D * d_error_x
 
-        # Convert back to pixel space
+        # Convert back to pixel space for debug drawing
         angle_dif_rad_x = util.deg_to_rad(total_error_x)
         pos_dif_scaled_x = math.tan(angle_dif_rad_x)
         pos_dif_x = util.scale(pos_dif_scaled_x, -CAMERA_FOV_SCALE_FACTOR, CAMERA_FOV_SCALE_FACTOR, -0.5, 0.5)
@@ -630,10 +630,12 @@ def image_read(model, device, opt, spi, frame, history):
         history["target"]["time"] = time.time()
     
     if target_x is not None:
+        # Debug drawing: the target point
         cv2.circle(marked_frame, (int(new_target_x), int(target_y)), 13, (0, 0, 0), -1)
         cv2.circle(marked_frame, (int(target_x), int(target_y)), 12, (255, 0, 255), -1)
         cv2.circle(marked_frame, (int(pos_x), int(target_y)), 10, (255, 255, 0), -1)
 
+        # Sent over SPI to the Nucleo
         spi_angle = util.scale(abs(CAMERA_FOV), 0, CAMERA_FOV, 0, SPI_MAX)
         spi_angle = int(spi_angle)
         spi_sign = 1 if total_error_x < 0 else 0

@@ -196,7 +196,7 @@ def find_grass_contours(frame, old_dilated):
 
 
 # ---------------------------------------------------------------------------- #
-def handle_video(fname):
+def handle_video(fname, vcz):
     """Open video, read frames, process each frame, and display"""
 
     cap = cv2.VideoCapture(fname)
@@ -648,12 +648,13 @@ def image_read(model, device, opt, frame, history):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-f", "--file", required=True, help="open file")
+    ap.add_argument("-z", "--video-capture-zero", required=False, help="testing version", action="store_true")
     args = vars(ap.parse_args())
     # ------------------------------------------------------------------------ #
 
     # ------------------------------------------------------------------------ #
     # image_read(args["file"])
-    handle_video(args["file"])
+    handle_video(args["file"], args["video_capture_zero"])
     # ------------------------------------------------------------------------ #
 
 

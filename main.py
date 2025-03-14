@@ -274,10 +274,10 @@ def handle_video(fname, vcz):
         # if i % 10 != 0:
         #     continue
 
-        frame_time_start = time.time()
+        calc_time_start = time.time()
         marked_frame = image_read(model, device, opt, spi, frame, state, history)
-        frame_time_end = time.time()
-        frame_time = frame_time_end - frame_time_start
+        calc_time_end = time.time()
+        calc_time = calc_time_end - calc_time_start
 
         # Calculate the FPS
         t1 = time.time()
@@ -286,13 +286,13 @@ def handle_video(fname, vcz):
         t0 = t1
 
         # Debug drawing: the FPS
-        cv2.putText(marked_frame, f"FPS: {fps:.0f} ({frame_time * 1000:.0f} ms)", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        cv2.putText(marked_frame, f"FPS: {fps:.0f} ({calc_time * 1000:.0f} ms)", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
         # Finally, show the frame
         cv2.imshow("Frame", marked_frame)
 
         # w to pause (and key to unpause), q to quit
-        wait_time = max(1, int(1000 / TARGET_FPS) - int(frame_time * 1000))
+        wait_time = max(1, int(1000 / TARGET_FPS) - int(calc_time * 1000))
         key = cv2.waitKey(wait_time) & 0xFF
         if key == ord('w'):
             cv2.waitKey(-1)

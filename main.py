@@ -3,9 +3,14 @@ print("STARTING...")
 import argparse
 import math
 import time
+import threading
+import base64
 
 import cv2
 import numpy as np
+
+import flask
+import flask_cors # type: ignore[import]
 
 import spidev
 
@@ -81,6 +86,8 @@ GRASS_DILATE_KERNEL = (10, 10)
 GRASS_DILATE_ITERATIONS = 2
 # GRASS_EDGE_RATIO = 1/3
 
+PORT = 3000
+
 
 # The new value chances by K_P times the change from the previous value
 NEW_WEIGHT = 0.1
@@ -132,6 +139,32 @@ class GrassDetection:
         self.lower_pt = lower_pt # the lower point of the track side edge
         self.higher_pt = higher_pt # the higher point of the track side edge
 # ---------------------------------------------------------------------------- #
+
+
+# ---------------------------------------------------------------------------- #
+SHARED = {
+    "marked": None
+}
+
+
+def server():
+    app = flask.Flask(__name__)
+    flask_cors.CORS(app)
+
+    @app.route("/")
+    def index():
+        return flask.jsonify({
+            "marked": SHARED["marked"]
+        }) 
+        # return flask.render_template("index.html")
+    
+    @app.route("/marked")
+    def marked():
+        return flask.jsonify(SHARED["marked"])
+    
+    app.run(host="0.0.0.0", port=PORT)
+# ---------------------------------------------------------------------------- #
+
 
 
 # ---------------------------------------------------------------------------- #
@@ -312,6 +345,8 @@ def handle_video(fname, vcz):
         marked_frame = image_read(model, device, opt, spi, frame, state, history)
         calc_time_end = time.time()
         calc_time = calc_time_end - calc_time_start
+
+        SHARED["marked"] = base64.b64encode(cv2.imencode(".jpg", marked_frame)[1]).decode()
 
         # Calculate the FPS
         t1 = time.time()
@@ -694,7 +729,7 @@ def image_read(model, device, opt, spi, frame, state, history):
     if spi is not None:
         spi.xfer2(spi_data)
     
-    print(state["steering"], spi_data)
+    # print(state["steering"], spi_data)
     # ------------------------------------------------------------------------ #
 
 
@@ -730,10 +765,16 @@ def main():
     # ------------------------------------------------------------------------ #
 
     # ------------------------------------------------------------------------ #
-    # image_read(args["file"])
+    server_thread = threading.Thread(target=server)
+    server_thread.daemon = True
+    server_thread.start()
+
     handle_video(args["file"], args["video_capture_zero"])
     # ------------------------------------------------------------------------ #
 
+    # ------------------------------------------------------------------------ #
+    print("Press CTRL-C to finish exit...")
+    # ------------------------------------------------------------------------ #
 
     # ------------------------------------------------------------------------ #
     print("DONE...")

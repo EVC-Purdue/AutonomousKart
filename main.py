@@ -45,6 +45,9 @@ CAMERA_FOV = 60 # degrees
 CAMERA_FOV_SCALE_FACTOR = math.tan(util.deg_to_rad(CAMERA_FOV / 2.0))
 
 # SPI communication
+# SPI format: [sign, value] where
+#   sign = 1 if negative, 0 otherwise
+#   value maps [0, CAMERA_FOV] to [0, 255] 
 SPI_BUS = 1 # Jetson SPI1
 SPI_DEVICE = 0 # CS0
 SPI_SPEED = 500000 # 500kHz

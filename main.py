@@ -153,16 +153,15 @@ def server():
 
     @app.route("/")
     def index():
-        return flask.jsonify({
-            "marked": SHARED["marked"]
-        }) 
-        # return flask.render_template("index.html")
+        return flask.render_template("index.html")
     
     @app.route("/marked")
     def marked():
-        return flask.jsonify(SHARED["marked"])
+        return flask.jsonify({
+            "marked": SHARED["marked"]
+        })
     
-    app.run(host="0.0.0.0", port=PORT)
+    app.run(host="0.0.0.0", port=PORT, debug=False)
 # ---------------------------------------------------------------------------- #
 
 

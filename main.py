@@ -83,7 +83,7 @@ K_D = 0.1
 
 
 # ---------------------------------------------------------------------------- #
-class Detection:
+class GrassDetection:
     """Structure to hold detection information"""
 
     def __init__(self, cnt, approx, cx, cy, edge_slope, camera_slope, lower_pt, higher_pt):
@@ -402,7 +402,7 @@ def image_read(model, device, opt, spi, frame, history):
         # if (camera_slope > 0 and cx > frame.shape[1] // 2) or (camera_slope < 0 and cx < frame.shape[1] // 2):
         #     continue
 
-        detection = Detection(cnt, approx, cx, cy, edge_slope, camera_slope, lower_pt, higher_pt)
+        detection = GrassDetection(cnt, approx, cx, cy, edge_slope, camera_slope, lower_pt, higher_pt)
         all_detections.append(detection)
 
     # Sort by camera slope (slope between the bottom center and the bottom point of the track edge)

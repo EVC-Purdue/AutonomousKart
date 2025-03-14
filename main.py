@@ -59,7 +59,7 @@ GRASS_DILATE_ITERATIONS = 2
 
 
 # The new value chances by K_P times the change from the previous value
-K_P = 0.1
+NEW_WEIGHT = 0.1
 # ---------------------------------------------------------------------------- #
 
 
@@ -433,10 +433,10 @@ def image_read(model, device, opt, frame, history):
                 dx_bottom = lower_midpoint[0] - history["grass"]["bot"]["x"]
                 dy_bottom = lower_midpoint[1] - history["grass"]["bot"]["y"]
 
-                x_top = history["grass"]["top"]["x"] + dx_top * K_P
-                y_top = history["grass"]["top"]["y"] + dy_top * K_P
-                x_bot = history["grass"]["bot"]["x"] + dx_bottom * K_P
-                y_bot = history["grass"]["bot"]["y"] + dy_bottom * K_P
+                x_top = history["grass"]["top"]["x"] + dx_top * NEW_WEIGHT
+                y_top = history["grass"]["top"]["y"] + dy_top * NEW_WEIGHT
+                x_bot = history["grass"]["bot"]["x"] + dx_bottom * NEW_WEIGHT
+                y_bot = history["grass"]["bot"]["y"] + dy_bottom * NEW_WEIGHT
 
             history["grass"]["top"]["x"] = x_top
             history["grass"]["top"]["y"] = y_top
@@ -529,7 +529,7 @@ def image_read(model, device, opt, frame, history):
                 history["track"]["medians"][y] = (x, time.time())
             else:
                 dx = x - last_x[0]
-                x = last_x[0] + dx * K_P
+                x = last_x[0] + dx * NEW_WEIGHT
                 history["track"]["medians"][y] = (x, time.time())
 
                 cv2.circle(marked_frame, (int(x), int(y)), 3, (0, 0, 255), -1)
@@ -574,7 +574,7 @@ def image_read(model, device, opt, frame, history):
         else:
             dx = new_target_x - history["target"]["x"]
 
-            target_x = history["target"]["x"] + dx * K_P
+            target_x = history["target"]["x"] + dx * NEW_WEIGHT
         
         history["target"]["x"] = target_x
         history["target"]["time"] = time.time()

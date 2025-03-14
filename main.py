@@ -38,6 +38,10 @@ HISTORY_TIME = 1.0 # seconds
 GRASS_TARGET_WEIGHT = 2.0
 TRACK_TARGET_WEIGHT = 1.0
 
+# Convert the target_x to degrees
+CAMERA_FOV = 60 # degrees
+CAMERA_FOV_SCALE_FACTOR = math.tan(util.deg_to_rad(CAMERA_FOV / 2.0))
+
 
 # Track thresh constants 
 TRACK_MAX_TOTAL_DIFF = 85 
@@ -60,6 +64,9 @@ GRASS_DILATE_ITERATIONS = 2
 
 # The new value chances by K_P times the change from the previous value
 NEW_WEIGHT = 0.1
+
+K_P = 0.6
+K_D = 0.1
 # ---------------------------------------------------------------------------- #
 
 
@@ -220,6 +227,7 @@ def handle_video(fname):
 
         "target": {
             "x": None,
+            "error": None,
             "time": time.time()
         }
     }
@@ -555,6 +563,7 @@ def image_read(model, device, opt, frame, history):
 
 
     # ------------------------------------------------------------------------ #
+    # Integrate the grass and track targets
     if grass_target_x is not None and track_target_x is not None:
         total_x = grass_target_x * GRASS_TARGET_WEIGHT + track_target_x * TRACK_TARGET_WEIGHT
         new_target_x = total_x / (GRASS_TARGET_WEIGHT + TRACK_TARGET_WEIGHT)
@@ -571,10 +580,36 @@ def image_read(model, device, opt, frame, history):
     if new_target_x is not None:
         if history["target"]["x"] is None or time.time() - history["target"]["time"] > HISTORY_TIME:
             target_x = new_target_x
+            pos_x = target_x
         else:
             dx = new_target_x - history["target"]["x"]
 
             target_x = history["target"]["x"] + dx * NEW_WEIGHT
+
+            # Convert the target_x to degrees
+            x_ratio = target_x / frame.shape[1]
+            error_x = x_ratio - 0.5
+            scaled_error_x = util.scale(error_x, -0.5, 0.5, -CAMERA_FOV_SCALE_FACTOR, CAMERA_FOV_SCALE_FACTOR)
+            angle_dif_rad_x = math.atan(scaled_error_x)
+            angle_dif_x = util.rad_to_deg(angle_dif_rad_x)
+
+            if history["target"]["error"] is not None:
+                d_error_x = (angle_dif_x - history["target"]["error"]) / (time.time() - history["target"]["time"])
+            else:
+                d_error_x = 0.0
+            
+            history["target"]["error"] = angle_dif_x
+
+            total_error_x = K_P * angle_dif_x + K_D * d_error_x
+            print(f"{total_error_x:6.2}, {angle_dif_x:6.2}, {d_error_x:6.2}")
+
+
+            # Convert back to pixel space
+            angle_dif_rad_x = util.deg_to_rad(total_error_x)
+            pos_dif_scaled_x = math.tan(angle_dif_rad_x)
+            pos_dif_x = util.scale(pos_dif_scaled_x, -CAMERA_FOV_SCALE_FACTOR, CAMERA_FOV_SCALE_FACTOR, -0.5, 0.5)
+            pos_x = int(frame.shape[1] * (pos_dif_x + 0.5))
+            print(pos_x, target_x)
         
         history["target"]["x"] = target_x
         history["target"]["time"] = time.time()
@@ -582,6 +617,7 @@ def image_read(model, device, opt, frame, history):
     if target_x is not None:
         cv2.circle(marked_frame, (int(new_target_x), int(target_y)), 13, (0, 0, 0), -1)
         cv2.circle(marked_frame, (int(target_x), int(target_y)), 12, (255, 0, 255), -1)
+        cv2.circle(marked_frame, (int(pos_x), int(target_y)), 10, (255, 255, 0), -1)
     # ------------------------------------------------------------------------ #
 
 

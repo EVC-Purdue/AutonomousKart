@@ -1,3 +1,6 @@
+import math
+
+
 def line_intersection(p1, p2, p3, p4):
     def cross_product(a, b):
         return a[0] * b[1] - a[1] * b[0]
@@ -41,3 +44,9 @@ def extend_segment(p1, p2, y_low, y_high):
     x_high = x1 + slope * (y_high - y1)
     
     return (x_low, y_low), (x_high, y_high)
+
+def clamp(n, smallest, largest): return max(smallest, min(n, largest))
+def scale(n, lower_from, upper_from, lower_to, upper_to): return (n - lower_from) / (upper_from - lower_from) * (upper_to - lower_to) + lower_to
+
+def deg_to_rad(deg): return deg * math.pi / 180.0
+def rad_to_deg(rad): return rad * 180.0 / math.pi

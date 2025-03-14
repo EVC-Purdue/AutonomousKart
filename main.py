@@ -678,12 +678,16 @@ def image_read(model, device, opt, spi, frame, state, history):
         state["steering"] = state["steering"] * DECAY_RATE * (time.time() - history["target"]["time"])
     
     # Sent steering and throttle over SPI to the Nucleo
+    if state["throttle"].state == ThrottleState.REST and spi is not None:
+        state["steering"] = 0.0
+    
     spi_angle = util.scale(abs(state["steering"] ), 0, CAMERA_FOV, 0, SPI_MAX)
     spi_angle = int(spi_angle)
     spi_sign = 1 if state["steering"]  < 0 else 0
     spi_data = [spi_sign, spi_angle, state["throttle"].to_spi()]
     if spi is not None:
         spi.xfer2(spi_data)
+    
     print(state["steering"], spi_data)
     # ------------------------------------------------------------------------ #
 

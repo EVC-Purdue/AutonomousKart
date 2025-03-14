@@ -102,6 +102,10 @@ class ThrottleState:
     def set_state(self, state):
         self.state = state
 
+    def set_on(self, state):
+        if self.state != ThrottleState.REST:
+            self.state = state
+
     def to_spi(self):
         if self.state == ThrottleState.REST:
             return 0
@@ -673,11 +677,11 @@ def image_read(model, device, opt, spi, frame, state, history):
         cv2.circle(marked_frame, (int(pos_x), int(target_y)), 10, (255, 255, 0), -1)
 
         state["steering"] = total_error_x
-        state["throttle"].set_state(ThrottleState.HIGH)
+        state["throttle"].set_on(ThrottleState.HIGH)
         
     else:
         state["steering"] = state["steering"] * DECAY_RATE * (time.time() - history["target"]["time"])
-        state["throttle"].set_state(ThrottleState.LOW)
+        state["throttle"].set_on(ThrottleState.LOW)
     
     # Sent steering and throttle over SPI to the Nucleo
     if state["throttle"].state == ThrottleState.REST and spi is not None:

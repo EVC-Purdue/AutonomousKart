@@ -7,7 +7,6 @@
   "workspaceFolder": "/ws",
   "containerEnv": {
     "ROS_DOMAIN_ID": "42",
-    "RMW_IMPLEMENTATION": "rmw_cyclonedds_cpp",
     "ROS_LOCALHOST_ONLY": "1"
   },
   "customizations": {

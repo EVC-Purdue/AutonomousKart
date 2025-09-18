@@ -1,7 +1,7 @@
 version: "3.8"
 services:
   dev:
-    image: ghcr.io/evc-purdue/ros2-humble-dev:smanor-devcontainers
+    image: ghcr.io/evc-purdue/ros2-humble-dev:sha-4be92b8
     container_name: ros2-dev
     hostname: ros2-dev
     volumes:
@@ -10,7 +10,6 @@ services:
     environment:
       - ROS_DISTRO=humble
       - ROS_DOMAIN_ID=42
-      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - ROS_LOCALHOST_ONLY=1
     stdin_open: true
     tty: true

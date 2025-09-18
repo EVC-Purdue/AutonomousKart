@@ -1,7 +1,7 @@
 version: "3.8"
 services:
   dev:
-    image: ghcr.io/evc-purdue/ros2-humble-dev:sha-4be92b8
+    image: ghcr.io/evc-purdue/ros2-humble-dev:latest
     container_name: ros2-dev
     hostname: ros2-dev
     volumes:

@@ -1,0 +1,31 @@
+{
+  "name": "ROS2 rclpy Dev",
+  "dockerComposeFile": [
+    "../compose/docker-compose.yml"
+  ],
+  "service": "dev",
+  "workspaceFolder": "/ws",
+  "containerEnv": {
+    "ROS_DOMAIN_ID": "42",
+    "RMW_IMPLEMENTATION": "rmw_cyclonedds_cpp",
+    "ROS_LOCALHOST_ONLY": "1"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker",
+        "foxglove.vscode-foxglove"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/ws/.venv/bin/python",
+        "python.analysis.extraPaths": [
+          "/ws/install"
+        ]
+      }
+    }
+  },
+  "postCreateCommand": "bash /ws/scripts/devcontainer_post_create.sh",
+  "postAttachCommand": "bash /ws/scripts/devcontainer_post_attach.sh"
+}

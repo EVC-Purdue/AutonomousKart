@@ -10,7 +10,7 @@ on:
       - "requirements.txt"
       - ".devcontainer/**"
       - "scripts/**"
-      - ".github/workflows/build-image.yml"
+      - ".github/workflows/build-devcontainer.yml"
   workflow_dispatch:
 
 env:

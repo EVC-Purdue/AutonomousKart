@@ -2,7 +2,7 @@ name: Build and Push devcontainer image
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "smanor/devcontainers" ]
     tags: [ "v*", "ros2-*" ]
     paths:
       - "docker/**"

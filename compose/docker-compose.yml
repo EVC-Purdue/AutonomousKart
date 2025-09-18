@@ -1,15 +1,9 @@
 version: "3.8"
 services:
   dev:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      args:
-        ROS_DISTRO: humble
     image: ghcr.io/evc-purdue/ros2-humble-dev:latest
     container_name: ros2-dev
     hostname: ros2-dev
-    # Map repo into /ws so colcon sees src/
     volumes:
       - ../:/ws
       - ros_cache:/root/.cache
@@ -20,8 +14,6 @@ services:
       - ROS_LOCALHOST_ONLY=1
     stdin_open: true
     tty: true
-    # For Linux you can use host networking; on Win/macOS it's emulated.
     network_mode: host
-
 volumes:
   ros_cache:

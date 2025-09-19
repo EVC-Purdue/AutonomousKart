@@ -1,0 +1,18 @@
+version: "3.8"
+services:
+  dev:
+    image: ghcr.io/evc-purdue/ros2-humble-dev:latest
+    container_name: ros2-dev
+    hostname: ros2-dev
+    volumes:
+      - ../:/ws
+      - ros_cache:/root/.cache
+    environment:
+      - ROS_DISTRO=humble
+      - ROS_DOMAIN_ID=42
+      - ROS_LOCALHOST_ONLY=1
+    stdin_open: true
+    tty: true
+    network_mode: host
+volumes:
+  ros_cache:

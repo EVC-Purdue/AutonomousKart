@@ -5,6 +5,9 @@ from setuptools import setup
 
 
 package_name = "bringup"
+from setuptools import find_packages, setup
+
+package_name = 'bringup'
 
 setup(
     name=package_name,
@@ -18,6 +21,9 @@ setup(
     ],
     install_requires=["setuptools"],
     zip_safe=True,
+    maintainer='Purdue EVC',
+    maintainer_email='shay.manor@gmail.com',
+    license='Apache-2.0',
     description="Launch files and params for autonomous cart bring-up",
     tests_require=["pytest"],
 )

@@ -24,6 +24,6 @@ setup(
     maintainer='Purdue EVC',
     maintainer_email='shay.manor@gmail.com',
     license='Apache-2.0',
-    description="Launch files and params for autonomous cart bring-up",
+    description="Launch files and params for autonomous kart bring-up",
     tests_require=["pytest"],
 )

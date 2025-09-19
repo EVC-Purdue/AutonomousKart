@@ -1,1 +1,1 @@
-# Publishes cart telemetry and status
+# Publishes kart telemetry and status

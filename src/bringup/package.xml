@@ -3,7 +3,7 @@
 <package format="3">
   <name>bringup</name>
   <version>0.0.1</version>
-  <description>Launch files and params for autonomous cart bring-up</description>
+  <description>Launch files and params for autonomous kart bring-up</description>
   <maintainer email="shay.manor@gmail.com">root</maintainer>
   <license>Apache-2.0</license>
 

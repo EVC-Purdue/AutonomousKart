@@ -1,1 +1,0 @@
-# Message template for Steering/throttle/brake command

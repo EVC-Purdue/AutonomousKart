@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>bringup</name>
+  <name>autonomous_kart</name>
   <version>0.0.1</version>
-  <description>Launch files and params for autonomous kart bring-up</description>
+  <description>Package containing all nodes for driving in different states.</description>
   <maintainer email="shay.manor@gmail.com">root</maintainer>
   <license>Apache-2.0</license>
 

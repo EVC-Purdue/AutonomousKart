@@ -6,7 +6,17 @@ package_name = 'autonomous_kart'
 setup(
     name=package_name,
     version="0.0.1",
-    packages=find_packages(),
+    packages=[
+        'autonomous_kart',
+        'autonomous_kart.nodes',
+        'autonomous_kart.nodes.motor',
+        'autonomous_kart.nodes.steering',
+        'autonomous_kart.nodes.camera',
+        'autonomous_kart.nodes.gps',
+        'autonomous_kart.nodes.pathfinder',
+        'autonomous_kart.nodes.opencv_pathfinder',
+        'autonomous_kart.nodes.3dgs_localization',
+    ],
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),

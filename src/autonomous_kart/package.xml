@@ -7,6 +7,11 @@
   <maintainer email="shay.manor@gmail.com">root</maintainer>
   <license>Apache-2.0</license>
 
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

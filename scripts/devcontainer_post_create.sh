@@ -3,6 +3,19 @@ set -euo pipefail
 
 : "${ROS_DISTRO:=humble}"
 
+if [ -d "/ws/.venv" ]; then
+    rm -rf /ws/.venv
+fi
+python3 -m venv /ws/.venv --system-site-packages
+source /ws/.venv/bin/activate
+pip install -r /ws/requirements.txt
+
+# Add ROS2 python packages to interpreter to make life easier
+cat > /ws/.venv/lib/python3.10/site-packages/ros2.pth << EOF
+/opt/ros/humble/lib/python3.10/site-packages
+/opt/ros/humble/local/lib/python3.10/dist-packages
+EOF
+
 # Source ROS and prep workspace
 if [ -f "/opt/ros/humble/setup.bash" ]; then
   source "/opt/ros/humble/setup.bash"

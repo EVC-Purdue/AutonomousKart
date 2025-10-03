@@ -1,1 +1,0 @@
-# manual control node

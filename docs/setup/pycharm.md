@@ -43,5 +43,5 @@ This guide walks you through setting up the EVC 2025 development environment usi
 8. **Set Python Interpreter**  
    - Go to the bottom right of your screen.
      - If it does not say `Python 3.10` go to `add new interpreter -> add local interpreter` and add `python3.10`
-     ![img.png](pycharm-python-version.png)
+     ![img.png](images/pycharm-python-version.png)
 

@@ -1,1 +1,4 @@
 # Camera config settings
+camera_params:
+  ros_parameters:
+    FPS: 6

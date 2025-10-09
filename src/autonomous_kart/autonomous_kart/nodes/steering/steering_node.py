@@ -18,7 +18,7 @@ class SteeringNode(Node):
             10
         )
 
-        # Publisher for motor speed
+        # Publisher for steering angular velocity
         self.turn_pub = self.create_publisher(
             Twist,
             'turn_angle',
@@ -27,7 +27,7 @@ class SteeringNode(Node):
 
         self.current_angle = Twist()
 
-        self.get_logger().info(f'Motor Node started - Mode: {"SIM" if self.sim_mode else "REAL"}')
+        self.get_logger().info(f'Steering Node started - Mode: {"SIM" if self.sim_mode else "REAL"}')
 
     def cmd_vel_callback(self, msg: Twist):
         """Receive speed commands and publish current speed"""
@@ -39,19 +39,19 @@ class SteeringNode(Node):
         )
 
         if self.sim_mode:
-            self.control_sim_motors(msg)
+            self.control_sim_steering(msg)
         else:
-            self.control_real_motors(msg)
+            self.control_real_steering(msg)
 
         self.speed_pub.publish(self.current_angle)
 
-    def control_sim_motors(self, cmd: Twist):
+    def control_sim_steering(self, cmd: Twist):
         """Simulation mode - just log the command for now"""
-        self.get_logger().debug(f'SIM: Motors set to commanded angle: L={cmd.linear.x} A={cmd.angular.z}')
+        self.get_logger().debug(f'SIM: Steering set to commanded angle: L={cmd.linear.x} A={cmd.angular.z}')
 
-    def control_real_motors(self, cmd: Twist):
+    def control_real_steering(self, cmd: Twist):
         """Real mode - control actual hardware here"""
-        self.get_logger().debug(f'REAL: Motors set to commanded angle: L={cmd.linear.x} A={cmd.angular.z}')
+        self.get_logger().debug(f'REAL: Steering set to commanded angle: L={cmd.linear.x} A={cmd.angular.z}')
 
 
 def main(args=None):

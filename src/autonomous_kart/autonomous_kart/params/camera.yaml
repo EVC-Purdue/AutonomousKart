@@ -1,4 +1,5 @@
 # Camera config settings
-camera_params:
-  ros_parameters:
-    FPS: 6
+camera_node:
+  ros__parameters:
+    simulation_mode: false  # set later
+    fps: 30.0  # float

@@ -29,7 +29,7 @@ class SteeringNode(Node):
 
         self.get_logger().info(f'Steering Node started - Mode: {"SIM" if self.sim_mode else "REAL"}')
 
-    def cmd_vel_callback(self, msg: Twist):
+    def cmd_turn_callback(self, msg: Twist):
         """Receive speed commands and publish current speed"""
 
         self.current_angle = msg
@@ -43,7 +43,7 @@ class SteeringNode(Node):
         else:
             self.control_real_steering(msg)
 
-        self.speed_pub.publish(self.current_angle)
+        self.speed_pubturn_pub.publish(self.current_angle)
 
     def control_sim_steering(self, cmd: Twist):
         """Simulation mode - just log the command for now"""

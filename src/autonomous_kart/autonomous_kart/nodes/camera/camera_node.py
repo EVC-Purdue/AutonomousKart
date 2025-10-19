@@ -3,6 +3,7 @@ import time
 
 import cv2
 import rclpy
+from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from sensor_msgs.msg import Image
@@ -16,12 +17,12 @@ class CameraNode(Node):
         self.logger = self.get_logger()
 
         self.declare_parameter("simulation_mode", True)
-        self.declare_parameter("fps", 30.0)
+        self.declare_parameter("fps", 60.0)
         self.fps = self.get_parameter("fps").value
         self.frame_counter = 0
 
         if self.fps == 0:  # div by 0 error later
-            self.fps = 30
+            self.fps = 60
 
         self.sim_mode = self.get_parameter("simulation_mode").value
 
@@ -29,9 +30,10 @@ class CameraNode(Node):
 
         # Publisher for steering angular velocity
         qos = QoSProfile(
-            depth=30,
+            depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.VOLATILE
+            durability=DurabilityPolicy.VOLATILE,
+            lifespan=Duration(seconds=0, nanoseconds=int(1e9 / self.fps))
         )
         self.image_pub = self.create_publisher(Image, "camera/image_raw", qos)
 
@@ -78,7 +80,7 @@ class CameraNode(Node):
                     self.logger.warning("Too slow frames - skipping")
                 if self.frame_counter % self.fps == 0:
                     now = time.time()
-                    actual_rate = 10 / ((now - self.last_callback_time if self.last_callback_time else 0) if self.last_callback_time else 1)
+                    actual_rate = 60 / ((now - self.last_callback_time if self.last_callback_time else 0) if self.last_callback_time else 1)
                     self.logger.info(f"Published {self.frame_counter} frames, actual rate: {actual_rate:.1f} fps")
                     self.last_callback_time = now
         else:
@@ -102,7 +104,7 @@ class CameraNode(Node):
                 ret, frame = self.cap.read()
             else:
                 height, width = frame.shape[:2]
-                target_width = 320
+                target_width = 480
                 target_height = int(height * (target_width / width))
                 resized = cv2.resize(frame, (target_width, target_height))
                 msg = self.bridge.cv2_to_imgmsg(resized, "bgr8")

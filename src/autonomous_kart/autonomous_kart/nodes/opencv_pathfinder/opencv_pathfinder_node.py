@@ -1,6 +1,7 @@
 import time
 
 from cv_bridge import CvBridge
+from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 
 import rclpy
@@ -12,15 +13,18 @@ from sensor_msgs.msg import Image
 class PathfinderNode(Node):
     def __init__(self):
         super().__init__('opencv_pathfinder_node')
+        self.last_log_time = 0
+        self.frames_since_last_log = 0
         self.logger = self.get_logger()
         self.bridge = CvBridge()
         self.frame_count = 0
         self.total_time = 0
 
         qos = QoSProfile(
-            depth=5,
+            depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.VOLATILE
+            durability=DurabilityPolicy.VOLATILE,
+            lifespan=Duration(seconds=0, nanoseconds=int(1e9 / 60))  # TODO: Make this not hardcoded
         )
 
         # Subscribe to camera
@@ -36,12 +40,20 @@ class PathfinderNode(Node):
     def image_callback(self, msg):
         frame = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         self.frame_count += 1
-        msg_time = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9
-        current_time = self.get_clock().now().to_msg()
-        current_time_sec = current_time.sec + current_time.nanosec / 1e9
-        self.logger.info(f"Received {self.frame_count} frames, size: {frame.shape}")
-        self.logger.info(f"Average Time: {self.total_time / self.frame_count if self.frame_count else 1}")
-        self.total_time += current_time_sec - msg_time
+        self.frames_since_last_log += 1
+
+        # Calculate FPS every second
+        current_time = self.get_clock().now()
+        elapsed = (current_time.nanoseconds - self.last_log_time) / 1e9
+
+        if elapsed >= 1.0:  # Log every second
+            fps = self.frames_since_last_log / elapsed
+            self.logger.info(
+                f"Receiving {fps:.1f} fps | Total frames: {self.frame_count}"
+            )
+            self.last_log_time = current_time.nanoseconds
+            self.frames_since_last_log = 0
+
 
 
 def main(args=None):

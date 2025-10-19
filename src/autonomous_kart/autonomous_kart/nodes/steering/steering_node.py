@@ -16,7 +16,7 @@ class SteeringNode(Node):
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
-        # Subscribe to speed commands
+        # Subscribe to turn commands
         self.cmd_turn_sub = self.create_subscription(
             Float32,
             'cmd_turn',
@@ -41,7 +41,7 @@ class SteeringNode(Node):
         self.current_angle = msg.data
 
         # self.get_logger().info(
-        #     f'Speed: angle={msg.data:.2f}'
+        #     f'Turn: angle={msg.data:.2f}'
         # )
 
         if self.sim_mode:

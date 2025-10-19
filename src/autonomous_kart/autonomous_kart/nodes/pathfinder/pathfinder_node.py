@@ -1,15 +1,16 @@
+import random
 import time
 
 import rclpy
-from geometry_msgs.msg import Twist
-from rclpy import Node
+from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Float64MultiArray, Float32, Float32MultiArray
 
 
 class PathfinderNode(Node):
     def __init__(self):
         super().__init__('PathfinderNode')
+        self.logger = self.get_logger()
         self.angles = None
 
         # Subscriber to opencv pathfinder for angles
@@ -21,12 +22,20 @@ class PathfinderNode(Node):
         )
 
         # Publisher to motor
+        self.motor_publisher = self.create_publisher(
+            Float32,
+            'cmd_vel',
+            3
+        )
 
         # # Publisher to steering
-        # self.steering_publisher = self.create_publisher(
-        #     Twist,
-        #     'motor_speed'
-        # )
+        self.steering_publisher = self.create_publisher(
+            Float32,
+            'cmd_turn',
+            3
+        )
+
+        self.logger.info("Initialize Pathfinder Node")
 
     def calculate_path_callback(self, msg: Float64MultiArray):
         """
@@ -35,6 +44,17 @@ class PathfinderNode(Node):
         :return: Publishes commands to motor & steering
         """
         self.angles = (msg.data[0], msg.data[1])
+
+        motor_speed = 20 * random.random()
+        motor_cmd = Float32()
+        motor_cmd.data = motor_speed
+
+        steering_angle = 180 * random.random() - 90
+        steering_cmd = Float32()
+        steering_cmd.data = steering_angle
+
+        self.steering_publisher.publish(steering_cmd)
+        self.motor_publisher.publish(motor_cmd)
 
 
 def main(args=None):

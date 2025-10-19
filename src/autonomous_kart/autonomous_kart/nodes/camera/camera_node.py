@@ -80,7 +80,11 @@ class CameraNode(Node):
                     self.logger.warning("Too slow frames - skipping")
                 if self.frame_counter % self.fps == 0:
                     now = time.time()
-                    actual_rate = 60 / ((now - self.last_callback_time if self.last_callback_time else 0) if self.last_callback_time else 1)
+                    try:
+                        actual_rate = self.fps / (now - self.last_callback_time)
+                    except ZeroDivisionError:
+                        actual_rate = 0
+
                     self.logger.info(f"Published {self.frame_counter} frames, actual rate: {actual_rate:.1f} fps")
                     self.last_callback_time = now
         else:

@@ -4,7 +4,7 @@ import time
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
-from std_msgs.msg import Float64MultiArray, Float32, Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Float32, Float32MultiArray
 
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
@@ -23,7 +23,7 @@ class PathfinderNode(Node):
 
         # Subscriber to opencv pathfinder for angles
         self.opencv_pathfinder_subscriber = self.create_subscription(
-            Float64MultiArray,
+            Float32MultiArray,
             'track_angles',
             self.calculate_path_callback,
             1
@@ -45,11 +45,11 @@ class PathfinderNode(Node):
 
         self.logger.info("Initialize Pathfinder Node")
 
-    def calculate_path_callback(self, msg: Float64MultiArray):
+    def calculate_path_callback(self, msg: Float32MultiArray):
         """
         Calculate commands for steering and motor from opencv_pathfinder efficiently
         Part of hot loop so must be efficient
-        :param msg: Float64MultiArray of [left angle from center to base of track from image, right angle ...]
+        :param msg: Float32MultiArray of [left angle from center to base of track from image, right angle ...]
         :return: Publishes commands to motor & steering
         """
         self.cmd_count += 1

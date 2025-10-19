@@ -1,5 +1,8 @@
+import time
+
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
 from std_msgs.msg import Float32
 
 
@@ -79,13 +82,18 @@ class MotorNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = MotorNode()
+
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
+        node.running = False
+        time.sleep(0.1)
         node.destroy_node()
-        rclpy.shutdown()
+        executor.shutdown()
 
 
 if __name__ == '__main__':

@@ -16,12 +16,12 @@ class CameraNode(Node):
         self.logger = self.get_logger()
 
         self.declare_parameter("simulation_mode", True)
-        self.declare_parameter("fps", 10.0)
+        self.declare_parameter("fps", 30.0)
         self.fps = self.get_parameter("fps").value
         self.frame_counter = 0
 
         if self.fps == 0:  # div by 0 error later
-            self.fps = 10
+            self.fps = 30
 
         self.sim_mode = self.get_parameter("simulation_mode").value
 
@@ -73,7 +73,6 @@ class CameraNode(Node):
                     pub_start = time.time()
 
                     self.image_pub.publish(self.latest_frame)
-                    pub_time = (time.time() - pub_start) * 1000
                     self.frame_counter += 1
                 else:
                     self.logger.warning("Too slow frames - skipping")
@@ -103,7 +102,7 @@ class CameraNode(Node):
                 ret, frame = self.cap.read()
             else:
                 height, width = frame.shape[:2]
-                target_width = 640
+                target_width = 320
                 target_height = int(height * (target_width / width))
                 resized = cv2.resize(frame, (target_width, target_height))
                 msg = self.bridge.cv2_to_imgmsg(resized, "bgr8")

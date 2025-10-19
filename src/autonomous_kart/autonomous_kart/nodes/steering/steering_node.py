@@ -1,6 +1,5 @@
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32
 
 
@@ -37,7 +36,7 @@ class SteeringNode(Node):
         self.get_logger().info(f'Steering Node started - Mode: {"SIM" if self.sim_mode else "REAL"}')
 
     def cmd_turn_callback(self, msg: Float32):
-        """Receive speed commands and publish current speed"""
+        """Receive turn commands and publish current turn"""
         self.cmd_count += 1
         self.current_angle = msg.data
 
@@ -56,7 +55,7 @@ class SteeringNode(Node):
         """Simulation mode - just log the command for now"""
         self.get_logger().debug(f'SIM: Steering set to commanded angle={cmd.data:.2f}')
 
-    def control_real_steering(self, cmd: Twist):
+    def control_real_steering(self, cmd: Float32):
         """Real mode - control actual hardware here"""
         self.get_logger().debug(f'REAL: Steering set to commanded angle={cmd.data:.2f}')
 

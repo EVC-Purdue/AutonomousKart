@@ -8,7 +8,9 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, ReliabilityPolicy, QoSProfile
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Float32MultiArray
+
+from autonomous_kart.nodes.opencv_pathfinder.angle_calculator import calculate_track_angles
 
 
 class OpenCVPathfinderNode(Node):
@@ -38,7 +40,7 @@ class OpenCVPathfinderNode(Node):
 
         # Publishes two angles in (left angle from center of vision to base of track line, right angle ...)
         self.angle_pub = self.create_publisher(
-            Float64MultiArray,
+            Float32MultiArray,
             'track_angles',
             1,
         )
@@ -63,15 +65,8 @@ class OpenCVPathfinderNode(Node):
             self.frames_since_last_log = 0
 
         # Publish angles
-        self.angle_pub.publish(self.calculate_track_angles(frame))
-
-    def calculate_track_angles(self, frame) -> Float64MultiArray:
-        """
-        Calculates angle from center of image to left/right side of track with OpenCV efficiently
-        :param frame: Most recent image from camera
-        :return: Float64MultiArray of [left angle (degrees), right angle (degrees)]
-        """
-        return Float64MultiArray(data=[75.0, 75.0])  # dummy
+        angles = calculate_track_angles(frame)
+        self.angle_pub.publish(Float32MultiArray(data=angles))
 
 
 def main(args=None):

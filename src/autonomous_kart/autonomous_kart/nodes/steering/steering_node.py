@@ -11,19 +11,25 @@ class SteeringNode(Node):
         self.declare_parameter('simulation_mode', False)
         self.sim_mode = self.get_parameter('simulation_mode').value
 
+        self.cmd_count = 0
+        self.last_log_time = self.get_clock().now()
+
+        # Timer to log average every 5 seconds
+        self.create_timer(5.0, self.log_command_rate)
+
         # Subscribe to speed commands
         self.cmd_turn_sub = self.create_subscription(
             Float32,
             'cmd_turn',
             self.cmd_turn_callback,
-            3
+            1
         )
 
         # Publisher for steering angular velocity
         self.turn_pub = self.create_publisher(
             Float32,
             'turn_angle',
-            3
+            1
         )
 
         self.current_angle = Float32()
@@ -32,21 +38,19 @@ class SteeringNode(Node):
 
     def cmd_turn_callback(self, msg: Float32):
         """Receive speed commands and publish current speed"""
+        self.cmd_count += 1
         self.current_angle = msg.data
 
-        self.get_logger().info(
-            f'Speed: angle={msg.data:.2f}'
-        )
+        # self.get_logger().info(
+        #     f'Speed: angle={msg.data:.2f}'
+        # )
 
         if self.sim_mode:
             self.control_sim_steering(msg)
         else:
             self.control_real_steering(msg)
 
-        angle_cmd = Float32()
-        angle_cmd.data = self.current_angle
-
-        self.turn_pub.publish(angle_cmd)
+        self.turn_pub.publish(Float32(data=self.current_angle))
 
     def control_sim_steering(self, cmd: Float32):
         """Simulation mode - just log the command for now"""
@@ -55,6 +59,22 @@ class SteeringNode(Node):
     def control_real_steering(self, cmd: Twist):
         """Real mode - control actual hardware here"""
         self.get_logger().debug(f'REAL: Steering set to commanded angle={cmd.data:.2f}')
+
+    def log_command_rate(self):
+        """Log average commands per second every 5 seconds"""
+        current_time = self.get_clock().now()
+        elapsed = (current_time - self.last_log_time).nanoseconds / 1e9
+
+        if elapsed > 0:
+            avg_rate = self.cmd_count / elapsed
+            self.get_logger().info(
+                f"Average command rate: {avg_rate:.2f} commands/sec "
+                f"(Total: {self.cmd_count} in {elapsed:.1f}s)"
+            )
+
+        # Reset counters
+        self.cmd_count = 0
+        self.last_log_time = current_time
 
 
 def main(args=None):

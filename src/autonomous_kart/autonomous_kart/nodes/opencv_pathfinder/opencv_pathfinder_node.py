@@ -11,7 +11,7 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray
 
 
-class PathfinderNode(Node):
+class OpenCVPathfinderNode(Node):
     def __init__(self):
         super().__init__('opencv_pathfinder_node')
         self.last_log_time = 0
@@ -76,7 +76,7 @@ class PathfinderNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = PathfinderNode()
+    node = OpenCVPathfinderNode()
 
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)

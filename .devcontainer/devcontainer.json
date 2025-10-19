@@ -20,7 +20,8 @@
       "settings": {
         "python.defaultInterpreterPath": "/ws/.venv/bin/python",
         "python.analysis.extraPaths": [
-          "/ws/install"
+          "/ws/install",
+          "/opt/ros/humble/lib/python3.10/site-packages"
         ]
       }
     }

@@ -1,7 +1,5 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
 import os
 from ament_index_python.packages import get_package_share_directory
 
@@ -40,5 +38,12 @@ def generate_launch_description():
             name='pathfinder_node',
             parameters=[os.path.join(pkg_share, 'params', 'planner.yaml'),
                         os.path.join(pkg_share, 'params', 'safety.yaml'), os.path.join(pkg_share, 'params', 'gps.yaml')]
+        ),
+        Node(
+            package='autonomous_kart',
+            executable='opencv_pathfinder_node',
+            name='opencv_pathfinder_node',
+            # parameters=[os.path.join(pkg_share, 'params', 'planner.yaml'),
+            #             os.path.join(pkg_share, 'params', 'safety.yaml'), os.path.join(pkg_share, 'params', 'gps.yaml')]
         ),
     ])

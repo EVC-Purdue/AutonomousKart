@@ -8,6 +8,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, ReliabilityPolicy, QoSProfile
 from sensor_msgs.msg import Image
+from std_msgs.msg import Float64MultiArray
 
 
 class PathfinderNode(Node):
@@ -35,6 +36,13 @@ class PathfinderNode(Node):
             qos
         )
 
+        # Publishes two angles in (left angle from center of vision to base of track line, right angle ...)
+        self.angle_pub = self.create_publisher(
+            Float64MultiArray,
+            'track_angles',
+            1,
+        )
+
         self.logger.info("Pathfinder Node started - subscribed to /camera/image_raw")
 
     def image_callback(self, msg):
@@ -54,6 +62,16 @@ class PathfinderNode(Node):
             self.last_log_time = current_time.nanoseconds
             self.frames_since_last_log = 0
 
+        # Publish angles
+        self.angle_pub.publish(self.calculate_track_angles(frame))
+
+    def calculate_track_angles(self, frame) -> Float64MultiArray:
+        """
+        Calculates angle from center of image to left/right side of track with OpenCV efficiently
+        :param frame: Most recent image from camera
+        :return: Float64MultiArray of [left angle (degrees), right angle (degrees)]
+        """
+        return Float64MultiArray(data=[75.0, 75.0])  # dummy
 
 
 def main(args=None):
@@ -71,6 +89,7 @@ def main(args=None):
         time.sleep(0.1)
         node.destroy_node()
         executor.shutdown()
+
 
 if __name__ == '__main__':
     main()

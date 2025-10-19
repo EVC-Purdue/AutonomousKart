@@ -24,14 +24,14 @@ class MotorNode(Node):
             Float32,
             'cmd_vel',
             self.cmd_vel_callback,
-            1
+            5
         )
 
         # Publisher for motor speed
         self.speed_pub = self.create_publisher(
             Float32,
             'motor_speed',
-            1
+            5
         )
 
         self.current_speed = Float32()
@@ -82,18 +82,13 @@ class MotorNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = MotorNode()
-
-    executor = MultiThreadedExecutor(num_threads=2)
-    executor.add_node(node)
     try:
-        executor.spin()
+        rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
-        node.running = False
-        time.sleep(0.1)
         node.destroy_node()
-        executor.shutdown()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':

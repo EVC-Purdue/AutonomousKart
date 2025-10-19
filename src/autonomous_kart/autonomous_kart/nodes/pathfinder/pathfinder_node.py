@@ -26,21 +26,21 @@ class PathfinderNode(Node):
             Float32MultiArray,
             'track_angles',
             self.calculate_path_callback,
-            1
+            5
         )
 
         # Publisher to motor
         self.motor_publisher = self.create_publisher(
             Float32,
             'cmd_vel',
-            1
+            5
         )
 
         # # Publisher to steering
         self.steering_publisher = self.create_publisher(
             Float32,
             'cmd_turn',
-            1
+            5
         )
 
         self.logger.info("Initialize Pathfinder Node")
@@ -79,18 +79,13 @@ class PathfinderNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = PathfinderNode()
-
-    executor = MultiThreadedExecutor(num_threads=2)
-    executor.add_node(node)
     try:
-        executor.spin()
+        rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
-        node.running = False
-        time.sleep(0.1)
         node.destroy_node()
-        executor.shutdown()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':

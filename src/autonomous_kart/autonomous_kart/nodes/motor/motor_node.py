@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
+from std_msgs.msg import Float32
 
 
 class MotorNode(Node):
@@ -12,20 +12,20 @@ class MotorNode(Node):
 
         # Subscribe to speed commands
         self.cmd_vel_sub = self.create_subscription(
-            Twist,
+            Float32,
             'cmd_vel',
             self.cmd_vel_callback,
-            10
+            3
         )
 
         # Publisher for motor speed
         self.speed_pub = self.create_publisher(
-            Twist,
+            Float32,
             'motor_speed',
-            10
+            3
         )
 
-        self.current_speed = Twist()
+        self.current_speed = Float32()
 
         self.get_logger().info(f'Motor Node started - Mode: {"SIM" if self.sim_mode else "REAL"}')
 
@@ -35,7 +35,7 @@ class MotorNode(Node):
         self.current_speed = msg
 
         self.get_logger().info(
-            f'Speed: linear={msg.linear.x:.2f}, angular={msg.angular.z:.2f}'
+            f'Speed: {msg.data:.2f}'
         )
 
         if self.sim_mode:
@@ -47,11 +47,11 @@ class MotorNode(Node):
 
     def control_sim_motors(self, cmd):
         """Simulation mode - just log the command for now"""
-        self.get_logger().debug(f'SIM: Motors set to commanded speed: L={cmd.linear.x} A={cmd.angular.z}')
+        self.get_logger().debug(f'SIM: Motors set to commanded speed: {cmd.data:.2f}')
 
     def control_real_motors(self, cmd):
         """Real mode - control actual hardware here"""
-        self.get_logger().debug(f'REAL: Motors set to commanded speed: L={cmd.linear.x} A={cmd.angular.z}')
+        self.get_logger().debug(f'REAL: Motors set to commanded speed: {cmd.data:.2f}')
 
 
 def main(args=None):

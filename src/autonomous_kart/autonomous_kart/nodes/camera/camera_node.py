@@ -70,8 +70,6 @@ class CameraNode(Node):
         if self.sim_mode:
            with self.frame_lock:
                 if self.latest_frame is not None:
-                    pub_start = time.time()
-
                     self.image_pub.publish(self.latest_frame)
                     self.frame_counter += 1
                 else:

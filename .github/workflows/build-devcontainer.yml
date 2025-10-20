@@ -9,7 +9,6 @@ on:
       - "compose/**"
       - "requirements.txt"
       - ".devcontainer/**"
-      - "scripts/**"
       - ".github/workflows/build-devcontainer.yml"
   workflow_dispatch:
 

@@ -3,6 +3,9 @@ set -euo pipefail
 
 : "${ROS_DISTRO:=humble}"
 
+apt update
+apt install python3.10-venv
+
 if [ -d "/ws/.venv" ]; then
     rm -rf /ws/.venv
 fi

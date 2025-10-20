@@ -21,14 +21,16 @@ class OpenCVPathfinderNode(Node):
         self.logger = self.get_logger()
         self.bridge = CvBridge()
         self.frame_count = 0
-        self.total_time = 0
         self.angle_msg = None
+
+        self.declare_parameter('system_frequency', 60)
+        self.system_frequency = self.get_parameter('system_frequency').value
 
         qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
-            lifespan=Duration(seconds=0, nanoseconds=int(1e9 / 60))  # TODO: Make this not hardcoded
+            lifespan=Duration(seconds=0, nanoseconds=int(1e9 / self.system_frequency))
         )
 
         # Subscribe to camera

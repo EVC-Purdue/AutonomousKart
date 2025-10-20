@@ -22,7 +22,8 @@ class CameraNode(Node):
         self.frame_counter = 0
 
         if self.fps == 0:  # div by 0 error later
-            self.fps = 60
+            self.declare_parameter("system_frequency", 60.0)
+            self.fps = self.get_parameter("system_frequency").value
 
         self.sim_mode = self.get_parameter("simulation_mode").value
 

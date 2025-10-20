@@ -1,10 +1,6 @@
-import random
-import time
-
 import rclpy
 from rclpy.node import Node
-from rclpy.executors import MultiThreadedExecutor
-from std_msgs.msg import Float32MultiArray, Float32, Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Float32
 
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 

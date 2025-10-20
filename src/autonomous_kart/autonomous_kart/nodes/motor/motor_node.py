@@ -1,8 +1,5 @@
-import time
-
 import rclpy
 from rclpy.node import Node
-from rclpy.executors import MultiThreadedExecutor
 from std_msgs.msg import Float32
 
 

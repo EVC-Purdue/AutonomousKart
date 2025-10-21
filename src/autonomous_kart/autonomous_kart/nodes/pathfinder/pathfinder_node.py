@@ -1,10 +1,6 @@
-import random
-import time
-
 import rclpy
 from rclpy.node import Node
-from rclpy.executors import MultiThreadedExecutor
-from std_msgs.msg import Float64MultiArray, Float32, Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Float32
 
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
@@ -18,38 +14,41 @@ class PathfinderNode(Node):
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now()
 
+        self.declare_parameter('system_frequency', 60)
+        self.system_frequency = self.get_parameter('system_frequency').value
+
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
         # Subscriber to opencv pathfinder for angles
         self.opencv_pathfinder_subscriber = self.create_subscription(
-            Float64MultiArray,
+            Float32MultiArray,
             'track_angles',
             self.calculate_path_callback,
-            1
+            5
         )
 
         # Publisher to motor
         self.motor_publisher = self.create_publisher(
             Float32,
             'cmd_vel',
-            1
+            5
         )
 
         # # Publisher to steering
         self.steering_publisher = self.create_publisher(
             Float32,
             'cmd_turn',
-            1
+            5
         )
 
         self.logger.info("Initialize Pathfinder Node")
 
-    def calculate_path_callback(self, msg: Float64MultiArray):
+    def calculate_path_callback(self, msg: Float32MultiArray):
         """
         Calculate commands for steering and motor from opencv_pathfinder efficiently
         Part of hot loop so must be efficient
-        :param msg: Float64MultiArray of [left angle from center to base of track from image, right angle ...]
+        :param msg: Float32MultiArray of [left angle from center to base of track from image, right angle ...]
         :return: Publishes commands to motor & steering
         """
         self.cmd_count += 1
@@ -79,18 +78,13 @@ class PathfinderNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = PathfinderNode()
-
-    executor = MultiThreadedExecutor(num_threads=2)
-    executor.add_node(node)
     try:
-        executor.spin()
+        rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
-        node.running = False
-        time.sleep(0.1)
         node.destroy_node()
-        executor.shutdown()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':

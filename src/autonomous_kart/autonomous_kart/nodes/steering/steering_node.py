@@ -21,14 +21,14 @@ class SteeringNode(Node):
             Float32,
             'cmd_turn',
             self.cmd_turn_callback,
-            1
+            5
         )
 
         # Publisher for steering angular velocity
         self.turn_pub = self.create_publisher(
             Float32,
             'turn_angle',
-            1
+            5
         )
 
         self.current_angle = Float32()

@@ -13,7 +13,7 @@ from cv_bridge import CvBridge
 class CameraNode(Node):
     def __init__(self):
         super().__init__("camera_node")
-        self.last_callback_time = None
+        self.last_callback_time = time.time()
         self.logger = self.get_logger()
 
         self.declare_parameter("simulation_mode", True)
@@ -22,7 +22,8 @@ class CameraNode(Node):
         self.frame_counter = 0
 
         if self.fps == 0:  # div by 0 error later
-            self.fps = 60
+            self.declare_parameter("system_frequency", 60.0)
+            self.fps = self.get_parameter("system_frequency").value
 
         self.sim_mode = self.get_parameter("simulation_mode").value
 
@@ -66,14 +67,9 @@ class CameraNode(Node):
         """
         Publishes the next frame
         """
-        if not hasattr(self, 'last_callback_time'):
-            self.last_callback_time = time.time()
-
         if self.sim_mode:
            with self.frame_lock:
                 if self.latest_frame is not None:
-                    pub_start = time.time()
-
                     self.image_pub.publish(self.latest_frame)
                     self.frame_counter += 1
                 else:
@@ -108,7 +104,7 @@ class CameraNode(Node):
                 ret, frame = self.cap.read()
             else:
                 height, width = frame.shape[:2]
-                target_width = 360
+                target_width = 360  # 360x202 BGR image optimized for jetson communication
                 target_height = int(height * (target_width / width))
                 resized = cv2.resize(frame, (target_width, target_height))
                 msg = self.bridge.cv2_to_imgmsg(resized, "bgr8")

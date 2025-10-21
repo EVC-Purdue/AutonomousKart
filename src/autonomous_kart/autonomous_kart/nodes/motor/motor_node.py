@@ -21,14 +21,14 @@ class MotorNode(Node):
             Float32,
             'cmd_vel',
             self.cmd_vel_callback,
-            1
+            5
         )
 
         # Publisher for motor speed
         self.speed_pub = self.create_publisher(
             Float32,
             'motor_speed',
-            1
+            5
         )
 
         self.current_speed = Float32()

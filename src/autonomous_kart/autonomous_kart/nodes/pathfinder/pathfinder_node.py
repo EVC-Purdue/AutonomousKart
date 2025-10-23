@@ -61,6 +61,7 @@ class PathfinderNode(Node):
         Calculate commands for steering and motor from opencv_pathfinder efficiently
         Part of hot loop so must be efficient.
         If parking lot mode, drive for 5 seconds at speed with steering then stop.
+        Assumes the system runs at the system frequency. Good for testing system speed time.
         :param msg: Float32MultiArray of [left angle from center to base of track from image, right angle ...]
         :return: Publishes commands to motor & steering
         """

@@ -1,6 +1,10 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
 from std_msgs.msg import Float32MultiArray, Float32
+from rclpy.impl.rcutils_logger import RcutilsLogger
+from rclpy.subscription import Subscription
+from rclpy.publisher import Publisher
 
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
@@ -8,20 +12,20 @@ from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 class PathfinderNode(Node):
     def __init__(self):
         super().__init__('PathfinderNode')
-        self.logger = self.get_logger()
-        self.angles = None
+        self.logger: RcutilsLogger = self.get_logger()
+        self.angles: tuple[float, float] | None = None
 
-        self.cmd_count = 0
-        self.last_log_time = self.get_clock().now()
+        self.cmd_count: int = 0
+        self.last_log_time: Time = self.get_clock().now()
 
         self.declare_parameter('system_frequency', 60)
-        self.system_frequency = self.get_parameter('system_frequency').value
+        self.system_frequency: float = self.get_parameter('system_frequency').value
 
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
         # Subscriber to opencv pathfinder for angles
-        self.opencv_pathfinder_subscriber = self.create_subscription(
+        self.opencv_pathfinder_subscriber: Subscription = self.create_subscription(
             Float32MultiArray,
             'track_angles',
             self.calculate_path_callback,
@@ -29,14 +33,14 @@ class PathfinderNode(Node):
         )
 
         # Publisher to motor
-        self.motor_publisher = self.create_publisher(
+        self.motor_publisher: Publisher = self.create_publisher(
             Float32,
             'cmd_vel',
             5
         )
 
         # # Publisher to steering
-        self.steering_publisher = self.create_publisher(
+        self.steering_publisher: Publisher = self.create_publisher(
             Float32,
             'cmd_turn',
             5

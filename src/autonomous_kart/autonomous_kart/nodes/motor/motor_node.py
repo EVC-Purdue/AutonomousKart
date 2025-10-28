@@ -1,6 +1,10 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32
+from rclpy.time import Time
+from rclpy.impl.rcutils_logger import RcutilsLogger
+from rclpy.subscription import Subscription
+from rclpy.publisher import Publisher
 
 
 class MotorNode(Node):
@@ -8,16 +12,16 @@ class MotorNode(Node):
         super().__init__('motor_node')
 
         self.declare_parameter('simulation_mode', False)
-        self.sim_mode = self.get_parameter('simulation_mode').value
+        self.sim_mode: bool = self.get_parameter('simulation_mode').value
 
-        self.cmd_count = 0
-        self.last_log_time = self.get_clock().now()
+        self.cmd_count: int = 0
+        self.last_log_time: Time = self.get_clock().now()
 
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
         # Subscribe to speed commands
-        self.cmd_vel_sub = self.create_subscription(
+        self.cmd_vel_sub: Subscription = self.create_subscription(
             Float32,
             'cmd_vel',
             self.cmd_vel_callback,
@@ -25,13 +29,13 @@ class MotorNode(Node):
         )
 
         # Publisher for motor speed
-        self.speed_pub = self.create_publisher(
+        self.speed_pub: Publisher = self.create_publisher(
             Float32,
             'motor_speed',
             5
         )
 
-        self.current_speed = Float32()
+        self.current_speed: Float32 = Float32()
 
         self.get_logger().info(f'Motor Node started - Mode: {"SIM" if self.sim_mode else "REAL"}')
 

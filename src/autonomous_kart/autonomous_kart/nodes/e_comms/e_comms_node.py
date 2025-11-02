@@ -70,6 +70,14 @@ class ECommsNode(Node):
         """
         self.cmd_count += 1
 
+        # Ensure values are within expected ranges
+        if not (0.0 <= motor_msg.data <= 100.0) or not (-90.0 <= steering_msg.data <= 90.0):
+            self.get_logger().error(
+                f"Received out-of-bounds command values: "
+                f"motor_percent={motor_msg.data}, steering_angle={steering_msg.data}"
+            )
+            raise ValueError("Command values out of bounds")
+
         self.motor_percent = motor_msg.data
         self.steering_angle = steering_msg.data
 

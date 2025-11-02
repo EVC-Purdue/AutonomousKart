@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Float32
+from std_msgs.msg import Float32MultiArray, Float32
 
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
@@ -17,14 +18,19 @@ class PathfinderNode(Node):
         self.declare_parameter('system_frequency', 60)
         self.system_frequency = self.get_parameter('system_frequency').value
 
+        self.declare_parameter('system_frequency', 60)
+        self.system_frequency = self.get_parameter('system_frequency').value
+
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
         # Subscriber to opencv pathfinder for angles
         self.opencv_pathfinder_subscriber = self.create_subscription(
             Float32MultiArray,
+            Float32MultiArray,
             'track_angles',
             self.calculate_path_callback,
+            5
             5
         )
 
@@ -33,6 +39,7 @@ class PathfinderNode(Node):
             Float32,
             'cmd_vel',
             5
+            5
         )
 
         # # Publisher to steering
@@ -40,21 +47,24 @@ class PathfinderNode(Node):
             Float32,
             'cmd_turn',
             5
+            5
         )
 
         self.logger.info("Initialize Pathfinder Node")
 
     def calculate_path_callback(self, msg: Float32MultiArray):
+    def calculate_path_callback(self, msg: Float32MultiArray):
         """
         Calculate commands for steering and motor from opencv_pathfinder efficiently
         Part of hot loop so must be efficient
+        :param msg: Float32MultiArray of [left angle from center to base of track from image, right angle ...]
         :param msg: Float32MultiArray of [left angle from center to base of track from image, right angle ...]
         :return: Publishes commands to motor & steering
         """
         self.cmd_count += 1
         self.angles = (msg.data[0], msg.data[1])
 
-        motor_speed, steering_angle = pathfinder(msg.data)
+        motor_speed, steering_angle = pathfinder(msg.data, self.logger)
 
         self.steering_publisher.publish(Float32(data=steering_angle))
         self.motor_publisher.publish(Float32(data=motor_speed))
@@ -80,8 +90,8 @@ def main(args=None):
     rclpy.init(args=args)
     
     node = PathfinderNode()
-
     try:
+        rclpy.spin(node)
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
@@ -89,8 +99,7 @@ def main(args=None):
         node.get_logger().error('Unhandled exception', exc_info=True)
     finally:
         node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':

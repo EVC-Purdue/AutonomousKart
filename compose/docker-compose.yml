@@ -1,8 +1,7 @@
 version: "3.8"
 services:
   dev:
-    privileged: True
-    image: ghcr.io/evc-purdue/ros2-humble-dev:sha-7f961b5
+    image: ghcr.io/evc-purdue/ros2-humble-dev:main
     container_name: ros2-dev
     hostname: ros2-dev
     volumes:

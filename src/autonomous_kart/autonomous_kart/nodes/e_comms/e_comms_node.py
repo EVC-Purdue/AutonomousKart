@@ -126,7 +126,7 @@ def main(args=None):
         try:
             rclpy.shutdown()
         except:
-            pass  # Context already shutdown, ignore
+            pass # Context already shutdown, ignore
 
 
 if __name__ == '__main__':

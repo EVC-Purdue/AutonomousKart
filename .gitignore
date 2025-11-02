@@ -169,3 +169,13 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Too large file size
+.vscode/browse.vc.db
+
+# Ros build ignored
+install
+log
+build
+opencv_testing/IMG_8824.MP4
+opencv_testing/IMG_8824

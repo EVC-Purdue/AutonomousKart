@@ -21,13 +21,16 @@ class OpenCVPathfinderNode(Node):
         self.logger = self.get_logger()
         self.bridge = CvBridge()
         self.frame_count = 0
-        self.total_time = 0
+        self.angle_msg = None
+
+        self.declare_parameter('system_frequency', 60)
+        self.system_frequency = self.get_parameter('system_frequency').value
 
         qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
-            lifespan=Duration(seconds=0, nanoseconds=int(1e9 / 60))  # TODO: Make this not hardcoded
+            lifespan=Duration(seconds=0, nanoseconds=int(1e9 / self.system_frequency))
         )
 
         # Subscribe to camera
@@ -42,13 +45,13 @@ class OpenCVPathfinderNode(Node):
         self.angle_pub = self.create_publisher(
             Float32MultiArray,
             'track_angles',
-            1,
+            5,
         )
 
         self.logger.info("Pathfinder Node started - subscribed to /camera/image_raw")
 
     def image_callback(self, msg):
-        frame = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        frame = self.bridge.imgmsg_to_cv2(msg, "passthrough")
         self.frame_count += 1
         self.frames_since_last_log += 1
 
@@ -66,7 +69,12 @@ class OpenCVPathfinderNode(Node):
 
         # Publish angles
         angles = calculate_track_angles(frame)
-        self.angle_pub.publish(Float32MultiArray(data=angles))
+        if not self.angle_msg:
+            self.angle_msg = Float32MultiArray(data=angles)
+        else:
+        # self.angle_pub.publish(Float32MultiArray(data=angles))
+            self.angle_msg.data = angles
+        self.angle_pub.publish(self.angle_msg)
 
 
 def main(args=None):

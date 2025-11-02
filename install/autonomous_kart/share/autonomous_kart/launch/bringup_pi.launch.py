@@ -12,35 +12,38 @@ def generate_launch_description():
             package='autonomous_kart',
             executable='motor_node',
             name='motor_node',
-            parameters=[os.path.join(pkg_share, 'params', 'controller.yaml'),
-                        os.path.join(pkg_share, 'params', 'system.yaml'), {'simulation_mode': True}]
+            parameters=[os.path.join(pkg_share, 'params', 'controller.yaml'), {'simulation_mode': False}]
         ),
         Node(
             package='autonomous_kart',
             executable='steering_node',
             name='steering_node',
-            parameters=[os.path.join(pkg_share, 'params', 'controller.yaml'),
-                        os.path.join(pkg_share, 'params', 'system.yaml'), {'simulation_mode': True}]
+            parameters=[os.path.join(pkg_share, 'params', 'controller.yaml')]
         ),
         Node(
             package='autonomous_kart',
             executable='camera_node',
             name='camera_node',
-            parameters=[os.path.join(pkg_share, 'params', 'camera.yaml'),
-                        os.path.join(pkg_share, 'params', 'system.yaml'), {'simulation_mode': True}]
+            parameters=[os.path.join(pkg_share, 'params', 'camera.yaml')]
+        ),
+        Node(
+            package='autonomous_kart',
+            executable='gps_node',
+            name='gps_node',
+            parameters=[os.path.join(pkg_share, 'params', 'gps.yaml')]
         ),
         Node(
             package='autonomous_kart',
             executable='pathfinder_node',
             name='pathfinder_node',
-            parameters=[os.path.join(pkg_share, 'params', 'gps.yaml'), os.path.join(pkg_share, 'params', 'system.yaml'),
-                        os.path.join(pkg_share, 'params', 'safety.yaml'), {'simulation_mode': True}]
+            parameters=[os.path.join(pkg_share, 'params', 'planner.yaml'),
+                        os.path.join(pkg_share, 'params', 'safety.yaml'), os.path.join(pkg_share, 'params', 'gps.yaml')]
         ),
         Node(
             package='autonomous_kart',
             executable='opencv_pathfinder_node',
             name='opencv_pathfinder_node',
-            parameters=[os.path.join(pkg_share, 'params', 'gps.yaml'), os.path.join(pkg_share, 'params', 'system.yaml'),
-                        {'simulation_mode': True}]
+            # parameters=[os.path.join(pkg_share, 'params', 'planner.yaml'),
+            #             os.path.join(pkg_share, 'params', 'safety.yaml'), os.path.join(pkg_share, 'params', 'gps.yaml')]
         ),
     ])

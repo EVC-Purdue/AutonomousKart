@@ -1,5 +1,5 @@
 numpy<2
-opencv-python
+opencv-python<4.10.0
 scipy
 empy==3.3.4
 lark-parser>=0.11

@@ -3,7 +3,7 @@ import os
 
 speed = 0.0  # mph
 max_accel = 3.0  # mph per second
-max_steering = 25  # degrees
+max_steering = 90  # degrees
 time_step = 1  # seconds
 
 theta1 = -5

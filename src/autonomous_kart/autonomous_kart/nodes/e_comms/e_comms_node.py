@@ -1,7 +1,11 @@
+from typing import Optional
+
 import spidev
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
 from std_msgs.msg import Float32
+from rclpy.impl.rcutils_logger import RcutilsLogger
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms
@@ -10,44 +14,44 @@ import autonomous_kart.nodes.e_comms.e_comms as e_comms
 class ECommsNode(Node):
     def __init__(self):
         super().__init__("ECommsNode")
-        self.logger = self.get_logger()
+        self.logger: RcutilsLogger = self.get_logger()
         
         # Parameters
         # self.declare_parameter("system_frequency", 60)
         # self.system_frequency = self.get_parameter("system_frequency").value
 
         self.declare_parameter("use_spi", False)
-        self.use_spi = self.get_parameter("use_spi").value
+        self.use_spi: bool = self.get_parameter("use_spi").value
 
         # Inputs
-        self.motor_percent = None
-        self.steering_angle = None
+        self.motor_percent: float = 0.0
+        self.steering_angle: float = 0.0
 
         # SPI buffers
-        self.tx_buffer = None
-        self.rx_buffer = None # Not currently used
+        self.tx_buffer: bytearray = bytearray(4)
+        self.rx_buffer: bytearray = bytearray(4)
 
         # SPI Device
         if self.use_spi:
-            self.spi = spidev.SpiDev()
+            self.spi: Optional[spidev.SpiDev] = spidev.SpiDev()
             self.spi.open(0, 0)
             self.spi.max_speed_hz = 500000  # 500 kHz
             self.spi.mode = 0b00
             self.spi.bits_per_word = 8
         else:
-            self.spi = None
+            self.spi: Optional[spidev.SpiDev] = None
 
         # Logging
-        self.cmd_count = 0
-        self.last_log_time = self.get_clock().now()
+        self.cmd_count: int = 0
+        self.last_log_time: Time = self.get_clock().now()
 
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
         # Subscribe to pathfinder node for throttle and steering commands
-        self.motor_sub = Subscriber(self, Float32, "cmd_vel")
-        self.steering_sub = Subscriber(self, Float32, "cmd_turn")
-        self.ts = ApproximateTimeSynchronizer(
+        self.motor_sub: Subscriber = Subscriber(self, Float32, "cmd_vel")
+        self.steering_sub: Subscriber = Subscriber(self, Float32, "cmd_turn")
+        self.ts: ApproximateTimeSynchronizer = ApproximateTimeSynchronizer(
             [self.motor_sub, self.steering_sub],
             queue_size=3,
             slop=0.1  # Time tolerance in seconds
@@ -77,7 +81,8 @@ class ECommsNode(Node):
 
     def destroy_node(self):
         # Close SPI
-        self.spi.close()
+        if self.spi is not None:
+            self.spi.close()
 
         # Rest of node teardown
         super().destroy_node()
@@ -100,7 +105,9 @@ class ECommsNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
+    
     node = ECommsNode()
+
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

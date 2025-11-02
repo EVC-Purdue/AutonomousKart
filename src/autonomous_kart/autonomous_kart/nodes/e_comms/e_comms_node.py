@@ -101,6 +101,7 @@ class ECommsNode(Node):
         self.cmd_count = 0
         self.last_log_time = current_time
 
+
 def main(args=None):
     rclpy.init(args=args)
     
@@ -110,9 +111,14 @@ def main(args=None):
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    except Exception:
+        node.get_logger().error('Unhandled exception', exc_info=True)
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        except:
+            pass  # Context already shutdown, ignore
 
 
 if __name__ == '__main__':

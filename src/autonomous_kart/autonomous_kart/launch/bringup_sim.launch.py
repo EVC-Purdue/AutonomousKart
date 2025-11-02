@@ -23,7 +23,7 @@ def generate_launch_description():
                         os.path.join(pkg_share, 'params', 'system.yaml'), {'simulation_mode': True}]
         ),
         Node(
-            package='autonomous_kart',
+            package='autonomous_kart_cpp',
             executable='camera_node',
             name='camera_node',
             parameters=[os.path.join(pkg_share, 'params', 'camera.yaml'),

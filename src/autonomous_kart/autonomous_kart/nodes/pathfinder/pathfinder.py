@@ -11,8 +11,34 @@ def pathfinder(opencv_output: Tuple):
     :return: Returns commands to motor & steering in (speed % of total, steering angle (degrees from -90 to 90 with 0 as straight)
     """
 
-    # Dummy
-    motor_speed = 20 * random.random()
-    steering_angle = 180 * random.random() - 90
 
-    return motor_speed, steering_angle
+    speed = 0.0  # mph
+    max_accel = 3.0  # mph per second
+    max_steering = 25  # degrees
+    time_step = 1  # seconds
+
+    theta1 = 90 #-1 * opencv_output[0]
+    theta2 = 90 #opencv_output[2]
+
+    desired_heading = (theta1 + theta2) / 2 #average of both angles
+
+    if abs(desired_heading) < 10:            
+        target_speed = 30  #max speed on straights
+    else:
+        target_speed = 15  #target speed on turns
+
+    if speed < target_speed:
+        speed += max_accel * time_step #physics c: mechanics
+        if speed > target_speed:
+            speed = target_speed
+    else:
+        speed -= max_accel * time_step
+        if speed < target_speed:
+            speed = target_speed
+
+        steering_command = max(min(desired_heading, max_steering), -max_steering)
+
+    print(f"Theta1: {theta1:.1f}°, Theta2: {theta2:.1f}°")
+    print(f"Desired Heading: {desired_heading:.1f}°")
+    print(f"Target Speed: {target_speed} mph | Current Speed: {speed:.1f} mph")
+    print(f"Steering Command: {steering_command:.1f}° {'Left' if steering_command < 0 else 'Right' if steering_command > 0 else 'Straight'}")

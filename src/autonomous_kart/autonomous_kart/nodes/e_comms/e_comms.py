@@ -27,7 +27,7 @@ def pack_to_buffer(motor_percent: float, steering_angle: float) -> bytearray:
 
     # Scale to raw values
     motor_raw_scaled = (2**16 - 1) * (motor_percent / 100.0) # 0-100 -> 0-(2^16-1)
-    steering_raw_scaled = (2**16 - 1) ((steering_angle + 90.0) / 180.0) # -90-90 -> 0-(2^16-1)
+    steering_raw_scaled = (2**16 - 1) * ((steering_angle + 90.0) / 180.0) # -90-90 -> 0-(2^16-1)
 
     # Create bytearray buffer
     buffer = bytearray(4)

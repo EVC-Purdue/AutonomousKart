@@ -51,7 +51,8 @@ class ECommsNode(Node):
         self.ts: ApproximateTimeSynchronizer = ApproximateTimeSynchronizer(
             [self.motor_sub, self.steering_sub],
             queue_size=3,
-            slop=0.1  # Time tolerance in seconds
+            slop=0.1, # Time tolerance in seconds
+            allow_headerless=True # Float32 has no header
         )
         self.ts.registerCallback(self.cmd_callback)
 

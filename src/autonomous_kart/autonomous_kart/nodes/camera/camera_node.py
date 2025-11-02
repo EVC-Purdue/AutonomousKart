@@ -4,6 +4,7 @@ import time
 import cv2
 import rclpy
 from rclpy.duration import Duration
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from sensor_msgs.msg import Image
@@ -118,22 +119,28 @@ class CameraNode(Node):
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
+
 def main(args=None):
     rclpy.init(args=args)
-    node = CameraNode()
 
-    from rclpy.executors import MultiThreadedExecutor
+    node = CameraNode()
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)
+    
     try:
         executor.spin()
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        node.get_logger().error(f'Unhandled exception: {e}', exc_info=True)
     finally:
         node.running = False
-        time.sleep(0.1)
+        executor.shutdown(timeout_sec=1.0)
         node.destroy_node()
-        executor.shutdown()
+        try:
+            rclpy.shutdown()
+        except:
+            pass # Context already shutdown, ignore
 
 
 if __name__ == "__main__":

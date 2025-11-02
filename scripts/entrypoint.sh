@@ -7,3 +7,10 @@ if [ -f /ws/install/setup.bash ]; then
   source /ws/install/setup.bash
 fi
 exec "$@"
+
+if [ -f /ws/install/setup.bash ]; then
+    sed -i 's/\r$//' /ws/install/setup.bash
+fi
+if [ -f /ws/install/local_setup.bash ]; then
+    sed -i 's/\r$//' /ws/install/local_setup.bash
+fi

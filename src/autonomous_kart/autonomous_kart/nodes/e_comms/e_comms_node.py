@@ -17,11 +17,8 @@ class ECommsNode(Node):
         self.logger: RcutilsLogger = self.get_logger()
         
         # Parameters
-        # self.declare_parameter("system_frequency", 60)
-        # self.system_frequency = self.get_parameter("system_frequency").value
-
-        self.declare_parameter("use_spi", False)
-        self.use_spi: bool = self.get_parameter("use_spi").value
+        self.declare_parameter("simulation_mode", False)
+        self.simulation_mode: bool = self.get_parameter("simulation_mode").value
 
         # Inputs
         self.motor_percent: float = 0.0
@@ -32,7 +29,7 @@ class ECommsNode(Node):
         self.rx_buffer: bytearray = bytearray(4)
 
         # SPI Device
-        if self.use_spi:
+        if not self.simulation_mode:
             self.spi: Optional[spidev.SpiDev] = spidev.SpiDev()
             self.spi.open(0, 0)
             self.spi.max_speed_hz = 500000  # 500 kHz

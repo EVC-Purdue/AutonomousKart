@@ -94,11 +94,8 @@ def main(args=None):
         node.running = False
         executor.shutdown(timeout_sec=1.0)
         node.destroy_node()
-        try:
+        if rclpy.ok():
             rclpy.shutdown()
-        except:
-            pass # Context already shutdown, ignore
-
 
 if __name__ == '__main__':
     main()

@@ -89,10 +89,8 @@ def main(args=None):
         node.get_logger().error('Unhandled exception', exc_info=True)
     finally:
         node.destroy_node()
-        try:
+        if rclpy.ok():
             rclpy.shutdown()
-        except:
-            pass # Context already shutdown, ignore
 
 
 if __name__ == '__main__':

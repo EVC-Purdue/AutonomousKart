@@ -1,3 +1,4 @@
+import spidev
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32
@@ -11,26 +12,41 @@ class ECommsNode(Node):
         super().__init__("ECommsNode")
         self.logger = self.get_logger()
         
+        # Parameters
+        # self.declare_parameter("system_frequency", 60)
+        # self.system_frequency = self.get_parameter("system_frequency").value
+
+        self.declare_parameter("use_spi", False)
+        self.use_spi = self.get_parameter("use_spi").value
+
         # Inputs
         self.motor_percent = None
         self.steering_angle = None
 
-        # Ouputs
-        self.spi_buffer = None
+        # SPI buffers
+        self.tx_buffer = None
+        self.rx_buffer = None # Not currently used
+
+        # SPI Device
+        if self.use_spi:
+            self.spi = spidev.SpiDev()
+            self.spi.open(0, 0)
+            self.spi.max_speed_hz = 500000  # 500 kHz
+            self.spi.mode = 0b00
+            self.spi.bits_per_word = 8
+        else:
+            self.spi = None
 
         # Logging
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now()
 
-        # self.declare_parameter('system_frequency', 60)
-        # self.system_frequency = self.get_parameter('system_frequency').value
-
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
         # Subscribe to pathfinder node for throttle and steering commands
-        self.motor_sub = Subscriber(self, Float32, 'cmd_vel')
-        self.steering_sub = Subscriber(self, Float32, 'cmd_turn')
+        self.motor_sub = Subscriber(self, Float32, "cmd_vel")
+        self.steering_sub = Subscriber(self, Float32, "cmd_turn")
         self.ts = ApproximateTimeSynchronizer(
             [self.motor_sub, self.steering_sub],
             queue_size=3,
@@ -55,8 +71,16 @@ class ECommsNode(Node):
         self.motor_percent = motor_msg.data
         self.steering_angle = steering_msg.data
 
-        self.spi_buffer = e_comms.pack_to_buffer(self.motor_percent, self.steering_angle)
-        # TODO: send via SPI
+        self.tx_buffer = e_comms.pack_to_buffer(self.motor_percent, self.steering_angle)
+        if self.spi is not None:
+            self.rx_buffer = self.spi.xfer2(self.tx_buffer)
+
+    def destroy_node(self):
+        # Close SPI
+        self.spi.close()
+
+        # Rest of node teardown
+        super().destroy_node()
 
     def log_command_rate(self):
         """Log average commands per second every 5 seconds"""

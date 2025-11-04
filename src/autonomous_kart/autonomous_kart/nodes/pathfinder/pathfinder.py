@@ -9,7 +9,7 @@ def pathfinder(opencv_output: Tuple, logger):
     max_steering = 25  # degrees
     time_step = 1  # seconds
 
-    theta1 = opencv_output[0]
+    theta1 = -1 * opencv_output[0]
     theta2 = opencv_output[1]
 
     desired_heading = (theta1 + theta2) / 2 #average of both angles

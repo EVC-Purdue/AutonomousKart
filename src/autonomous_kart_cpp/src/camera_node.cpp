@@ -10,7 +10,7 @@ class CameraNode : public rclcpp::Node
 {
 public:
   CameraNode()
-  : Node("camera_node"), frame_counter_(0), running_(true)
+      : Node("camera_node"), frame_counter_(0), running_(true)
   {
     // --- Parameters ---
     this->declare_parameter<bool>("simulation_mode", true);
@@ -18,7 +18,8 @@ public:
 
     sim_mode_ = this->get_parameter("simulation_mode").as_bool();
     fps_ = this->get_parameter("fps").as_double();
-    if (fps_ <= 0.0) fps_ = 60.0;
+    if (fps_ <= 0.0)
+      fps_ = 60.0;
 
     // --- QoS Profile ---
     rclcpp::QoS qos(1);
@@ -29,32 +30,37 @@ public:
     image_pub_ = this->create_publisher<sensor_msgs::msg::Image>("camera/image_raw", qos);
 
     // --- Initialize OpenCV ---
-    if (sim_mode_) {
+    if (sim_mode_)
+    {
       std::string video_path = "/ws/data/EVC_test_footage/video.mp4";
       cap_.open(video_path);
-      if (!cap_.isOpened()) {
+      if (!cap_.isOpened())
+      {
         RCLCPP_ERROR(this->get_logger(), "Failed to open video: %s", video_path.c_str());
       }
       video_fps_ = cap_.get(cv::CAP_PROP_FPS);
       reader_thread_ = std::thread(&CameraNode::read_frames, this);
-    } else {
+    }
+    else
+    {
       cap_.open(0);
     }
 
     RCLCPP_INFO(this->get_logger(), "Video FPS: %.2f, Given FPS: %.2f", video_fps_, fps_);
 
     timer_ = this->create_wall_timer(
-      std::chrono::duration<double>(1.0 / fps_),
-      std::bind(&CameraNode::timer_callback, this));
+        std::chrono::duration<double>(1.0 / fps_),
+        std::bind(&CameraNode::timer_callback, this));
 
-    RCLCPP_INFO(this->get_logger(), "Camera Node started - Mode: %s",
+    RCLCPP_INFO(this->get_logger(), "CPP Camera Node started - Mode: %s",
                 sim_mode_ ? "SIM" : "REAL");
   }
 
   ~CameraNode() override
   {
     running_ = false;
-    if (reader_thread_.joinable()) reader_thread_.join();
+    if (reader_thread_.joinable())
+      reader_thread_.join();
     cap_.release();
   }
 
@@ -62,10 +68,13 @@ private:
   void timer_callback()
   {
     std::lock_guard<std::mutex> lock(frame_mutex_);
-    if (latest_frame_) {
+    if (latest_frame_)
+    {
       image_pub_->publish(*latest_frame_);
       frame_counter_++;
-    } else {
+    }
+    else
+    {
       RCLCPP_WARN(this->get_logger(), "No frame yet, skipping");
     }
   }
@@ -75,10 +84,12 @@ private:
     cv_bridge::CvImage bridge;
     const double frame_time = 1.0 / video_fps_;
 
-    while (rclcpp::ok() && running_) {
+    while (rclcpp::ok() && running_)
+    {
       auto start = std::chrono::steady_clock::now();
       cv::Mat frame;
-      if (!cap_.read(frame)) {
+      if (!cap_.read(frame))
+      {
         cap_.set(cv::CAP_PROP_POS_FRAMES, 0);
         continue;
       }

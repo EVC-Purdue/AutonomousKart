@@ -10,9 +10,11 @@ class PathfinderNode(Node):
         super().__init__('PathfinderNode')
         self.logger = self.get_logger()
         self.angles = None
+        self.current_speed = 0.0 
 
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now()
+        self.last_path_time = self.get_clock().now()
 
         self.declare_parameter('system_frequency', 60)
         self.system_frequency = self.get_parameter('system_frequency').value
@@ -28,6 +30,14 @@ class PathfinderNode(Node):
             5
         )
 
+        # Subscriber to motor node for current speed
+        self.motor_speed_subscriber = self.create_subscription(
+            Float32,
+            'motor_speed',
+            self.motor_speed_callback,
+            5
+        )
+
         # Publisher to motor
         self.motor_publisher = self.create_publisher(
             Float32,
@@ -35,7 +45,7 @@ class PathfinderNode(Node):
             5
         )
 
-        # # Publisher to steering
+        # Publisher to steering
         self.steering_publisher = self.create_publisher(
             Float32,
             'cmd_turn',
@@ -54,11 +64,22 @@ class PathfinderNode(Node):
         self.cmd_count += 1
         self.angles = (msg.data[0], msg.data[1])
 
-        motor_speed, steering_angle = pathfinder(msg.data, self.logger)
+        current_time = self.get_clock().now()
+        dt = (current_time - self.last_path_time).nanoseconds / 1e9
+
+        self.last_path_time = self.get_clock().now()
+
+        motor_speed, steering_angle = pathfinder(msg.data, self.current_speed, dt, self.logger)
 
         self.steering_publisher.publish(Float32(data=steering_angle))
         self.motor_publisher.publish(Float32(data=motor_speed))
-
+    
+    def motor_speed_callback(self, msg: Float32):
+        """
+        Updates current speed from motor feedback (required for smooth acceleration??)
+        :param msg: Float32 containing current motor speed
+        """
+        self.current_speed = msg.data
     def log_command_rate(self):
         """Log average commands per second every 5 seconds"""
         current_time = self.get_clock().now()

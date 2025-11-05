@@ -1,17 +1,23 @@
 from typing import Tuple
+from std_msgs.msg import Float32
 
-def pathfinder(opencv_output: Tuple, current_speed: float, dt, max_accel, max_steering, max_speed_straight, max_speed_turning, max_speed, logger):
+def pathfinder(opencv_output: Tuple, current_speed: Float32, dt: Float32, max_accel:Float32, max_steering: Float32, max_speed_straight: Float32, max_speed_turning: Float32, max_speed: Float32, logger):
     """
     Calculate commands for steering and motor from opencv_pathfinder efficiently
     Part of hot loop so must be efficient.
     :param opencv_output: Tuple of [left angle from center to base of track from image (float32), right angle ...]
-    :param current_speed: current speed from motor node
-    :param dt: time between last calculated speed command and current
-    :param logger: allows for logging info
+    :param current_speed: Current actual speed from motor node (% of total)
+    :param dt: Time elapsed time between last calculated speed command and current
+    :param max_accel: Max allowed acceleration of kart (m/s)
+    :param  max_steering: Max steering angle (degrees)
+    :param max_speed_straight: Max allowed speed on straights (m/s)
+    :param max_speed_turning: Max allowed speed while turning (m/s)
+    :param max_speed: Max possible speed (m/s)
+    :param logger: Allows for logging info
     :return: Returns commands to motor & steering in (speed % of total, steering angle (degrees from -90 to 90 with 0 as straight)
     """
 
-    # convert current speed from motor node (presumably also a % of total?) to mph for calculations
+    # convert current speed from motor node to m/s
     current_speed *= max_speed
 
     speed_command = current_speed

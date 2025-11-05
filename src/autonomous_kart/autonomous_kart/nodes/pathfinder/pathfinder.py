@@ -48,7 +48,7 @@ def pathfinder(opencv_output: Tuple, current_speed: Float32, dt: Float32, max_ac
 
     logger.info(f"Theta1: {theta1:.1f}°, Theta2: {theta2:.1f}°")
     logger.info(f"Desired Heading: {desired_heading:.1f}°")
-    logger.info(f"Target Speed: {target_speed} mph | Current Speed: {current_speed:.1f} mph | Commanded Speed: {speed_command:.3f} of total")
+    logger.info(f"Target Speed: {target_speed} m/s | Current Speed: {current_speed:.1f} m/s | Commanded Speed: {speed_command:.3f} of total")
     logger.info(f"Steering Command: {steering_command:.1f}° {'Left' if steering_command < 0 else 'Right' if steering_command > 0 else 'Straight'}")
     logger.info(f"dt {dt:.3f}")
 

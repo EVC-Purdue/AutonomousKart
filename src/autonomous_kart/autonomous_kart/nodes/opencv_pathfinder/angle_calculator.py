@@ -10,4 +10,4 @@ def calculate_track_angles(frame: cv2.Mat) -> Tuple[float, float]:
     :param frame: Most recent image from camera
     :return: Tuple of [left angle (degrees), right angle (degrees)]. For example, return 75.0, 75.0
     """
-    return 67.0, 41.0  # dummy
+    return 75.0, 75.0  # dummy

@@ -9,4 +9,5 @@ motor_node:
     max_steering: 25           # degrees
     max_speed_straight: 30.0   # m/s | max speed on straights
     max_speed_turning: 15.0    # m/s | speed while completing turns
+    max_angle_age: 0.5         # max acceptable age of saved angle (s)  
     simulation_mode: false     # set in motor node

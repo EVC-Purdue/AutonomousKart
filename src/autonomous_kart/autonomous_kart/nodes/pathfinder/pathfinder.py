@@ -1,21 +1,15 @@
-import random
 from typing import Tuple
 
-
-def pathfinder(opencv_output: Tuple, current_speed: float, dt, logger):
+def pathfinder(opencv_output: Tuple, current_speed: float, dt, max_accel, max_steering, max_speed_straight, max_speed_turning, max_speed, logger):
     """
     Calculate commands for steering and motor from opencv_pathfinder efficiently
     Part of hot loop so must be efficient.
     :param opencv_output: Tuple of [left angle from center to base of track from image (float32), right angle ...]
     :param current_speed: current speed from motor node
+    :param dt: time between last calculated speed command and current
+    :param logger: allows for logging info
     :return: Returns commands to motor & steering in (speed % of total, steering angle (degrees from -90 to 90 with 0 as straight)
     """
-
-    max_accel = 3.0  # mph per second
-    max_steering = 25  # degrees
-    max_speed_straight = 30.0 # max speed on straights (mph)
-    max_speed_turning = 15.0 # max speed while completing turns (mph)
-    max_speed = 35.0 # max speed car is capable of going (mph) (for calculating speed % of total)
 
     # convert current speed from motor node (presumably also a % of total?) to mph for calculations
     current_speed *= max_speed
@@ -50,6 +44,7 @@ def pathfinder(opencv_output: Tuple, current_speed: float, dt, logger):
     logger.info(f"Desired Heading: {desired_heading:.1f}°")
     logger.info(f"Target Speed: {target_speed} mph | Current Speed: {current_speed:.1f} mph | Commanded Speed: {speed_command:.3f} of total")
     logger.info(f"Steering Command: {steering_command:.1f}° {'Left' if steering_command < 0 else 'Right' if steering_command > 0 else 'Straight'}")
+    logger.info(f"dt {dt:.3f}")
 
     
 

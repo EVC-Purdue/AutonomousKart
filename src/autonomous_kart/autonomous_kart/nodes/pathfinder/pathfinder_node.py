@@ -16,6 +16,20 @@ class PathfinderNode(Node):
         self.last_log_time = self.get_clock().now()
         self.last_path_time = self.get_clock().now()
 
+        # declare parameters w/ defaults (for pathfinding calculations)
+        self.declare_parameter('max_accel', 3.0)
+        self.declare_parameter('max_steering', 25.0)
+        self.declare_parameter('max_speed_straight', 30.0)
+        self.declare_parameter('max_speed_turning', 15.0)
+        self.declare_parameter('max_speed', 35.0)
+        
+        # get parameter values required for pathfinding calculations
+        self.max_accel = self.get_parameter('max_accel').value
+        self.max_steering = self.get_parameter('max_steering').value
+        self.max_speed_straight = self.get_parameter('max_speed_straight').value
+        self.max_speed_turning = self.get_parameter('max_speed_turning').value
+        self.max_speed = self.get_parameter('max_speed').value
+    
         self.declare_parameter('system_frequency', 60)
         self.system_frequency = self.get_parameter('system_frequency').value
 
@@ -69,7 +83,16 @@ class PathfinderNode(Node):
 
         self.last_path_time = self.get_clock().now()
 
-        motor_speed, steering_angle = pathfinder(msg.data, self.current_speed, dt, self.logger)
+        motor_speed, steering_angle = pathfinder(
+            msg.data, 
+            self.current_speed, 
+            dt, 
+            self.max_accel,
+            self.max_steering,
+            self.max_speed_straight,
+            self.max_speed_turning,
+            self.max_speed,
+            self.logger)
 
         self.steering_publisher.publish(Float32(data=steering_angle))
         self.motor_publisher.publish(Float32(data=motor_speed))
@@ -80,6 +103,7 @@ class PathfinderNode(Node):
         :param msg: Float32 containing current motor speed
         """
         self.current_speed = msg.data
+
     def log_command_rate(self):
         """Log average commands per second every 5 seconds"""
         current_time = self.get_clock().now()

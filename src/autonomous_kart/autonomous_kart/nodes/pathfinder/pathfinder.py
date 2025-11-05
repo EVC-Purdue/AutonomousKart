@@ -20,7 +20,7 @@ def pathfinder(opencv_output: Tuple, current_speed: Float32, dt: Float32, max_ac
     # convert current speed from motor node to m/s
     current_speed *= max_speed
 
-    speed_command = current_speed
+    speed_command_ms = current_speed # base speed command in m/s
 
     theta1 = -1 * opencv_output[0]
     theta2 = opencv_output[1]
@@ -32,26 +32,22 @@ def pathfinder(opencv_output: Tuple, current_speed: Float32, dt: Float32, max_ac
     else:
         target_speed = max_speed_turning  #target speed on turns
 
-    if current_speed < target_speed:
-        speed_command += max_accel * dt #physics c: mechanics
-        if speed_command > target_speed:
-            speed_command = target_speed
+    if target_speed > current_speed:
+        speed_command_ms = min(speed_command_ms + max_accel * dt, target_speed)
     else:
-        speed_command -= max_accel * dt
-        if speed_command < target_speed:
-            speed_command = target_speed
+        speed_command_ms = max(speed_command_ms - max_accel * dt, target_speed)
 
     steering_command = max(min(desired_heading, max_steering), -max_steering)
 
     # calculate speed command as % of total 
-    speed_command /= max_speed
+    speed_command_percent = speed_command_ms / max_speed
 
     logger.info(f"Theta1: {theta1:.1f}°, Theta2: {theta2:.1f}°")
     logger.info(f"Desired Heading: {desired_heading:.1f}°")
-    logger.info(f"Target Speed: {target_speed} m/s | Current Speed: {current_speed:.1f} m/s | Commanded Speed: {speed_command:.3f} of total")
+    logger.info(f"Target Speed: {target_speed} m/s | Current Speed: {current_speed:.1f} m/s | Commanded Speed: {speed_command_percent:.3f} of total")
     logger.info(f"Steering Command: {steering_command:.1f}° {'Left' if steering_command < 0 else 'Right' if steering_command > 0 else 'Straight'}")
     logger.info(f"dt {dt:.3f}")
 
     
 
-    return float(speed_command), float(steering_command)
+    return float(speed_command_percent), float(steering_command)

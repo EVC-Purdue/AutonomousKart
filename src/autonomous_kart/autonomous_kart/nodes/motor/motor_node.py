@@ -78,14 +78,19 @@ class MotorNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
+    
     node = MotorNode()
+
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    except Exception:
+        node.get_logger().error('Unhandled exception', exc_info=True)
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

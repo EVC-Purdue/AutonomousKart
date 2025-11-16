@@ -25,8 +25,8 @@ class ECommsNode(Node):
         self.steering_angle: float = 0.0
 
         # SPI buffers
-        self.tx_buffer: bytearray = bytearray(4)
-        self.rx_buffer: bytearray = bytearray(4)
+        self.tx_buffer: list[int] = [0]*4
+        self.rx_buffer: list[int] = [0]*4
 
         # SPI Device
         if not self.simulation_mode:
@@ -81,7 +81,7 @@ class ECommsNode(Node):
         self.motor_percent = motor_msg.data
         self.steering_angle = steering_msg.data
 
-        self.tx_buffer = e_comms.pack_to_buffer(self.motor_percent, self.steering_angle)
+        self.tx_buffer = e_comms.pack_to_tx_buffer(self.motor_percent, self.steering_angle)
         if self.spi is not None:
             self.rx_buffer = self.spi.xfer2(self.tx_buffer)
 

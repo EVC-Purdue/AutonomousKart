@@ -43,4 +43,10 @@ def generate_launch_description():
             parameters=[os.path.join(pkg_share, 'params', 'gps.yaml'), os.path.join(pkg_share, 'params', 'system.yaml'),
                         {'simulation_mode': True}]
         ),
+        Node(
+            package='autonomous_kart',
+            executable='e_comms_node',
+            name='e_comms_node',
+            parameters=[{'simulation_mode': True}]
+        ),
     ])

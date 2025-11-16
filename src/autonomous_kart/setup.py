@@ -15,6 +15,7 @@ setup(
         "autonomous_kart.nodes.gps",
         "autonomous_kart.nodes.pathfinder",
         "autonomous_kart.nodes.opencv_pathfinder",
+        'autonomous_kart.nodes.e_comms',
         "autonomous_kart.nodes.3dgs_localization",
         # "autonomous_kart_cpp.camera"
     ],
@@ -41,6 +42,7 @@ setup(
             "gps_node = autonomous_kart.nodes.gps.gps_node:main",
             "3dgs_localization_node = autonomous_kart.nodes.3dgs_localization.3dgs_localization_node:main",
             "opencv_pathfinder_node = autonomous_kart.nodes.opencv_pathfinder.opencv_pathfinder_node:main",
+            'e_comms_node = autonomous_kart.nodes.e_comms.e_comms_node:main',
             "steering_node = autonomous_kart.nodes.steering.steering_node:main",
             # "camera_node = autonomous_kart.nodes.camera.camera_node:main",
             "camera_node = autonomous_kart_cpp.camera_node_cpp:main",

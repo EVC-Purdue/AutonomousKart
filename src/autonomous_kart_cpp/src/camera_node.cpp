@@ -110,8 +110,11 @@ private:
         latest_frame_ = bridge.toImageMsg();
       }
 
-      auto elapsed = std::chrono::steady_clock::now() - start;
+      auto elapsed = std::chrono::steady_clock::now() - start; // in nanoseconds
       auto sleep_time = std::chrono::duration<double>(frame_time) - elapsed;
+
+      RCLCPP_INFO(this->get_logger(), "CPP Camera Node processed frame at effective fps: %.2f", 1e9 / elapsed.count());
+
       if (sleep_time.count() > 0)
         std::this_thread::sleep_for(sleep_time);
     }

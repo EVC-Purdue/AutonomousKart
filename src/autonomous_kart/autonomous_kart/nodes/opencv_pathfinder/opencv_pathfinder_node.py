@@ -51,6 +51,7 @@ class OpenCVPathfinderNode(Node):
         self.logger.info("Pathfinder Node started - subscribed to /camera/image_raw")
 
     def image_callback(self, msg):
+        startTime = self.get_clock().now()
         frame = self.bridge.imgmsg_to_cv2(msg, "passthrough")
         self.frame_count += 1
         self.frames_since_last_log += 1
@@ -75,6 +76,9 @@ class OpenCVPathfinderNode(Node):
         # self.angle_pub.publish(Float32MultiArray(data=angles))
             self.angle_msg.data = angles
         self.angle_pub.publish(self.angle_msg)
+        endTime = self.get_clock().now()
+        elapsedTime = (endTime - startTime).nanoseconds / 1e6
+        # self.logger.info(f"Processing time: {elapsedTime:.2f} ms")
 
 
 def main(args=None):

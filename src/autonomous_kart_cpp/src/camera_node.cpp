@@ -70,8 +70,13 @@ private:
     std::lock_guard<std::mutex> lock(frame_mutex_);
     if (latest_frame_)
     {
+      auto start = std::chrono::steady_clock::now();
       image_pub_->publish(*latest_frame_);
       frame_counter_++;
+      auto end = std::chrono::steady_clock::now();
+      auto elapsed = end - start;
+      RCLCPP_DEBUG(this->get_logger(), "Published frame in %.2f ms",
+                   std::chrono::duration<double, std::milli>(elapsed).count());
     }
     else
     {
@@ -79,6 +84,8 @@ private:
     }
   }
 
+  // array of frame times
+  std::vector<double> frame_times_;
   void read_frames()
   {
     cv_bridge::CvImage bridge;
@@ -94,10 +101,13 @@ private:
         continue;
       }
 
+      auto loadImageTime = std::chrono::steady_clock::now();
+
       // Resize
       int width = 360;
       int height = static_cast<int>(frame.rows * (360.0 / frame.cols));
       cv::resize(frame, frame, cv::Size(width, height));
+      auto resizeTime = std::chrono::steady_clock::now();
 
       // Convert to ROS image
       bridge.encoding = "bgr8";
@@ -110,16 +120,39 @@ private:
         latest_frame_ = bridge.toImageMsg();
       }
 
-      auto elapsed = std::chrono::steady_clock::now() - start; // in nanoseconds
+      auto now = std::chrono::steady_clock::now();
+      auto elapsed = now - start; // in nanoseconds
       auto sleep_time = std::chrono::duration<double>(frame_time) - elapsed;
 
-      RCLCPP_INFO(this->get_logger(), "CPP Camera Node processed frame at effective fps: %.2f", 1e9 / elapsed.count());
+      frame_times_.push_back(std::chrono::duration<double, std::milli>(elapsed).count());
 
-      if (sleep_time.count() > 0)
+      if (sleep_time.count() > 0 && frame_times_.size() % 1000 != 0)
+      {
         std::this_thread::sleep_for(sleep_time);
+      }
+      else
+      {
+        RCLCPP_WARN(this->get_logger(), "Processing is slower than frame time at %.2f / 16.6 ms", elapsed.count() / 1e6);
+        float avg_frame_time = 0.0;
+        for (const auto &t : frame_times_)
+        {
+          avg_frame_time += t;
+        }
+        avg_frame_time /= frame_times_.size();
+        RCLCPP_WARN(this->get_logger(), "Average frame time over %zu frames: %.2f ms", frame_times_.size(), avg_frame_time);
+        // Print time to proccess each stage
+        RCLCPP_INFO(this->get_logger(), "CPP Camera Node full frame time: %.2f ms, Load Image Time: %.2f ms, Resize Time: %.2f ms",
+                    process_time_ms(start, now), process_time_ms(start, loadImageTime), process_time_ms(loadImageTime, resizeTime));
+        // frame_times_.clear();
+      }
     }
   }
 
+  float process_time_ms(const std::chrono::steady_clock::time_point &start, const std::chrono::steady_clock::time_point &end)
+  {
+    auto elapsed = end - start;
+    return std::chrono::duration<float, std::milli>(elapsed).count();
+  }
   // --- Members ---
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
   rclcpp::TimerBase::SharedPtr timer_;

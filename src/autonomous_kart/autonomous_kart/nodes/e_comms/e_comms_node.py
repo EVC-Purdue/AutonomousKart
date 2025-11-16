@@ -59,6 +59,13 @@ class ECommsNode(Node):
         )
         self.ts.registerCallback(self.cmd_callback)
 
+        # Publishers
+        self.motor_rpm_publisher = self.create_publisher(
+            Float32,
+            'e_comms/motor_rpm',
+            5
+        )
+
         # Init finished
         self.logger.info("Initialize EComms Node")
 
@@ -88,6 +95,9 @@ class ECommsNode(Node):
         if self.spi is not None:
             self.rx_buffer = self.spi.xfer2(self.tx_buffer)
             self.motor_rpm = e_comms.unpack_from_rx_buffer(self.rx_buffer)
+            # Publish motor RPM
+            self.motor_rpm_publisher.publish(Float32(data=self.motor_rpm))
+            
 
     def destroy_node(self):
         # Close SPI

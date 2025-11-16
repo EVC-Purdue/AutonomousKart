@@ -1,5 +1,8 @@
 import struct
 
+from rclpy.impl.rcutils_logger import RcutilsLogger
+
+
 def pack_to_tx_buffer(motor_percent: float, steering_angle: float) -> list[int]:
     """
     Pack the motor and steering commands into a bytearray buffer for SPI transmission.
@@ -24,7 +27,7 @@ def pack_to_tx_buffer(motor_percent: float, steering_angle: float) -> list[int]:
 
     return buffer
 
-def unpack_from_rx_buffer(rx_buffer: list[int]) -> float:
+def unpack_from_rx_buffer(rx_buffer: list[int], logger: RcutilsLogger) -> float:
     """
     Unpack the motor feedback from the received SPI buffer.
     
@@ -33,7 +36,8 @@ def unpack_from_rx_buffer(rx_buffer: list[int]) -> float:
     :return: Motor RPM as float. Raises ValueError if buffer length is not 4.
     """
     if len(rx_buffer) != 4:
-        raise ValueError("RX buffer must be of length 4")
+        logger.error(f"RX buffer length invalid: expected 4, got {len(rx_buffer)}")
+        raise ValueError(f"RX buffer must be of length 4, got {len(rx_buffer)}")
     
     rx_bytes = bytearray(rx_buffer)
     motor_rpm = struct.unpack('>f', rx_bytes)[0]

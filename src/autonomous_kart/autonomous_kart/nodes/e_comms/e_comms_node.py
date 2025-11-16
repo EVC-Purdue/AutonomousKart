@@ -24,6 +24,9 @@ class ECommsNode(Node):
         self.motor_percent: float = 0.0
         self.steering_angle: float = 0.0
 
+        # Outputs
+        self.motor_rpm: float = 0.0
+
         # SPI buffers
         self.tx_buffer: list[int] = [0]*4
         self.rx_buffer: list[int] = [0]*4
@@ -84,6 +87,7 @@ class ECommsNode(Node):
         self.tx_buffer = e_comms.pack_to_tx_buffer(self.motor_percent, self.steering_angle)
         if self.spi is not None:
             self.rx_buffer = self.spi.xfer2(self.tx_buffer)
+            self.motor_rpm = e_comms.unpack_from_rx_buffer(self.rx_buffer)
 
     def destroy_node(self):
         # Close SPI

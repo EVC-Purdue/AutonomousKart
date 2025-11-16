@@ -1,3 +1,4 @@
+import struct
 
 def pack_to_tx_buffer(motor_percent: float, steering_angle: float) -> list[int]:
     """
@@ -22,3 +23,18 @@ def pack_to_tx_buffer(motor_percent: float, steering_angle: float) -> list[int]:
     buffer[3] = int(steering_raw_scaled) & 0xFF         # Steering low byte
 
     return buffer
+
+def unpack_from_rx_buffer(rx_buffer: list[int]) -> float:
+    """
+    Unpack the motor feedback from the received SPI buffer.
+    
+    :param rx_buffer: List (u8 buffer) received from SPI transmission of length 4.
+                      4 bytes of a raw float representing motor RPM.
+    :return: Motor RPM as float. Raises ValueError if buffer length is not 4.
+    """
+    if len(rx_buffer) != 4:
+        raise ValueError("RX buffer must be of length 4")
+    
+    rx_bytes = bytearray(rx_buffer)
+    motor_rpm = struct.unpack('>f', rx_bytes)[0]
+    return motor_rpm

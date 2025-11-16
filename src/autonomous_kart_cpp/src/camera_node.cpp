@@ -32,7 +32,7 @@ public:
     // --- Initialize OpenCV ---
     if (sim_mode_)
     {
-      std::string video_path = "/ws/data/EVC_test_footage/video.mp4";
+      std::string video_path = "/ws/data/EVC_test_footage/vid.mp4"; // using low quality video for performance
       cap_.open(video_path);
       if (!cap_.isOpened())
       {

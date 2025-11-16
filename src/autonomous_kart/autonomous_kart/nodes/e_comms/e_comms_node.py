@@ -75,7 +75,7 @@ class ECommsNode(Node):
 
         # Ensure values are within expected ranges
         if not (0.0 <= motor_msg.data <= 100.0) or not (-90.0 <= steering_msg.data <= 90.0):
-            self.get_logger().error(
+            self.logger.error(
                 f"Received out-of-bounds command values: "
                 f"motor_percent={motor_msg.data}, steering_angle={steering_msg.data}"
             )
@@ -104,7 +104,7 @@ class ECommsNode(Node):
 
         if elapsed > 0:
             avg_rate = self.cmd_count / elapsed
-            self.get_logger().info(
+            self.logger.info(
                 f"Average command rate: {avg_rate:.2f} commands/sec "
                 f"(Total: {self.cmd_count} in {elapsed:.1f}s)"
             )

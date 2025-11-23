@@ -24,9 +24,12 @@ class ECommsNode(Node):
         self.motor_percent: float = 0.0
         self.steering_angle: float = 0.0
 
+        # Outputs
+        self.motor_rpm: float = 0.0
+
         # SPI buffers
-        self.tx_buffer: bytearray = bytearray(4)
-        self.rx_buffer: bytearray = bytearray(4)
+        self.tx_buffer: list[int] = [0]*4
+        self.rx_buffer: list[int] = [0]*4
 
         # SPI Device
         if not self.simulation_mode:
@@ -56,6 +59,13 @@ class ECommsNode(Node):
         )
         self.ts.registerCallback(self.cmd_callback)
 
+        # Publishers
+        self.motor_rpm_publisher = self.create_publisher(
+            Float32,
+            'e_comms/motor_rpm',
+            1
+        )
+
         # Init finished
         self.logger.info("Initialize EComms Node")
 
@@ -72,7 +82,7 @@ class ECommsNode(Node):
 
         # Ensure values are within expected ranges
         if not (0.0 <= motor_msg.data <= 100.0) or not (-90.0 <= steering_msg.data <= 90.0):
-            self.get_logger().error(
+            self.logger.error(
                 f"Received out-of-bounds command values: "
                 f"motor_percent={motor_msg.data}, steering_angle={steering_msg.data}"
             )
@@ -81,9 +91,13 @@ class ECommsNode(Node):
         self.motor_percent = motor_msg.data
         self.steering_angle = steering_msg.data
 
-        self.tx_buffer = e_comms.pack_to_buffer(self.motor_percent, self.steering_angle)
+        self.tx_buffer = e_comms.pack_to_tx_buffer(self.motor_percent, self.steering_angle)
         if self.spi is not None:
             self.rx_buffer = self.spi.xfer2(self.tx_buffer)
+            self.motor_rpm = e_comms.unpack_from_rx_buffer(self.rx_buffer)
+            # Publish motor RPM
+            self.motor_rpm_publisher.publish(Float32(data=self.motor_rpm))
+            
 
     def destroy_node(self):
         # Close SPI
@@ -100,7 +114,7 @@ class ECommsNode(Node):
 
         if elapsed > 0:
             avg_rate = self.cmd_count / elapsed
-            self.get_logger().info(
+            self.logger.info(
                 f"Average command rate: {avg_rate:.2f} commands/sec "
                 f"(Total: {self.cmd_count} in {elapsed:.1f}s)"
             )

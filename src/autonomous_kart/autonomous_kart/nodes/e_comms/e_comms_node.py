@@ -63,7 +63,7 @@ class ECommsNode(Node):
         self.motor_rpm_publisher = self.create_publisher(
             Float32,
             'e_comms/motor_rpm',
-            5
+            1
         )
 
         # Init finished

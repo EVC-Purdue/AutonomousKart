@@ -10,6 +10,11 @@ from message_filters import Subscriber, ApproximateTimeSynchronizer
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms
 
+SPI_MAX_SPEED_HZ = 500000  # 500 kHz
+SPI_DEV_BUS = 12
+SPI_DEV_DEVICE = 0
+SPI_MODE = 0b00
+
 
 class ECommsNode(Node):
     def __init__(self):
@@ -34,9 +39,9 @@ class ECommsNode(Node):
         # SPI Device
         if not self.simulation_mode:
             self.spi: Optional[spidev.SpiDev] = spidev.SpiDev()
-            self.spi.open(0, 0)
-            self.spi.max_speed_hz = 500000  # 500 kHz
-            self.spi.mode = 0b00
+            self.spi.open(SPI_DEV_BUS, SPI_DEV_DEVICE)
+            self.spi.max_speed_hz = SPI_MAX_SPEED_HZ
+            self.spi.mode = SPI_MODE
             self.spi.bits_per_word = 8
         else:
             self.spi: Optional[spidev.SpiDev] = None

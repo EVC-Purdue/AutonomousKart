@@ -98,7 +98,7 @@ class ECommsNode(Node):
 
         self.tx_buffer = e_comms.pack_to_tx_buffer(self.motor_percent, self.steering_angle)
         if self.spi is not None:
-            self.rx_buffer = self.spi.xfer2(self.tx_buffer[:])
+            self.rx_buffer = self.spi.xfer2(self.tx_buffer)
             self.motor_rpm = e_comms.unpack_from_rx_buffer(self.rx_buffer)
             # Publish motor RPM
             self.motor_rpm_publisher.publish(Float32(data=self.motor_rpm))

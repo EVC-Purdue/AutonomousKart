@@ -66,8 +66,8 @@ class ECommsNode(Node):
         self.ts.registerCallback(self.cmd_callback)
 
         # Publishers
-        self.motor_pwm_publisher    = self.create_publisher(Int16, 'e_comms/pwm_rx/motor_rpm', 1)
-        self.steering_pwm_publisher = self.create_publisher(Int16, 'e_comms/pwm_rx/steering_pwm', 1)
+        self.motor_pwm_publisher    = self.create_publisher(Int16, 'e_comms/pwm_rx/motor', 1)
+        self.steering_pwm_publisher = self.create_publisher(Int16, 'e_comms/pwm_rx/steering', 1)
 
         # Init finished
         self.logger.info("Initialize EComms Node")

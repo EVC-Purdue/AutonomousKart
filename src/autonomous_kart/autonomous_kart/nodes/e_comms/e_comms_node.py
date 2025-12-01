@@ -4,11 +4,16 @@ import spidev
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, Int16
 from rclpy.impl.rcutils_logger import RcutilsLogger
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms
+
+SPI_MAX_SPEED_HZ = 500000  # 500 kHz
+SPI_DEV_BUS = 12
+SPI_DEV_DEVICE = 0
+SPI_MODE = 0b00
 
 
 class ECommsNode(Node):
@@ -25,7 +30,8 @@ class ECommsNode(Node):
         self.steering_angle: float = 0.0
 
         # Outputs
-        self.motor_rpm: float = 0.0
+        self.motor_pwm: int = 0
+        self.steering_pwm: int = 0
 
         # SPI buffers
         self.tx_buffer: list[int] = [0]*4
@@ -34,9 +40,9 @@ class ECommsNode(Node):
         # SPI Device
         if not self.simulation_mode:
             self.spi: Optional[spidev.SpiDev] = spidev.SpiDev()
-            self.spi.open(0, 0)
-            self.spi.max_speed_hz = 500000  # 500 kHz
-            self.spi.mode = 0b00
+            self.spi.open(SPI_DEV_BUS, SPI_DEV_DEVICE)
+            self.spi.max_speed_hz = SPI_MAX_SPEED_HZ
+            self.spi.mode = SPI_MODE
             self.spi.bits_per_word = 8
         else:
             self.spi: Optional[spidev.SpiDev] = None
@@ -60,11 +66,8 @@ class ECommsNode(Node):
         self.ts.registerCallback(self.cmd_callback)
 
         # Publishers
-        self.motor_rpm_publisher = self.create_publisher(
-            Float32,
-            'e_comms/motor_rpm',
-            1
-        )
+        self.motor_pwm_publisher    = self.create_publisher(Int16, 'e_comms/pwm_rx/motor', 1)
+        self.steering_pwm_publisher = self.create_publisher(Int16, 'e_comms/pwm_rx/steering', 1)
 
         # Init finished
         self.logger.info("Initialize EComms Node")
@@ -93,11 +96,12 @@ class ECommsNode(Node):
 
         self.tx_buffer = e_comms.pack_to_tx_buffer(self.motor_percent, self.steering_angle)
         if self.spi is not None:
+            # Full-duplex SPI transfer
             self.rx_buffer = self.spi.xfer2(self.tx_buffer)
-            self.motor_rpm = e_comms.unpack_from_rx_buffer(self.rx_buffer)
-            # Publish motor RPM
-            self.motor_rpm_publisher.publish(Float32(data=self.motor_rpm))
-            
+            (self.motor_pwm, self.steering_pwm) = e_comms.unpack_from_rx_buffer(self.rx_buffer, self.logger)
+            # Publish received feedback
+            self.motor_pwm_publisher.publish(Int16(data=self.motor_pwm))
+            self.steering_pwm_publisher.publish(Int16(data=self.steering_pwm))
 
     def destroy_node(self):
         # Close SPI

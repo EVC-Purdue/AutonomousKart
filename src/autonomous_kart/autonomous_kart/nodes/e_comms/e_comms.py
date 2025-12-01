@@ -31,7 +31,7 @@ def unpack_from_rx_buffer(rx_buffer: list[int], logger: RcutilsLogger) -> tuple[
     
     :param rx_buffer: List (u8 buffer) received from SPI transmission of length 4.
                       2 bytes for the motor PWM pulse, 2 bytes for steering.
-    :return: A tuple containing the motor PWM pulse (int) and steering angle (int).
+    :return: A tuple containing the motor PWM pulse (int) and steering PWM (int).
     """
     if len(rx_buffer) != 4:
         logger.error(f"RX buffer length invalid: expected 4, got {len(rx_buffer)}")

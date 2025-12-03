@@ -17,6 +17,7 @@ setup(
         'autonomous_kart.nodes.opencv_pathfinder',
         'autonomous_kart.nodes.e_comms',
         'autonomous_kart.nodes.3dgs_localization',
+        'autonomous_kart.nodes.metrics',
     ],
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
@@ -41,6 +42,7 @@ setup(
             'e_comms_node = autonomous_kart.nodes.e_comms.e_comms_node:main',
             'steering_node = autonomous_kart.nodes.steering.steering_node:main',
             'camera_node = autonomous_kart.nodes.camera.camera_node:main',
+            'metrics_api = autonomous_kart.nodes.metrics.metrics_api:main',
         ],
     },
 )

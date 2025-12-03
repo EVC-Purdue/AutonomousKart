@@ -52,4 +52,9 @@ def generate_launch_description():
             name='e_comms_node',
             parameters=[{'simulation_mode': False}]
         ),
+        Node(
+            package='autonomous_kart',
+            executable='metrics_api',
+            name='metrics_api',
+        ),
     ])

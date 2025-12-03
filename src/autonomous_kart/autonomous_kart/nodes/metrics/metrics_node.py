@@ -18,6 +18,7 @@ class MetricsNode(Node):
 
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now()
+        self.last_avg_rate = 0.0
 
         self._lock = threading.Lock()
         self._logs: Deque[Dict[str, Any]] = deque(maxlen=1000)
@@ -57,7 +58,7 @@ class MetricsNode(Node):
                 f"Average command rate: {avg_rate:.2f} commands/sec "
                 f"(Total: {self.cmd_count} in {elapsed:.1f}s)"
             )
-
+            self.last_avg_rate = avg_rate
         # Reset counters
         self.cmd_count = 0
         self.last_log_time = current_time

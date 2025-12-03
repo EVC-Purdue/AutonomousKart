@@ -7,40 +7,35 @@ from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
 class PathfinderNode(Node):
     def __init__(self):
-        super().__init__('PathfinderNode')
+        super().__init__("PathfinderNode")
         self.logger = self.get_logger()
         self.angles = None
 
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now()
 
-        self.declare_parameter('system_frequency', 60)
-        self.system_frequency = self.get_parameter('system_frequency').value
+        self.declare_parameter("system_frequency", 60)
+        self.system_frequency = self.get_parameter("system_frequency").value
+
+        self.declare_parameter("stop_after", 5)
+        self.stop_after = self.get_parameter("stop_after").value
+
+        self.stopped = False
 
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
+        self.create_timer(self.stop_after, self.stop)
 
         # Subscriber to opencv pathfinder for angles
         self.opencv_pathfinder_subscriber = self.create_subscription(
-            Float32MultiArray,
-            'track_angles',
-            self.calculate_path_callback,
-            5
+            Float32MultiArray, "track_angles", self.calculate_path_callback, 5
         )
 
         # Publisher to motor
-        self.motor_publisher = self.create_publisher(
-            Float32,
-            'cmd_vel',
-            5
-        )
+        self.motor_publisher = self.create_publisher(Float32, "cmd_vel", 5)
 
         # # Publisher to steering
-        self.steering_publisher = self.create_publisher(
-            Float32,
-            'cmd_turn',
-            5
-        )
+        self.steering_publisher = self.create_publisher(Float32, "cmd_turn", 5)
 
         self.logger.info("Initialize Pathfinder Node")
 
@@ -51,6 +46,11 @@ class PathfinderNode(Node):
         :param msg: Float32MultiArray of [left angle from center to base of track from image, right angle ...]
         :return: Publishes commands to motor & steering
         """
+        if self.stopped:
+            self.steering_publisher.publish(Float32(data=0))
+            self.motor_publisher.publish(Float32(data=0))
+            return
+
         self.cmd_count += 1
         self.angles = (msg.data[0], msg.data[1])
 
@@ -75,10 +75,13 @@ class PathfinderNode(Node):
         self.cmd_count = 0
         self.last_log_time = current_time
 
+    def stop(self):
+        """Stops after time is reached"""
+        self.stopped = True
 
 def main(args=None):
     rclpy.init(args=args)
-    
+
     node = PathfinderNode()
 
     try:
@@ -86,12 +89,12 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     except Exception:
-        node.get_logger().error('Unhandled exception', exc_info=True)
+        node.get_logger().error("Unhandled exception", exc_info=True)
     finally:
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

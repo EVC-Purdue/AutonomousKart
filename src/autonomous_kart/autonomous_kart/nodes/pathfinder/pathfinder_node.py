@@ -77,7 +77,8 @@ class PathfinderNode(Node):
 
     def stop(self):
         """Stops after time is reached"""
-        self.stopped = True
+        if self.stop_after != -1:
+            self.stopped = True
 
 def main(args=None):
     rclpy.init(args=args)

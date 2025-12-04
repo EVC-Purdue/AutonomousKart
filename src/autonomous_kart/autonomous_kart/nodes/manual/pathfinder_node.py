@@ -18,7 +18,7 @@ class PathfinderNode(Node):
         self.expected_speed = 0.0
 
         self.cmd_count = 0
-        self.last_log_time = self.get_clock().now()
+        self.last_log_time = self.get_clock().now().nanoseconds
 
         self.declare_parameter("system_frequency", 60)
         self.system_frequency = self.get_parameter("system_frequency").value
@@ -142,8 +142,8 @@ class PathfinderNode(Node):
 
     def log_command_rate(self):
         """Log average commands per second every 5 seconds"""
-        current_time = self.get_clock().now()
-        elapsed = (current_time - self.last_log_time).nanoseconds / 1e9
+        current_time = self.get_clock().now().nanoseconds
+        elapsed = (current_time - self.last_log_time) / 1e9
 
         if elapsed > 0:
             avg_rate = self.cmd_count / elapsed

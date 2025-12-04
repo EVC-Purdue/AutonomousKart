@@ -71,6 +71,7 @@ class MetricsNode(Node):
         record: Dict[str, Any] = {
             "topic": topic,
             "stamp_ns": self.get_clock().now().nanoseconds,
+            "data": msg.data
         }
 
         with self._lock:

@@ -6,8 +6,7 @@ import rclpy
 from sensor_msgs.msg import Image
 from rclpy.node import Node
 from std_msgs.msg import Float32, Float32MultiArray, Int16
-from rclpy import time
-import flask
+
 
 class MetricsNode(Node):
     def __init__(self):
@@ -41,7 +40,7 @@ class MetricsNode(Node):
             self.cmd_vel_sub = self.create_subscription(
                 type,
                 topic,
-                lambda msg, t=topic: self.cmd_callback(t, msg), # store topic name
+                lambda msg, t=topic: self.cmd_callback(t, msg),  # store topic name
                 3,  # 3 for lower memory usage - may drop some messages rarely
             )
 
@@ -79,7 +78,7 @@ class MetricsNode(Node):
             record["value"] = int(msg.data)
         elif isinstance(msg, Float32MultiArray):
             data_list = list(msg.data)
-            record["value"] = data_list[:10] # Truncate
+            record["value"] = data_list[:10]  # Truncate
             record["len"] = len(data_list)
         elif isinstance(msg, Image):
             record["image_meta"] = {
@@ -96,7 +95,6 @@ class MetricsNode(Node):
             ret = list(self._logs)
             self._logs.clear()
             return ret
-
 
 
 def main(args=None):

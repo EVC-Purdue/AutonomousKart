@@ -36,6 +36,7 @@ setup(
         'console_scripts': [
             'motor_node = autonomous_kart.nodes.motor.motor_node:main',
             'pathfinder_node = autonomous_kart.nodes.pathfinder.pathfinder_node:main',
+            'manual_pathfinder_api = autonomous_kart.nodes.pathfinder.pathfinder_api:main',
             'gps_node = autonomous_kart.nodes.gps.gps_node:main',
             '3dgs_localization_node = autonomous_kart.nodes.3dgs_localization.3dgs_localization_node:main',
             'opencv_pathfinder_node = autonomous_kart.nodes.opencv_pathfinder.opencv_pathfinder_node:main',

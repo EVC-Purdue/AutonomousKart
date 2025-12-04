@@ -2,14 +2,15 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Float32
 
-from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
-
 
 class PathfinderNode(Node):
     def __init__(self):
         super().__init__("PathfinderNode")
         self.logger = self.get_logger()
         self.angles = None
+
+        self.steering = 0.0
+        self.speed = 0.0
 
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now()
@@ -46,10 +47,10 @@ class PathfinderNode(Node):
         self.cmd_count += 1
         self.angles = (msg.data[0], msg.data[1])
 
-        motor_speed, steering_angle = pathfinder(msg.data)
 
-        self.steering_publisher.publish(Float32(data=steering_angle))
-        self.motor_publisher.publish(Float32(data=motor_speed))
+
+        self.steering_publisher.publish(Float32(data=self.steering_angle))
+        self.motor_publisher.publish(Float32(data=self.motor_speed))
 
     def log_command_rate(self):
         """Log average commands per second every 5 seconds"""

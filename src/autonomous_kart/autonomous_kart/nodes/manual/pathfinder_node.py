@@ -60,6 +60,10 @@ class PathfinderNode(Node):
 
         self.logger.info("Initialize Pathfinder Node")
 
+    def update_params(self, speed: float = 0.0, steering: float = 0.0):
+        """ Relative changes to speed & steering """
+        self.set_params(self.speed + speed, self.steering + steering)
+
     def set_params(
         self, speed: float = 0.0, steering: float = 0.0
     ):
@@ -71,13 +75,13 @@ class PathfinderNode(Node):
         steering_ok = abs(target_steering - self.steering) > tolerance
 
         while speed_ok or steering_ok:
-            self.update_params(target_speed, target_steering)
+            self.param_helper(target_speed, target_steering)
 
             speed_ok = abs(target_speed - self.speed) > tolerance
             steering_ok = abs(target_steering - self.steering) > tolerance
 
 
-    def update_params(
+    def param_helper(
         self, speed: float = 0.0, steering: float = 0.0
     ):
         """Updates speed & steering params from given values, speed & steering are deltas"""

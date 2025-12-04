@@ -1,5 +1,5 @@
 from glob import glob
-from setuptools import setup, find_packages
+from setuptools import setup
 
 package_name = 'autonomous_kart'
 

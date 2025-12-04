@@ -18,6 +18,7 @@ setup(
         'autonomous_kart.nodes.e_comms',
         'autonomous_kart.nodes.3dgs_localization',
         'autonomous_kart.nodes.metrics',
+        'autonomous_kart.nodes.manual',
     ],
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),

@@ -35,7 +35,7 @@ def generate_launch_description():
         Node(
             package='autonomous_kart',
             executable='manual_pathfinder_api',
-            name='pathfinder_node',
+            name='manual_pathfinder_api',
             parameters=[{'manual': 'true'}, os.path.join(pkg_share, 'params', 'system.yaml'), os.path.join(pkg_share, 'params', 'planner.yaml'),
                         os.path.join(pkg_share, 'params', 'safety.yaml'), os.path.join(pkg_share, 'params', 'gps.yaml')]
         ),

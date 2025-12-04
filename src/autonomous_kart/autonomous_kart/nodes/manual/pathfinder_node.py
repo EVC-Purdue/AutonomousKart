@@ -7,7 +7,7 @@ from std_msgs.msg import Float32MultiArray, Float32
 
 class PathfinderNode(Node):
     def __init__(self):
-        super().__init__("PathfinderNode")
+        super().__init__("pathfinder_node")
         self.logger = self.get_logger()
         self.angles = None
 

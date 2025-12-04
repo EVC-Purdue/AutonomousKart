@@ -121,7 +121,7 @@ class PathfinderNode(Node):
         self.steering_publisher.publish(Float32(data=self.steering))
         self.motor_publisher.publish(Float32(data=self.speed))
 
-        time = self.get_clock().now()
+        time = self.get_clock().now().nanoseconds
 
         self.metrics_publisher.publish(
             Float32MultiArray(

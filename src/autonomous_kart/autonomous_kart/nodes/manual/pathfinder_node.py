@@ -38,6 +38,11 @@ class PathfinderNode(Node):
         self.declare_parameter("steering_accel", 5)
         self.steering_accel = self.get_parameter("steering_accel").value
 
+        assert self.acceleration > 0
+        assert self.steering_accel > 0
+        assert self.max_speed >= 0
+        assert self.max_steering >= 0
+
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
         # Run publish each iteration of hot loop
@@ -55,27 +60,49 @@ class PathfinderNode(Node):
 
         self.logger.info("Initialize Pathfinder Node")
 
-    def update_params(self, speed: Optional[float], steering: Optional[float]):
-        """ Updates speed & steering params from given values """
+    def set_params(
+        self, speed: float = 0.0, steering: float = 0.0
+    ):
+        target_speed = min(self.max_speed, max(0.0, speed))
+        target_steering = min(self.max_steering, max(-1 * self.max_steering, steering))
+
+        tolerance = 0.1
+        speed_ok = abs(target_speed - self.speed) > tolerance
+        steering_ok = abs(target_steering - self.steering) > tolerance
+
+        while speed_ok or steering_ok:
+            self.update_params(target_speed, target_steering)
+
+            speed_ok = abs(target_speed - self.speed) > tolerance
+            steering_ok = abs(target_steering - self.steering) > tolerance
+
+
+    def update_params(
+        self, speed: float = 0.0, steering: float = 0.0
+    ):
+        """Updates speed & steering params from given values, speed & steering are deltas"""
         self.cmd_count += 1
 
-        if abs(speed) > self.max_speed:
-            speed = self.max_speed if speed > 0 else -1 * self.max_speed
+        if speed < 0:
+            speed = 0.0
+
+        if speed > self.max_speed:
+            speed = self.max_speed
         if abs(steering) > self.max_steering:
-            speed = self.max_steering if steering > 0 else -1 * self.max_steering
+            steering = (
+                self.max_steering if steering > 0 else -1 * self.max_steering
+            )
 
-        if speed:
-            self.expected_speed = speed
-        if steering:
-            self.expected_steering = steering
+        self.expected_speed = speed
+        self.expected_steering = steering
 
-        d_speed = self.speed - self.expected_speed
-        d_steer = self.steering - self.expected_steering
+        d_speed = self.expected_speed - self.speed
+        d_steer = self.expected_steering - self.steering
 
         # Update speed by difference or acceleration, whichever abs value is smaller
         if d_speed != 0:
             self.speed += (
-                d_speed if abs(d_speed) < self.acceleration else self.acceleration
+                d_speed if abs(d_speed) < self.acceleration else (d_speed / abs(d_speed)) * self.acceleration
             )
         if d_steer != 0:
             self.steering += (
@@ -86,7 +113,7 @@ class PathfinderNode(Node):
         self.publish_commands()
 
     def publish_commands(self):
-        """ Publishes commands from params to steering & motor """
+        """Publishes commands from params to steering & motor"""
         self.steering_publisher.publish(Float32(data=self.steering))
         self.motor_publisher.publish(Float32(data=self.speed))
 

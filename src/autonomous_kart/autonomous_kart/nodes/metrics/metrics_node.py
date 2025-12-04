@@ -71,8 +71,22 @@ class MetricsNode(Node):
         record: Dict[str, Any] = {
             "topic": topic,
             "stamp_ns": self.get_clock().now().nanoseconds,
-            "data": msg.data
         }
+
+        if isinstance(msg, Float32):
+            record["value"] = float(msg.data)
+        elif isinstance(msg, Int16):
+            record["value"] = int(msg.data)
+        elif isinstance(msg, Float32MultiArray):
+            data_list = list(msg.data)
+            record["value"] = data_list[:10] # Truncate
+            record["len"] = len(data_list)
+        elif isinstance(msg, Image):
+            record["image_meta"] = {
+                "width": msg.width,
+                "height": msg.height,
+                "encoding": msg.encoding,
+            }
 
         with self._lock:
             self._logs.append(record)

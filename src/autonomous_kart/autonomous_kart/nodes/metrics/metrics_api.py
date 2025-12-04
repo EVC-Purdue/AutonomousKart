@@ -8,6 +8,10 @@ from .metrics_node import MetricsNode
 app = Flask(__name__)
 metrics_node: MetricsNode | None = None
 
+@app.route("/", methods=['GET'])
+def ping():
+    return jsonify({'ping': 'pong'})
+
 
 @app.route("/command_rate", methods=["GET"])
 def command_rate():

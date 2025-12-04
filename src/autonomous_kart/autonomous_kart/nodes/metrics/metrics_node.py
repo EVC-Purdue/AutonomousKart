@@ -6,7 +6,7 @@ import rclpy
 from sensor_msgs.msg import Image
 from rclpy.node import Node
 from std_msgs.msg import Float32, Float32MultiArray, Int16
-from rcl_interfaces.msg import Log
+from rclpy import time
 import flask
 
 class MetricsNode(Node):
@@ -37,11 +37,11 @@ class MetricsNode(Node):
             "e_comms/pwm_rx/motor": Int16,
             "e_comms/pwm_rx/steering": Int16,
         }
-        for publisher, type in publishers.items():
+        for topic, type in publishers.items():
             self.cmd_vel_sub = self.create_subscription(
                 type,
-                publisher,
-                self.cmd_callback,
+                topic,
+                lambda msg, t=topic: self.cmd_callback(t, msg), # store topic name
                 3,  # 3 for lower memory usage - may drop some messages rarely
             )
 
@@ -63,29 +63,24 @@ class MetricsNode(Node):
         self.cmd_count = 0
         self.last_log_time = current_time
 
-    def cmd_callback(self, msg: Log):
+    def cmd_callback(self, topic: str, msg: Any):
         """Subscribes to all nodes and saves responses"""
         self.cmd_count += 1
         self.current_speed = msg
 
-        record = {
-            "name": msg.name,  # node name
-            "level": int(msg.level),
-            "msg": msg.msg,
-            "file": msg.file,
-            "function": msg.function,
-            "line": int(msg.line),
-            "stamp_sec": msg.stamp.sec,
-            "stamp_nanosec": msg.stamp.nanosec,
+        record: Dict[str, Any] = {
+            "topic": topic,
+            "stamp_ns": self.get_clock().now().nanoseconds,
         }
 
         with self._lock:
-            self.logs.append(record)
+            self._logs.append(record)
 
     def get_logs(self):
         with self._lock:
             ret = list(self._logs)
             self._logs.clear()
+            return ret
 
 
 

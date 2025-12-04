@@ -47,8 +47,8 @@ class PathfinderNode(Node):
         :return: Publishes commands to motor & steering
         """
         if self.stopped:
-            self.steering_publisher.publish(Float32(data=0))
-            self.motor_publisher.publish(Float32(data=0))
+            self.steering_publisher.publish(Float32(data=0.0))
+            self.motor_publisher.publish(Float32(data=0.0))
             return
 
         self.cmd_count += 1

@@ -14,7 +14,6 @@ services:
     devices:
       - "/dev/ttyHS2:/dev/ttyHS2"         # GNSS
       - "/dev/spidev12.0:/dev/spidev12.0" # SPI bus 12, CS0
-    user: "0.0"
     stdin_open: true
     tty: true
     network_mode: host

@@ -35,6 +35,7 @@ class MetricsNode(Node):
             "camera/image_raw": Image,
             "e_comms/pwm_rx/motor": Int16,
             "e_comms/pwm_rx/steering": Int16,
+            "pathfinder_params": Float32MultiArray,
         }
         for topic, type in publishers.items():
             self.cmd_vel_sub = self.create_subscription(

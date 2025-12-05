@@ -22,12 +22,6 @@ def generate_launch_description():
         ),
         Node(
             package='autonomous_kart',
-            executable='camera_node',
-            name='camera_node',
-            parameters=[{'simulation_mode': True}, os.path.join(pkg_share, 'params', 'camera.yaml'), os.path.join(pkg_share, 'params', 'system.yaml')]
-        ),
-        Node(
-            package='autonomous_kart',
             executable='gps_node',
             name='gps_node',
             parameters=[os.path.join(pkg_share, 'params', 'gps.yaml')]

@@ -1,4 +1,4 @@
-import time
+import traceback
 
 from cv_bridge import CvBridge
 from rclpy.duration import Duration
@@ -89,7 +89,7 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        node.get_logger().error(f'Unhandled exception: {e}', exc_info=True)
+        node.get_logger().error(traceback.format_exc())
     finally:
         node.running = False
         executor.shutdown(timeout_sec=1.0)

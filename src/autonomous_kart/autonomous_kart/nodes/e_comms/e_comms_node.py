@@ -1,5 +1,7 @@
 from typing import Optional
 
+import traceback
+
 import spidev
 import rclpy
 from rclpy.node import Node
@@ -138,7 +140,7 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     except Exception:
-        node.get_logger().error('Unhandled exception', exc_info=True)
+        node.get_logger().error(traceback.format_exc())
     finally:
         node.destroy_node()
         try:

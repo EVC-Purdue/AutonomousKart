@@ -1,5 +1,6 @@
 import threading
 import time
+import traceback
 
 import cv2
 import rclpy
@@ -132,7 +133,7 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        node.get_logger().error(f'Unhandled exception: {e}', exc_info=True)
+        node.get_logger().error(traceback.format_exc())
     finally:
         node.running = False
         executor.shutdown(timeout_sec=1.0)

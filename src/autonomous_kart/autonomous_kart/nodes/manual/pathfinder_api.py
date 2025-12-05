@@ -49,33 +49,33 @@ def run_test():
     if testIndex == 1:
         # Drive forwards for 5 seconds
         pathfinder_node.set_params(
-            speed=5 * speed, steering=0 * steering
+            speed=50 * speed, steering=0.0 * steering
         )  # Go at speed=5
         time.sleep(5)
         pathfinder_node.set_params(speed=0.0 * speed)
     elif testIndex == 2:
         # Turn in a circle ish
         pathfinder_node.set_params(
-            speed=5 * speed, steering=15 * steering
+            speed=50 * speed, steering=5 * steering
         )  # Go at speed=5
         time.sleep(20)
         pathfinder_node.set_params(speed=0.0 * speed, steering=0.0 * steering)
     else:
         # Figure-8 style motion
         pathfinder_node.set_params(
-            speed=10.0 * speed, steering=0.0 * steering
+            speed=100.0 * speed, steering=0.0 * steering
         )  # Straight
         time.sleep(5)
-        pathfinder_node.set_params(speed=5.0 * speed, steering=15.0  * steering)
+        pathfinder_node.set_params(speed=50.0 * speed, steering=5.0  * steering)
         time.sleep(12)  # 3/4 turn
         pathfinder_node.set_params(
-            speed=10.0 * speed, steering=0.0  * steering
+            speed=100.0 * speed, steering=0.0  * steering
         )  # Straight
         time.sleep(5)
-        pathfinder_node.set_params(speed=5.0 * speed, steering=15.0  * steering)
+        pathfinder_node.set_params(speed=50.0 * speed, steering=5.0  * steering)
         time.sleep(12)  # 3/4 turn
         pathfinder_node.set_params(
-            speed=10.0 * speed, steering=0.0  * steering
+            speed=100.0 * speed, steering=0.0  * steering
         )  # Straight
         time.sleep(5)
         pathfinder_node.set_params(

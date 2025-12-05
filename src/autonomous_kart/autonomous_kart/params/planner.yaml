@@ -1,1 +1,7 @@
 # Planner configs including perception thresholds, toggles, etc.
+system_config:
+  ros__parameters:
+    max_speed: 100,
+    acceleration: 2
+    max_steering: 10
+    steering_accel: 0.5

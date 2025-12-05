@@ -1,5 +1,3 @@
-from typing import Optional
-
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Float32
@@ -26,16 +24,16 @@ class PathfinderNode(Node):
         self.declare_parameter("simulation_mode", False)
         self.sim_mode = self.get_parameter("simulation_mode").value
 
-        self.declare_parameter("max_speed", 50)
+        self.declare_parameter("max_speed", 100)
         self.max_speed = self.get_parameter("max_speed").value
 
         self.declare_parameter("acceleration", 2)
         self.acceleration = self.get_parameter("acceleration").value
 
-        self.declare_parameter("max_steering", 75)
+        self.declare_parameter("max_steering", 10)
         self.max_steering = self.get_parameter("max_steering").value
 
-        self.declare_parameter("steering_accel", 5)
+        self.declare_parameter("steering_accel", 0.5)
         self.steering_accel = self.get_parameter("steering_accel").value
 
         assert self.acceleration > 0

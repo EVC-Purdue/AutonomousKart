@@ -80,13 +80,13 @@ class ECommsNode(Node):
         Part of hot loop so must be efficient
         
         :param motor_msg: Float32 message for motor command (percent throttle)
-        :param steering_msg: Float32 message for steering command (steering angle, -90 to 90)
+        :param steering_msg: Float32 message for steering command (percent steering, -100 to 100)
         :return: None
         """
         self.cmd_count += 1
 
         # Ensure values are within expected ranges
-        if not (0.0 <= motor_msg.data <= 100.0) or not (-90.0 <= steering_msg.data <= 90.0):
+        if not (0.0 <= motor_msg.data <= 100.0) or not (-100.0 <= steering_msg.data <= 100.0):
             self.logger.error(
                 f"Received out-of-bounds command values: "
                 f"motor_percent={motor_msg.data}, steering_angle={steering_msg.data}"

@@ -7,14 +7,14 @@ def pack_to_tx_buffer(motor_percent: float, steering_angle: float) -> list[int]:
     Caller is responsible for ensuring values are within expected ranges.
     
     :param motor_percent: Motor command as a percentage (0 to 100)
-    :param steering_angle: Steering command as an angle in degrees (-90 to 90)
+    :param steering_angle: Steering command as percent steering (-100 to 100, 0 = center)
     :return: List (u8 buffer) ready for SPI transmission of length 4.
              2 bytes for motor, 2 bytes for steering. Steering raw values are offset by +90
              to fit into unsigned int.
     """
     # Scale to raw values
     motor_raw_scaled = (2**16 - 1) * (motor_percent / 100.0) # 0-100 -> 0-(2^16-1)
-    steering_raw_scaled = (2**16 - 1) * ((steering_angle + 90.0) / 180.0) # -90-90 -> 0-(2^16-1)
+    steering_raw_scaled = (2**16 - 1) * ((steering_angle + 100.0) / 200.0) # -100-100 -> 0-(2^16-1)
 
     # Create bytearray buffer
     buffer = [0]*4

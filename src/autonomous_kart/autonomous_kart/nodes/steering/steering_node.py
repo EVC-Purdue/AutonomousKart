@@ -1,3 +1,5 @@
+import traceback
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32
@@ -86,7 +88,7 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     except Exception:
-        node.get_logger().error('Unhandled exception', exc_info=True)
+        node.get_logger().error(traceback.format_exc())
     finally:
         node.destroy_node()
         if rclpy.ok():

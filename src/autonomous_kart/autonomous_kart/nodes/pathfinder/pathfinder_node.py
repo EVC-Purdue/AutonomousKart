@@ -1,7 +1,9 @@
+import traceback
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Float32
-
+import traceback
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
 
@@ -77,7 +79,7 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     except Exception:
-        node.get_logger().error("Unhandled exception", exc_info=True)
+        node.get_logger().error(traceback.format_exc())
     finally:
         node.destroy_node()
         if rclpy.ok():

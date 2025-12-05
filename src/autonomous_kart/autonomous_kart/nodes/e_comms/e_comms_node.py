@@ -4,7 +4,7 @@ import spidev
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from std_msgs.msg import Float32, Int16
+from std_msgs.msg import Float32, UInt16
 from rclpy.impl.rcutils_logger import RcutilsLogger
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 
@@ -66,8 +66,8 @@ class ECommsNode(Node):
         self.ts.registerCallback(self.cmd_callback)
 
         # Publishers
-        self.motor_pwm_publisher    = self.create_publisher(Int16, 'e_comms/pwm_rx/motor', 1)
-        self.steering_pwm_publisher = self.create_publisher(Int16, 'e_comms/pwm_rx/steering', 1)
+        self.motor_pwm_publisher    = self.create_publisher(UInt16, 'e_comms/pwm_rx/motor', 1)
+        self.steering_pwm_publisher = self.create_publisher(UInt16, 'e_comms/pwm_rx/steering', 1)
 
         # Init finished
         self.logger.info("Initialize EComms Node")
@@ -100,8 +100,8 @@ class ECommsNode(Node):
             self.rx_buffer = self.spi.xfer2(self.tx_buffer)
             (self.motor_pwm, self.steering_pwm) = e_comms.unpack_from_rx_buffer(self.rx_buffer, self.logger)
             # Publish received feedback
-            self.motor_pwm_publisher.publish(Int16(data=self.motor_pwm))
-            self.steering_pwm_publisher.publish(Int16(data=self.steering_pwm))
+            self.motor_pwm_publisher.publish(UInt16(data=self.motor_pwm))
+            self.steering_pwm_publisher.publish(UInt16(data=self.steering_pwm))
 
     def destroy_node(self):
         # Close SPI

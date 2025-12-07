@@ -95,8 +95,9 @@ class ECommsNode(Node):
 
         self.motor_percent = motor_msg.data
         self.steering_angle = steering_msg.data
-
+        self.logger.info(f'Percenmt: {self.motor_percent}')
         self.tx_buffer = e_comms.pack_to_tx_buffer(self.motor_percent, self.steering_angle)
+
         if self.spi is not None:
             # Full-duplex SPI transfer
             self.rx_buffer = self.spi.xfer2(self.tx_buffer)

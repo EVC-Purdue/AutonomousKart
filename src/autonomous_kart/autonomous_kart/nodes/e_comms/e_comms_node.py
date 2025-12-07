@@ -102,6 +102,7 @@ class ECommsNode(Node):
             self.rx_buffer = self.spi.xfer2(self.tx_buffer)
             (self.motor_pwm, self.steering_pwm) = e_comms.unpack_from_rx_buffer(self.rx_buffer, self.logger)
             # Publish received feedback
+            self.get_logger().info(f'Motor publishing {self.motor_pwm}')
             self.motor_pwm_publisher.publish(UInt16(data=self.motor_pwm))
             self.steering_pwm_publisher.publish(UInt16(data=self.steering_pwm))
 

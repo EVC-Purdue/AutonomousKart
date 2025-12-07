@@ -124,7 +124,7 @@ class ECommsNode(Node):
                 f"Average command rate: {avg_rate:.2f} commands/sec "
                 f"(Total: {self.cmd_count} in {elapsed:.1f}s)"
             )
-            self.get_logger().info(f'Motor publishing {self.motor_pwm}')
+            self.logger.info(f'Motor publishing {self.motor_pwm}')
 
         # Reset counters
         self.cmd_count = 0

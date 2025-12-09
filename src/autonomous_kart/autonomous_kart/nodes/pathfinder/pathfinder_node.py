@@ -3,19 +3,36 @@ import traceback
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Float32
-
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
-
+import numpy as np
 
 class PathfinderNode(Node):
     def __init__(self):
         super().__init__('PathfinderNode')
         self.logger = self.get_logger()
         self.angles = None
+        self.current_speed = 0.0 
 
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now()
+        self.last_path_time = self.get_clock().now()
 
+        # declare parameters w/ defaults (for pathfinding calculations)
+        self.declare_parameter('max_accel', 3.0)
+        self.declare_parameter('max_steering', 25.0)
+        self.declare_parameter('max_speed_straight', 30.0)
+        self.declare_parameter('max_speed_turning', 15.0)
+        self.declare_parameter('max_speed', 35.0)
+        self.declare_parameter('max_angle_age', 0.5)  # max acceptable age of saved angle (s) 
+        
+        # get parameter values required for pathfinding calculations
+        self.max_accel = self.get_parameter('max_accel').value
+        self.max_steering = self.get_parameter('max_steering').value
+        self.max_speed_straight = self.get_parameter('max_speed_straight').value
+        self.max_speed_turning = self.get_parameter('max_speed_turning').value
+        self.max_speed = self.get_parameter('max_speed').value
+        self.max_angle_age = self.get_parameter('max_angle_age').value
+    
         self.declare_parameter('system_frequency', 60)
         self.system_frequency = self.get_parameter('system_frequency').value
 
@@ -30,6 +47,14 @@ class PathfinderNode(Node):
             5
         )
 
+        # Subscriber to motor node for current speed
+        self.motor_speed_subscriber = self.create_subscription(
+            Float32,
+            'motor_speed',
+            self.motor_speed_callback,
+            5
+        )
+
         # Publisher to motor
         self.motor_publisher = self.create_publisher(
             Float32,
@@ -37,7 +62,7 @@ class PathfinderNode(Node):
             5
         )
 
-        # # Publisher to steering
+        # Publisher to steering
         self.steering_publisher = self.create_publisher(
             Float32,
             'cmd_turn',
@@ -56,10 +81,70 @@ class PathfinderNode(Node):
         self.cmd_count += 1
         self.angles = (msg.data[0], msg.data[1])
 
-        motor_speed, steering_angle = pathfinder(msg.data)
+        current_time = self.get_clock().now()
+        dt = (current_time - self.last_path_time).nanoseconds / 1e9
+
+        self.last_path_time = self.get_clock().now()
+
+        # check if passed in angles are valid
+        theta1 = msg.data[0]
+        theta2 = msg.data[1]
+
+        angles_valid = not (np.isinf(theta1) or np.isinf(theta2) or 
+                           theta1 is None or theta2 is None)
+        
+        if angles_valid:
+            # store valid angle w/ timestamp
+            self.last_valid_angles = (theta1, theta2)
+            self.last_valid_timestamp = current_time
+            angles_to_use = (theta1, theta2)
+            self.logger.debug("Using fresh angles from OpenCV")
+        else:
+            # try to use last valid angles
+            self.logger.warn("OpenCV failed to detect angles")
+            
+            if self.last_valid_angles is not None and self.last_valid_timestamp is not None:
+                # check age of last saved angle
+                angle_age = (current_time - self.last_valid_timestamp).nanoseconds / 1e9
+                
+                if angle_age <= self.max_angle_age:
+                    angles_to_use = self.last_valid_angles
+                    self.logger.info(f"Using cached angles ({angle_age:.3f}s old)")
+                else:
+                    # saved angle too old -- slow down
+                    self.logger.warn(f"Saved angle too old ({angle_age:.3f}s > {self.max_angle_age}s) - slowing down | Current command {self.current_speed:.3f}")
+                    slowdown_speed = self.current_speed * 0.7  # reduce current speed 30%
+                    self.motor_publisher.publish(Float32(data=slowdown_speed))
+                    self.steering_publisher.publish(Float32(data=0.0))  # go straight
+                    return
+            else:
+                # no valid angles saved -- also slow down
+                self.logger.warn(f"No valid angles available - slowing down | Current command {self.current_speed:.3f}")
+                slowdown_speed = self.current_speed * 0.7
+                self.motor_publisher.publish(Float32(data=slowdown_speed))
+                self.steering_publisher.publish(Float32(data=0.0))
+                return
+
+        motor_speed, steering_angle = pathfinder(
+            angles_to_use, 
+            self.current_speed, 
+            dt, 
+            self.max_accel,
+            self.max_steering,
+            self.max_speed_straight,
+            self.max_speed_turning,
+            self.max_speed,
+            self.logger)
 
         self.steering_publisher.publish(Float32(data=steering_angle))
         self.motor_publisher.publish(Float32(data=motor_speed))
+    
+    def motor_speed_callback(self, msg: Float32):
+        """
+        Updates current speed from motor feedback (required for smooth acceleration??)
+        :param msg: Float32 containing current motor speed
+        """
+        self.current_speed = msg.data
 
     def log_command_rate(self):
         """Log average commands per second every 5 seconds"""
@@ -82,7 +167,6 @@ def main(args=None):
     rclpy.init(args=args)
     
     node = PathfinderNode()
-
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

@@ -3,7 +3,6 @@ import traceback
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Float32
-import traceback
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
 

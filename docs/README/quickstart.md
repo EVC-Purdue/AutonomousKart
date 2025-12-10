@@ -32,10 +32,6 @@ source /opt/ros/humble/setup.bash
 colcon build
 source install/setup.bash
 ```
-5) Setup ROS
-```bash
-source /opt/ros/humble/setup.bash
-```
 
 ## Teams
 

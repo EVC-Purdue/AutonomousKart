@@ -2,4 +2,4 @@ system_config:
   ros__parameters:
     simulation_mode: false,
     system_frequency: 60  # Speed of hot loop (Hertz)
-    manual: false, # Run in manual mode
+    manual: false # Run in manual mode

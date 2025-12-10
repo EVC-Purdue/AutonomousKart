@@ -10,7 +10,7 @@ source install/setup.bash
 3) To build/test, run:
 ```bash
 colcon build
-ros2 launch autonomous_kart bringup_sim.launch.py
+ros2 launch autonomous_kart bringup_manual.launch.py
 ```
 
 ## Run devcontainer

@@ -24,13 +24,13 @@ class PathfinderNode(Node):
         self.declare_parameter("simulation_mode", False)
         self.sim_mode = self.get_parameter("simulation_mode").value
 
-        self.declare_parameter("max_speed", 100)
+        self.declare_parameter("max_speed", 40)
         self.max_speed = self.get_parameter("max_speed").value
 
-        self.declare_parameter("acceleration", 2)
+        self.declare_parameter("acceleration", 0.5)
         self.acceleration = self.get_parameter("acceleration").value
 
-        self.declare_parameter("max_steering", 10)
+        self.declare_parameter("max_steering", 75)
         self.max_steering = self.get_parameter("max_steering").value
 
         self.declare_parameter("steering_accel", 0.5)

@@ -37,9 +37,9 @@ class MetricsNode(Node):
             "e_comms/pwm_rx/steering": Int16,
             "pathfinder_params": Float32MultiArray,
         }
-        for topic, type in publishers.items():
+        for topic, msg_type in publishers.items():
             self.cmd_vel_sub = self.create_subscription(
-                type,
+                msg_type,
                 topic,
                 lambda msg, t=topic: self.cmd_callback(t, msg),  # store topic name
                 3,  # 3 for lower memory usage - may drop some messages rarely
@@ -66,7 +66,6 @@ class MetricsNode(Node):
     def cmd_callback(self, topic: str, msg: Any):
         """Subscribes to all nodes and saves responses"""
         self.cmd_count += 1
-        self.current_speed = msg
 
         record: Dict[str, Any] = {
             "topic": topic,

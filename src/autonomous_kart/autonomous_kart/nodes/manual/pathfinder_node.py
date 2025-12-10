@@ -82,7 +82,7 @@ class PathfinderNode(Node):
     def param_helper(
         self, speed: float = 0.0, steering: float = 0.0
     ):
-        """Updates speed & steering params from given values, speed & steering are deltas"""
+        """Updates speed & steering params from given values, speed & steering are absolute"""
         self.cmd_count += 1
 
         if speed < 0:

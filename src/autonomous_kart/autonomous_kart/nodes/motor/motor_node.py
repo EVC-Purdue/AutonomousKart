@@ -56,7 +56,6 @@ class MotorNode(Node):
     def cmd_vel_callback(self, msg):
         """Receive speed commands and publish current speed"""
         self.cmd_count += 1
-        self.current_speed = msg
 
         # self.get_logger().info(
         #     f'Speed: {msg.data:.2f}'

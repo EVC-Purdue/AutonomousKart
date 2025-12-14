@@ -3,46 +3,37 @@ import traceback
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Float32
-
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
 
 class PathfinderNode(Node):
     def __init__(self):
-        super().__init__('PathfinderNode')
+        super().__init__("PathfinderNode")
         self.logger = self.get_logger()
         self.angles = None
 
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now()
 
-        self.declare_parameter('system_frequency', 60)
-        self.system_frequency = self.get_parameter('system_frequency').value
+        self.declare_parameter("system_frequency", 60)
+        self.system_frequency = self.get_parameter("system_frequency").value
+
+        self.declare_parameter('simulation_mode', False)
+        self.sim_mode = self.get_parameter('simulation_mode').value
 
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
         # Subscriber to opencv pathfinder for angles
         self.opencv_pathfinder_subscriber = self.create_subscription(
-            Float32MultiArray,
-            'track_angles',
-            self.calculate_path_callback,
-            5
+            Float32MultiArray, "track_angles", self.calculate_path_callback, 5
         )
 
         # Publisher to motor
-        self.motor_publisher = self.create_publisher(
-            Float32,
-            'cmd_vel',
-            5
-        )
+        self.motor_publisher = self.create_publisher(Float32, "cmd_vel", 5)
 
         # # Publisher to steering
-        self.steering_publisher = self.create_publisher(
-            Float32,
-            'cmd_turn',
-            5
-        )
+        self.steering_publisher = self.create_publisher(Float32, "cmd_turn", 5)
 
         self.logger.info("Initialize Pathfinder Node")
 
@@ -77,10 +68,9 @@ class PathfinderNode(Node):
         self.cmd_count = 0
         self.last_log_time = current_time
 
-
 def main(args=None):
     rclpy.init(args=args)
-    
+
     node = PathfinderNode()
 
     try:
@@ -95,5 +85,5 @@ def main(args=None):
             rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

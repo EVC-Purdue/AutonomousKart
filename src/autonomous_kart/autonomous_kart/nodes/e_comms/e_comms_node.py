@@ -63,7 +63,7 @@ class ECommsNode(Node):
             [self.motor_sub, self.steering_sub],
             queue_size=3,
             slop=0.1, # Time tolerance in seconds
-            allow_headerless=True # Float32 has no header
+            allow_headerless=True  # Float32 has no header
         )
         self.ts.registerCallback(self.cmd_callback)
 
@@ -95,8 +95,8 @@ class ECommsNode(Node):
 
         self.motor_percent = motor_msg.data
         self.steering_angle = steering_msg.data
-
         self.tx_buffer = e_comms.pack_to_tx_buffer(self.motor_percent, self.steering_angle)
+
         if self.spi is not None:
             # Full-duplex SPI transfer
             self.rx_buffer = self.spi.xfer2(self.tx_buffer)

@@ -13,6 +13,7 @@ def pack_to_tx_buffer(motor_percent: float, steering_angle: float) -> list[int]:
              to fit into unsigned int.
     """
     # Scale to raw values
+
     motor_raw_scaled = (2**16 - 1) * (motor_percent / 100.0) # 0-100 -> 0-(2^16-1)
     steering_raw_scaled = (2**16 - 1) * ((steering_angle + 100.0) / 200.0) # -100-100 -> 0-(2^16-1)
 

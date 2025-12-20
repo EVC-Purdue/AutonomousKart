@@ -1,5 +1,5 @@
 /**:
   ros__parameters:
     simulation_mode: false
-    system_state: "RUN"  # "STOPPED", "IDLE", "MANUAL", "AUTONOMOUS"
+    system_state: "IDLE"  # "STOPPED", "IDLE", "MANUAL", "AUTONOMOUS"
     system_frequency: 60  # Speed of hot loop (Hertz)

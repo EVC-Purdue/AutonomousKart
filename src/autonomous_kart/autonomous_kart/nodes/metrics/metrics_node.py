@@ -1,3 +1,4 @@
+import json
 import threading
 from collections import deque
 from typing import Deque, Dict, Any
@@ -5,7 +6,7 @@ from typing import Deque, Dict, Any
 import rclpy
 from sensor_msgs.msg import Image
 from rclpy.node import Node
-from std_msgs.msg import Float32, Float32MultiArray, Int16
+from std_msgs.msg import Float32, Float32MultiArray, Int16, String
 
 
 class MetricsNode(Node):
@@ -23,7 +24,10 @@ class MetricsNode(Node):
         self.last_avg_rate = 0.0
 
         self._lock = threading.Lock()
-        self._logs: Deque[Dict[str, Any]] = deque(maxlen=1000)
+        self._logs: Deque[Dict[str, Any]] = deque(maxlen=5000)
+
+        self.logs_pub = self.create_publisher(String, "metrics/logs", 5)
+        self.create_timer(1.0, self.publish_logs)
 
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
@@ -98,6 +102,19 @@ class MetricsNode(Node):
             ret = list(self._logs)
             self._logs.clear()
             return ret
+
+    def publish_logs(self):
+        logs = self.get_logs()
+
+        payload = {
+            "stamp_ns": self.get_clock().now().nanoseconds,
+            "avg_cmd_rate_5s": self.last_avg_rate,
+            "count": len(logs),
+            "logs": logs,
+        }
+
+        msg = String(data=json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
+        self.logs_pub.publish(msg)
 
 
 def main(args=None):

@@ -14,6 +14,7 @@ def generate_launch_description():
     gps_yaml = os.path.join(pkg_share, 'params', 'gps.yaml')
     safety_yaml = os.path.join(pkg_share, 'params', 'safety.yaml')
     system_yaml = os.path.join(pkg_share, 'params', 'system.yaml')
+    pathfinder_yaml = os.path.join(pkg_share, 'params', 'planner.yaml')
 
     sim_mode = LaunchConfiguration('simulation_mode')
 
@@ -49,7 +50,7 @@ def generate_launch_description():
                 package='autonomous_kart',
                 executable='pathfinder_node',
                 name='pathfinder_node',
-                parameters=[gps_yaml, safety_yaml],
+                parameters=[pathfinder_yaml, safety_yaml],
             ),
             Node(
                 package='autonomous_kart',

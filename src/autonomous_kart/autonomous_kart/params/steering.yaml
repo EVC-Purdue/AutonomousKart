@@ -2,5 +2,5 @@ steering_node:
   ros__parameters:
 #    max_angular_speed: 3.0     # rad/s
     max_steering: 100          # %
-    min_steering: -100            # %
+    min_steering: -100         # %
 #    motor_timeout: 1.0         # seconds

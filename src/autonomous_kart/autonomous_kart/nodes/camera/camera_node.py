@@ -57,6 +57,7 @@ class CameraNode(Node):
 
         else:
             self.cap = cv2.VideoCapture(0)  # Real camera
+            self.video_fps = self.fps
 
         self.logger.info(f"Video FPS: {self.video_fps}, Given FPS: {self.fps}")
         self.timer = self.create_timer(1.0 / self.fps, self.timer_callback)

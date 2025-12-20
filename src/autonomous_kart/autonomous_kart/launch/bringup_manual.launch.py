@@ -15,7 +15,7 @@ def generate_launch_description():
     gps_yaml = os.path.join(pkg_share, "params", "gps.yaml")
     safety_yaml = os.path.join(pkg_share, "params", "safety.yaml")
     system_yaml = os.path.join(pkg_share, "params", "system.yaml")
-    planner_yaml = os.path.join(pkg_share, "params", "planner.yaml")
+    planner_yaml = os.path.join(pkg_share, "params", "pathfinder.yaml")
 
     manual = LaunchConfiguration("manual")
 

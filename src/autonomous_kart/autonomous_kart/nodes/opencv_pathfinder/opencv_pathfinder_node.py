@@ -29,7 +29,6 @@ class OpenCVPathfinderNode(Node):
         self.frame_count = 0
         self.angle_msg = None
 
-        self.declare_parameter("system_frequency", 60)
         self.system_frequency = self.get_parameter("system_frequency").value
 
         qos = QoSProfile(

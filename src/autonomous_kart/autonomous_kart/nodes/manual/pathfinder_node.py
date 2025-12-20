@@ -22,22 +22,11 @@ class PathfinderNode(Node):
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now().nanoseconds
 
-        self.declare_parameter("system_frequency", 60)
         self.system_frequency = self.get_parameter("system_frequency").value
-
-        self.declare_parameter("simulation_mode", False)
         self.sim_mode = self.get_parameter("simulation_mode").value
-
-        self.declare_parameter("max_speed", 40)
         self.max_speed = self.get_parameter("max_speed").value
-
-        self.declare_parameter("acceleration", 0.5)
         self.acceleration = self.get_parameter("acceleration").value
-
-        self.declare_parameter("max_steering", 75)
         self.max_steering = self.get_parameter("max_steering").value
-
-        self.declare_parameter("steering_accel", 0.5)
         self.steering_accel = self.get_parameter("steering_accel").value
 
         assert self.acceleration > 0

@@ -16,7 +16,6 @@ class MetricsNode(Node):
             automatically_declare_parameters_from_overrides=True,
         )
 
-        self.declare_parameter("simulation_mode", False)
         self.sim_mode = self.get_parameter("simulation_mode").value
 
         self.cmd_count = 0

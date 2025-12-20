@@ -28,7 +28,6 @@ class ECommsNode(Node):
         self.logger: RcutilsLogger = self.get_logger()
 
         # Parameters
-        self.declare_parameter("simulation_mode", False)
         self.simulation_mode: bool = self.get_parameter("simulation_mode").value
 
         # Inputs

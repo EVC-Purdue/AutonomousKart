@@ -19,10 +19,7 @@ class PathfinderNode(Node):
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now()
 
-        self.declare_parameter("system_frequency", 60)
         self.system_frequency = self.get_parameter("system_frequency").value
-
-        self.declare_parameter("simulation_mode", False)
         self.sim_mode = self.get_parameter("simulation_mode").value
 
         # Timer to log average every 5 seconds

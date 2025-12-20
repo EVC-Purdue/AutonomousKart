@@ -12,13 +12,13 @@ def generate_launch_description():
             package='autonomous_kart',
             executable='motor_node',
             name='motor_node',
-            parameters=[os.path.join(pkg_share, 'params', 'controller.yaml'), os.path.join(pkg_share, 'params', 'system.yaml')]
+            parameters=[os.path.join(pkg_share, 'params', 'motor.yaml'), os.path.join(pkg_share, 'params', 'system.yaml')]
         ),
         Node(
             package='autonomous_kart',
             executable='steering_node',
             name='steering_node',
-            parameters=[os.path.join(pkg_share, 'params', 'controller.yaml'), os.path.join(pkg_share, 'params', 'system.yaml')]
+            parameters=[os.path.join(pkg_share, 'params', 'motor.yaml'), os.path.join(pkg_share, 'params', 'system.yaml')]
         ),
         Node(
             package='autonomous_kart',

@@ -1,5 +1,4 @@
 # Params and toggles for RC controller drive including gain, rates, etc.
-# Dummy values for now
 motor_node:
   ros__parameters:
     max_linear_speed: 5.0      # m/s

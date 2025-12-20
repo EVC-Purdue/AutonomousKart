@@ -7,10 +7,14 @@ from std_msgs.msg import Float32
 
 class SteeringNode(Node):
     def __init__(self):
-        super().__init__('steering_node')
+        super().__init__(
+            "steering_node",
+            allow_undeclared_parameters=True,
+            automatically_declare_parameters_from_overrides=True
+        )
 
-        self.declare_parameter('simulation_mode', False)
-        self.sim_mode = self.get_parameter('simulation_mode').value
+        self.declare_parameter("simulation_mode", False)
+        self.sim_mode = self.get_parameter("simulation_mode").value
 
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now()
@@ -20,22 +24,17 @@ class SteeringNode(Node):
 
         # Subscribe to turn commands
         self.cmd_turn_sub = self.create_subscription(
-            Float32,
-            'cmd_turn',
-            self.cmd_turn_callback,
-            5
+            Float32, "cmd_turn", self.cmd_turn_callback, 5
         )
 
         # Publisher for steering angular velocity
-        self.turn_pub = self.create_publisher(
-            Float32,
-            'turn_angle',
-            5
-        )
+        self.turn_pub = self.create_publisher(Float32, "turn_angle", 5)
 
         self.current_angle = Float32()
 
-        self.get_logger().info(f'Steering Node started - Mode: {"SIM" if self.sim_mode else "REAL"}')
+        self.get_logger().info(
+            f"Steering Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}"
+        )
 
     def cmd_turn_callback(self, msg: Float32):
         """Receive turn commands and publish current turn"""
@@ -55,11 +54,11 @@ class SteeringNode(Node):
 
     def control_sim_steering(self, cmd: Float32):
         """Simulation mode - just log the command for now"""
-        self.get_logger().debug(f'SIM: Steering set to commanded angle={cmd.data:.2f}')
+        self.get_logger().debug(f"SIM: Steering set to commanded angle={cmd.data:.2f}")
 
     def control_real_steering(self, cmd: Float32):
         """Real mode - control actual hardware here"""
-        self.get_logger().debug(f'REAL: Steering set to commanded angle={cmd.data:.2f}')
+        self.get_logger().debug(f"REAL: Steering set to commanded angle={cmd.data:.2f}")
 
     def log_command_rate(self):
         """Log average commands per second every 5 seconds"""
@@ -80,7 +79,7 @@ class SteeringNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    
+
     node = SteeringNode()
 
     try:
@@ -95,5 +94,5 @@ def main(args=None):
             rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

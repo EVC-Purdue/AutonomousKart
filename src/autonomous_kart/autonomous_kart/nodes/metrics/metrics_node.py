@@ -10,7 +10,11 @@ from std_msgs.msg import Float32, Float32MultiArray, Int16
 
 class MetricsNode(Node):
     def __init__(self):
-        super().__init__("metrics_node")
+        super().__init__(
+            "metrics_node",
+            allow_undeclared_parameters=True,
+            automatically_declare_parameters_from_overrides=True,
+        )
 
         self.declare_parameter("simulation_mode", False)
         self.sim_mode = self.get_parameter("simulation_mode").value

@@ -8,7 +8,11 @@ from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
 class PathfinderNode(Node):
     def __init__(self):
-        super().__init__("PathfinderNode")
+        super().__init__(
+            "PathfinderNode",
+            allow_undeclared_parameters=True,
+            automatically_declare_parameters_from_overrides=True
+        )
         self.logger = self.get_logger()
         self.angles = None
 
@@ -18,8 +22,8 @@ class PathfinderNode(Node):
         self.declare_parameter("system_frequency", 60)
         self.system_frequency = self.get_parameter("system_frequency").value
 
-        self.declare_parameter('simulation_mode', False)
-        self.sim_mode = self.get_parameter('simulation_mode').value
+        self.declare_parameter("simulation_mode", False)
+        self.sim_mode = self.get_parameter("simulation_mode").value
 
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
@@ -67,6 +71,7 @@ class PathfinderNode(Node):
         # Reset counters
         self.cmd_count = 0
         self.last_log_time = current_time
+
 
 def main(args=None):
     rclpy.init(args=args)

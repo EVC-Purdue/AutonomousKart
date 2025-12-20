@@ -5,7 +5,11 @@ from std_msgs.msg import Float32MultiArray, Float32
 
 class PathfinderNode(Node):
     def __init__(self):
-        super().__init__("pathfinder_node")
+        super().__init__(
+            "pathfinder_node",
+            allow_undeclared_parameters=True,
+            automatically_declare_parameters_from_overrides=True
+        )
         self.logger = self.get_logger()
         self.angles = None
 
@@ -59,12 +63,10 @@ class PathfinderNode(Node):
         self.logger.info("Initialize Pathfinder Node")
 
     def update_params(self, speed: float = 0.0, steering: float = 0.0):
-        """ Relative changes to speed & steering """
+        """Relative changes to speed & steering"""
         self.set_params(self.speed + speed, self.steering + steering)
 
-    def set_params(
-        self, speed: float = 0.0, steering: float = 0.0
-    ):
+    def set_params(self, speed: float = 0.0, steering: float = 0.0):
         target_speed = min(self.max_speed, max(0.0, speed))
         target_steering = min(self.max_steering, max(-1 * self.max_steering, steering))
 
@@ -78,10 +80,7 @@ class PathfinderNode(Node):
             speed_ok = abs(target_speed - self.speed) > tolerance
             steering_ok = abs(target_steering - self.steering) > tolerance
 
-
-    def param_helper(
-        self, speed: float = 0.0, steering: float = 0.0
-    ):
+    def param_helper(self, speed: float = 0.0, steering: float = 0.0):
         """Updates speed & steering params from given values, speed & steering are absolute"""
         self.cmd_count += 1
 
@@ -91,9 +90,7 @@ class PathfinderNode(Node):
         if speed > self.max_speed:
             speed = self.max_speed
         if abs(steering) > self.max_steering:
-            steering = (
-                self.max_steering if steering > 0 else -1 * self.max_steering
-            )
+            steering = self.max_steering if steering > 0 else -1 * self.max_steering
 
         self.expected_speed = speed
         self.expected_steering = steering
@@ -104,7 +101,9 @@ class PathfinderNode(Node):
         # Update speed by difference or acceleration, whichever abs value is smaller
         if d_speed != 0:
             self.speed += (
-                d_speed if abs(d_speed) < self.acceleration else (d_speed / abs(d_speed)) * self.acceleration
+                d_speed
+                if abs(d_speed) < self.acceleration
+                else (d_speed / abs(d_speed)) * self.acceleration
             )
         if d_steer != 0:
             self.steering += (

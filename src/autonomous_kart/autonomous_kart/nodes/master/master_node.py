@@ -3,7 +3,7 @@ import threading
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import String, Float32MultiArray
 
 STATES = ["IDLE", "MANUAL", "AUTONOMOUS", "STOPPED"]
 
@@ -24,7 +24,9 @@ class MasterNode(Node):
         self._lock = threading.Lock()
         self._logs = []
 
-        self.state_publisher = self.create_publisher(String, "state", 10)
+        self.state_publisher = self.create_publisher(String, "system_state", 10)
+        # Publish speed + steering for manual mode
+        self.manual_publisher = self.create_publisher(Float32MultiArray, "manual_commands", 10)
 
         # Metrics subscriber to get logs and send them through API
         self.metrics_subscriber = self.create_subscription(

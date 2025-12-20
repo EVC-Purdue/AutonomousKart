@@ -2,7 +2,7 @@ import traceback
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray, Float32
+from std_msgs.msg import Float32MultiArray, Float32, String
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
 
@@ -22,12 +22,38 @@ class PathfinderNode(Node):
         self.system_frequency = self.get_parameter("system_frequency").value
         self.sim_mode = self.get_parameter("simulation_mode").value
 
+        # Manual params
+        self.steering = 0.0
+        self.speed = 0.0
+
+        self.expected_steering = 0.0
+        self.expected_speed = 0.0
+
+        self.max_speed = self.get_parameter("max_speed").value
+        self.acceleration = self.get_parameter("acceleration").value
+        self.max_steering = self.get_parameter("max_steering").value
+        self.steering_accel = self.get_parameter("steering_accel").value
+
+        self.metrics_publisher = self.create_publisher(
+            Float32MultiArray, "pathfinder_params", 5
+        )
+
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
+        self.state = self.get_parameter("system_state").value
+        self.state_subscriber = self.create_subscription(String, "system_state", self.update_state, qos_profile=10)
+
         # Subscriber to opencv pathfinder for angles
         self.opencv_pathfinder_subscriber = self.create_subscription(
-            Float32MultiArray, "track_angles", self.calculate_path_callback, 5
+            Float32MultiArray, "track_angles", self.autonomous_control_loop, 5
+        )
+
+        self.manual_subscriber = self.create_subscription(
+            Float32MultiArray,
+            "manual_commands",
+            self.manual_loop,
+            qos_profile=5
         )
 
         # Publisher to motor
@@ -38,7 +64,14 @@ class PathfinderNode(Node):
 
         self.logger.info("Initialize Pathfinder Node")
 
-    def calculate_path_callback(self, msg: Float32MultiArray):
+    def update_state(self, msg: String):
+        if msg.data not in ["IDLE", "MANUAL", "AUTONOMOUS", "STOPPED"]:
+            self.logger.error(f"State {msg.data} not recognized")
+            return
+
+        self.state = msg.data
+
+    def autonomous_control_loop(self, msg: Float32MultiArray):
         """
         Calculate commands for steering and motor from opencv_pathfinder efficiently
         Part of hot loop so must be efficient
@@ -46,12 +79,90 @@ class PathfinderNode(Node):
         :return: Publishes commands to motor & steering
         """
         self.cmd_count += 1
-        self.angles = (msg.data[0], msg.data[1])
+        if self.state == "AUTONOMOUS":
+            self.angles = (msg.data[0], msg.data[1])
 
-        motor_speed, steering_angle = pathfinder(msg.data)
+            motor_speed, steering_angle = pathfinder(msg.data)
 
-        self.steering_publisher.publish(Float32(data=steering_angle))
-        self.motor_publisher.publish(Float32(data=motor_speed))
+            self.steering_publisher.publish(Float32(data=steering_angle))
+            self.motor_publisher.publish(Float32(data=motor_speed))
+
+    def manual_loop(self, msg: Float32MultiArray):
+        self.cmd_count += 1
+        if self.state == "MANUAL":
+            motor_speed, steering = msg.data[0], msg.data[1]
+            self.set_manual_speeds(motor_speed, steering)
+
+    def set_manual_speeds(self, speed: float = 0.0, steering: float = 0.0):
+        target_speed = min(self.max_speed, max(0.0, speed))
+        target_steering = min(self.max_steering, max(-1 * self.max_steering, steering))
+
+        tolerance = 0.1
+        speed_ok = abs(target_speed - self.speed) > tolerance
+        steering_ok = abs(target_steering - self.steering) > tolerance
+
+        while speed_ok or steering_ok:
+            self.manual_speed_helper(target_speed, target_steering)
+
+            speed_ok = abs(target_speed - self.speed) > tolerance
+            steering_ok = abs(target_steering - self.steering) > tolerance
+
+    def manual_speed_helper(self, speed: float = 0.0, steering: float = 0.0):
+        """Updates speed & steering params from given values, speed & steering are absolute"""
+        self.cmd_count += 1
+
+        if speed < 0:
+            speed = 0.0
+
+        if speed > self.max_speed:
+            speed = self.max_speed
+        if abs(steering) > self.max_steering:
+            steering = self.max_steering if steering > 0 else -1 * self.max_steering
+
+        self.expected_speed = speed
+        self.expected_steering = steering
+
+        d_speed = self.expected_speed - self.speed
+        d_steer = self.expected_steering - self.steering
+
+        # Update speed by difference or acceleration, whichever abs value is smaller
+        if d_speed != 0:
+            self.speed += (
+                d_speed
+                if abs(d_speed) < self.acceleration
+                else (d_speed / abs(d_speed)) * self.acceleration
+            )
+        if d_steer != 0:
+            self.steering += (
+                d_steer
+                if abs(d_steer) < self.steering_accel
+                else (d_steer / abs(d_steer)) * self.steering_accel
+            )
+        self.publish_commands()
+
+    def publish_commands(self):
+        """Publishes commands from params to steering & motor"""
+        self.steering_publisher.publish(Float32(data=self.steering))
+        self.motor_publisher.publish(Float32(data=self.speed))
+
+        time = self.get_clock().now().nanoseconds
+
+        self.metrics_publisher.publish(
+            Float32MultiArray(
+                data=[
+                    self.speed,
+                    self.expected_speed,
+                    self.acceleration,
+                    self.max_speed,
+                    self.steering,
+                    self.expected_steering,
+                    self.steering_accel,
+                    self.max_steering,
+                    time - self.last_log_time,
+                ]
+            )
+        )
+        self.last_log_time = time
 
     def log_command_rate(self):
         """Log average commands per second every 5 seconds"""

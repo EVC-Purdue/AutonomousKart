@@ -10,6 +10,7 @@ def generate_launch_description():
     pkg_share = get_package_share_directory('autonomous_kart')
 
     motor_yaml = os.path.join(pkg_share, 'params', 'motor.yaml')
+    steering_yaml = os.path.join(pkg_share, 'params', 'steering.yaml')
     camera_yaml = os.path.join(pkg_share, 'params', 'camera.yaml')
     gps_yaml = os.path.join(pkg_share, 'params', 'gps.yaml')
     safety_yaml = os.path.join(pkg_share, 'params', 'safety.yaml')
@@ -38,7 +39,7 @@ def generate_launch_description():
                 package='autonomous_kart',
                 executable='steering_node',
                 name='steering_node',
-                parameters=[motor_yaml],
+                parameters=[steering_yaml],
             ),
             Node(
                 package='autonomous_kart',

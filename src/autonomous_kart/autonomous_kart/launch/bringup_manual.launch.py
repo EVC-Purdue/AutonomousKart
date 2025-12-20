@@ -1,47 +1,76 @@
 from launch import LaunchDescription
-from launch_ros.actions import Node
-import os
+from launch.actions import DeclareLaunchArgument, GroupAction
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node, SetParameter, SetParametersFromFile
+from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
+import os
 
 
 def generate_launch_description():
-    pkg_share = get_package_share_directory('autonomous_kart')
+    pkg_share = get_package_share_directory("autonomous_kart")
 
-    return LaunchDescription([
-        Node(
-            package='autonomous_kart',
-            executable='motor_node',
-            name='motor_node',
-            parameters=[os.path.join(pkg_share, 'params', 'motor.yaml'), os.path.join(pkg_share, 'params', 'system.yaml')]
-        ),
-        Node(
-            package='autonomous_kart',
-            executable='steering_node',
-            name='steering_node',
-            parameters=[os.path.join(pkg_share, 'params', 'motor.yaml'), os.path.join(pkg_share, 'params', 'system.yaml')]
-        ),
-        Node(
-            package='autonomous_kart',
-            executable='gps_node',
-            name='gps_node',
-            parameters=[os.path.join(pkg_share, 'params', 'gps.yaml')]
-        ),
-        Node(
-            package='autonomous_kart',
-            executable='manual_pathfinder_api',
-            name='manual_pathfinder_api',
-            parameters=[{'manual': True}, os.path.join(pkg_share, 'params', 'system.yaml'), os.path.join(pkg_share, 'params', 'planner.yaml'),
-                        os.path.join(pkg_share, 'params', 'safety.yaml'), os.path.join(pkg_share, 'params', 'gps.yaml')]
-        ),
-        Node(
-            package='autonomous_kart',
-            executable='e_comms_node',
-            name='e_comms_node',
-            parameters=[{'simulation_mode': False}]
-        ),
-        Node(
-            package='autonomous_kart',
-            executable='metrics_api',
-            name='metrics_api',
-        ),
-    ])
+    motor_yaml = os.path.join(pkg_share, "params", "motor.yaml")
+    steering_yaml = os.path.join(pkg_share, "params", "steering.yaml")
+    gps_yaml = os.path.join(pkg_share, "params", "gps.yaml")
+    safety_yaml = os.path.join(pkg_share, "params", "safety.yaml")
+    system_yaml = os.path.join(pkg_share, "params", "system.yaml")
+    planner_yaml = os.path.join(pkg_share, "params", "planner.yaml")
+
+    manual = LaunchConfiguration("manual")
+
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "manual",
+                default_value="true",
+            ),
+            GroupAction(
+                [
+                    SetParametersFromFile(system_yaml),
+
+                    # Manual mode flag
+                    SetParameter(
+                        name="manual",
+                        value=ParameterValue(manual, value_type=bool),
+                    ),
+
+                    Node(
+                        package="autonomous_kart",
+                        executable="motor_node",
+                        name="motor_node",
+                        parameters=[motor_yaml],
+                    ),
+                    Node(
+                        package="autonomous_kart",
+                        executable="steering_node",
+                        name="steering_node",
+                        parameters=[steering_yaml],
+                    ),
+                    Node(
+                        package="autonomous_kart",
+                        executable="gps_node",
+                        name="gps_node",
+                        parameters=[gps_yaml],
+                    ),
+                    # TODO: Does not work right now because params are not passed in properly. This node will be removed.
+                    # Node(
+                    #     package="autonomous_kart",
+                    #     executable="manual_pathfinder_api",
+                    #     name="manual_pathfinder_api",
+                    #     parameters=[planner_yaml, safety_yaml],
+                    # ),
+                    Node(
+                        package="autonomous_kart",
+                        executable="e_comms_node",
+                        name="e_comms_node",
+                    ),
+                    Node(
+                        package="autonomous_kart",
+                        executable="metrics_api",
+                        name="metrics_api",
+                    ),
+                ]
+            ),
+        ]
+    )

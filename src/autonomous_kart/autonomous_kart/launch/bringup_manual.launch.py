@@ -53,13 +53,6 @@ def generate_launch_description():
                         name="gps_node",
                         parameters=[gps_yaml],
                     ),
-                    # TODO: Does not work right now because params are not passed in properly. This node will be removed.
-                    # Node(
-                    #     package="autonomous_kart",
-                    #     executable="manual_pathfinder_api",
-                    #     name="manual_pathfinder_api",
-                    #     parameters=[planner_yaml, safety_yaml],
-                    # ),
                     Node(
                         package="autonomous_kart",
                         executable="e_comms_node",

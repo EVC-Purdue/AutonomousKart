@@ -51,6 +51,9 @@ class MasterNode(Node):
         self._logs.clear()
         return logs
 
+    def manual_control(self, speed, steering):
+        self.manual_publisher.publish(Float32MultiArray(data=[speed, steering]))
+
 
 
 

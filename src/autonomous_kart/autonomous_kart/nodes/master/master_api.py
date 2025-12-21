@@ -15,14 +15,14 @@ def ping():
 
 
 @app.route("/get_logs", methods=["GET"])
-def logs():
+def get_logs():
     if not master_node:
         return jsonify({"error": "master node not initialized"}), 500
     return jsonify(master_node.get_logs())
 
 
 @app.route("/manual_control", methods=["POST"])
-def logs():
+def manual_control():
     data = request.get_json()
     if not isinstance(data, dict):
         return jsonify({"error": "invalid or missing JSON body"}), 400

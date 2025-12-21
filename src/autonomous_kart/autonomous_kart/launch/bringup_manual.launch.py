@@ -28,13 +28,11 @@ def generate_launch_description():
             GroupAction(
                 [
                     SetParametersFromFile(system_yaml),
-
                     # Manual mode flag
                     SetParameter(
                         name="manual",
                         value=ParameterValue(manual, value_type=bool),
                     ),
-
                     Node(
                         package="autonomous_kart",
                         executable="motor_node",
@@ -64,9 +62,9 @@ def generate_launch_description():
                         name="metrics_api",
                     ),
                     Node(
-                        package='autonomous_kart',
-                        executable='master_api',
-                        name='master_api',
+                        package="autonomous_kart",
+                        executable="master_api",
+                        name="master_api",
                     ),
                 ]
             ),

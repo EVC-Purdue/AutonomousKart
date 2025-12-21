@@ -113,7 +113,9 @@ class MetricsNode(Node):
             "logs": logs,
         }
 
-        msg = String(data=json.dumps(payload, separators=(",", ":"), ensure_ascii=False))
+        msg = String(
+            data=json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+        )
         self.logs_pub.publish(msg)
 
 

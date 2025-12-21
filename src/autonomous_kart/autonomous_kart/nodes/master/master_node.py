@@ -7,13 +7,14 @@ from std_msgs.msg import String, Float32MultiArray
 
 STATES = ["IDLE", "MANUAL", "AUTONOMOUS", "STOPPED"]
 
+
 class MasterNode(Node):
     # Holds kart state and interacts with world
     def __init__(self):
         super().__init__(
             "master_node",
             allow_undeclared_parameters=True,
-            automatically_declare_parameters_from_overrides=True
+            automatically_declare_parameters_from_overrides=True,
         )
         self.logger = self.get_logger()
         self.state = self.get_parameter("system_state").value
@@ -26,7 +27,9 @@ class MasterNode(Node):
 
         self.state_publisher = self.create_publisher(String, "system_state", 10)
         # Publish speed + steering for manual mode
-        self.manual_publisher = self.create_publisher(Float32MultiArray, "manual_commands", 10)
+        self.manual_publisher = self.create_publisher(
+            Float32MultiArray, "manual_commands", 10
+        )
 
         # Metrics subscriber to get logs and send them through API
         self.metrics_subscriber = self.create_subscription(
@@ -55,8 +58,6 @@ class MasterNode(Node):
 
     def manual_control(self, speed, steering):
         self.manual_publisher.publish(Float32MultiArray(data=[speed, steering]))
-
-
 
 
 def main(args=None):

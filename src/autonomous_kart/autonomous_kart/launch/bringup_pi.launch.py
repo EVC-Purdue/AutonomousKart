@@ -21,10 +21,8 @@ def generate_launch_description():
             GroupAction(
                 [
                     SetParametersFromFile(system_yaml),
-
                     # Force simulator mode OFF for the real kart.
                     SetParameter(name="simulation_mode", value=False),
-
                     Node(
                         package="autonomous_kart",
                         executable="motor_node",
@@ -72,9 +70,9 @@ def generate_launch_description():
                         name="metrics_api",
                     ),
                     Node(
-                        package='autonomous_kart',
-                        executable='master_api',
-                        name='master_api',
+                        package="autonomous_kart",
+                        executable="master_api",
+                        name="master_api",
                     ),
                 ]
             ),

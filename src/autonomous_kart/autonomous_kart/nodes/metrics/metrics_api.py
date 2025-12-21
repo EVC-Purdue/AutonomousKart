@@ -8,9 +8,10 @@ from .metrics_node import MetricsNode
 app = Flask(__name__)
 metrics_node: MetricsNode | None = None
 
-@app.route("/", methods=['GET'])
+
+@app.route("/", methods=["GET"])
 def ping():
-    return jsonify({'ping': 'pong'})
+    return jsonify({"ping": "pong"})
 
 
 @app.route("/command_rate", methods=["GET"])
@@ -42,6 +43,7 @@ def main():
     app.run(host="0.0.0.0", port=8000, debug=False)
 
     rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()

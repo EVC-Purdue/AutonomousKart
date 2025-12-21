@@ -21,8 +21,29 @@ def logs():
 @app.route("/manual_control", methods=["POST"])
 def logs():
     data = request.get_json()
-    speed, steering = data['speed'], data['steering']
+    if not isinstance(data, dict):
+        return jsonify({"error": "invalid or missing JSON body"}), 400
+
+    if "speed" not in data or "steering" not in data:
+        return jsonify({"error": "missing 'speed' or 'steering' field"}), 400
+
+    speed, steering = float(data['speed']), float(data['steering'])
     master_node.manual_control(speed, steering)
+    return jsonify({"success": 200})
+
+@app.route("/set_state", methods=["POST"])
+def set_state():
+    data = request.get_json()
+    if not isinstance(data, dict):
+        return jsonify({"error": "invalid or missing JSON body"}), 400
+
+    if "state" not in data:
+        return jsonify({"error": "state field not present"})
+    state = data['state']
+    if state not in ["IDLE", "MANUAL", "AUTONOMOUS", "STOPPED"]:
+        return jsonify({"error": f"state {state} is not a valid state."})
+
+    master_node.update_state(state)
     return jsonify({"success": 200})
 
 def start(node: MasterNode) -> None:

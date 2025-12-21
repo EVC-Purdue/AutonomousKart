@@ -44,11 +44,13 @@ class MasterNode(Node):
             self.logger.error(f"State {state} not recognized")
             return
 
+        self.state = state
         self.state_publisher.publish(String(data=state))
 
     def get_logs(self):
-        logs = self._logs
-        self._logs.clear()
+        logs = list(self._logs)
+        with self._lock:
+            self._logs.clear()
         return logs
 
     def manual_control(self, speed, steering):

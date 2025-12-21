@@ -46,6 +46,11 @@ class MasterNode(Node):
 
         self.state_publisher.publish(String(data=state))
 
+    def get_logs(self):
+        logs = self._logs
+        self._logs.clear()
+        return logs
+
 
 
 

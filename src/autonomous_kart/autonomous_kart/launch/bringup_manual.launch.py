@@ -63,6 +63,11 @@ def generate_launch_description():
                         executable="metrics_api",
                         name="metrics_api",
                     ),
+                    Node(
+                        package='autonomous_kart',
+                        executable='master_api',
+                        name='master_api',
+                    ),
                 ]
             ),
         ]

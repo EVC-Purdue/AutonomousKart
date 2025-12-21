@@ -90,6 +90,8 @@ class PathfinderNode(Node):
     def manual_loop(self, msg: Float32MultiArray):
         self.cmd_count += 1
         if self.state == "MANUAL":
+            if len(msg.data) < 2:
+                self.logger.error(f"Message length of manual loop is {len(msg.data)}: {msg.data}")
             motor_speed, steering = msg.data[0], msg.data[1]
             self.set_manual_speeds(motor_speed, steering)
 

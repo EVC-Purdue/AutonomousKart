@@ -32,7 +32,7 @@ def manual_control():
 
     speed, steering = float(data["speed"]), float(data["steering"])
     master_node.manual_control(speed, steering)
-    return jsonify({"success": 200})
+    return jsonify({"success": "ok"})
 
 
 @app.route("/set_state", methods=["POST"])
@@ -48,7 +48,7 @@ def set_state():
         return jsonify({"error": f"state {state} is not a valid state."})
 
     master_node.update_state(state)
-    return jsonify({"success": 200})
+    return jsonify({"success": "ok"})
 
 
 def start(node: MasterNode) -> None:

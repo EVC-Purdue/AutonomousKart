@@ -44,7 +44,7 @@ class PathfinderNode(Node):
         self.create_timer(5.0, self.log_command_rate)
 
         self.state = self.get_parameter("system_state").value
-        self.state_subscriber = self.create_subscription(String, "system_state", self.update_state, qos_profile=10)
+        self.state_subscriber = self.create_subscription(String, "system_state", self.update_state, 10)
 
         # Subscriber to opencv pathfinder for angles
         self.opencv_pathfinder_subscriber = self.create_subscription(
@@ -55,7 +55,7 @@ class PathfinderNode(Node):
             Float32MultiArray,
             "manual_commands",
             self.manual_loop,
-            qos_profile=5
+            5
         )
 
         # Publisher to motor

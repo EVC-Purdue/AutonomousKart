@@ -35,7 +35,7 @@ class MasterNode(Node):
         self.metrics_subscriber = self.create_subscription(
             String, "metrics/logs", self.logs_callback, 5
         )
-        self.logger.info("Initialize Pathfinder Node")
+        self.logger.info("Initialize Master Node")
 
     def logs_callback(self, msg):
         logs = json.loads(msg.data)

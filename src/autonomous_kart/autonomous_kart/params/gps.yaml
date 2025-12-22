@@ -1,0 +1,4 @@
+# Params and toggles for motor drive including gain, rates, etc.
+motor_node:
+  ros__parameters:
+    gps_frequency: 10  # Hz

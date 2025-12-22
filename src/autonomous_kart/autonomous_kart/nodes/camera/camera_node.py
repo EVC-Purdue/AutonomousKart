@@ -32,7 +32,6 @@ class CameraNode(Node):
 
         self.bridge = CvBridge()
 
-        # Publisher for steering angular velocity
         qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -63,7 +62,7 @@ class CameraNode(Node):
         self.timer = self.create_timer(1.0 / self.fps, self.timer_callback)
 
         self.logger.info(
-            f"Steering Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}"
+            f"Camera Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}"
         )
 
     def timer_callback(self):

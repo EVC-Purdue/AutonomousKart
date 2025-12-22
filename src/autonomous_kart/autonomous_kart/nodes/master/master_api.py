@@ -3,7 +3,7 @@ import threading
 import rclpy
 from flask import Flask, jsonify, request
 
-from .master_node import MasterNode
+from .master_node import MasterNode, STATES
 
 app = Flask(__name__)
 master_node: MasterNode | None = None
@@ -44,7 +44,7 @@ def set_state():
     if "state" not in data:
         return jsonify({"error": "state field not present"})
     state = data["state"]
-    if state not in ["IDLE", "MANUAL", "AUTONOMOUS", "STOPPED"]:
+    if state not in STATES:
         return jsonify({"error": f"state {state} is not a valid state."})
 
     master_node.update_state(state)

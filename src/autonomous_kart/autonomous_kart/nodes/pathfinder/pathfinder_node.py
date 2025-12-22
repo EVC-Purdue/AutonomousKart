@@ -5,6 +5,8 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Float32, String
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
+from src.autonomous_kart.autonomous_kart.nodes.master.master_node import STATES
+
 
 class PathfinderNode(Node):
     def __init__(self):
@@ -65,7 +67,7 @@ class PathfinderNode(Node):
         self.logger.info("Initialize Pathfinder Node")
 
     def update_state(self, msg: String):
-        if msg.data not in ["IDLE", "MANUAL", "AUTONOMOUS", "STOPPED"]:
+        if msg.data not in STATES:
             self.logger.error(f"State {msg.data} not recognized")
             return
 

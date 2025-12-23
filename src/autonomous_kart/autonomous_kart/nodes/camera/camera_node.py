@@ -107,8 +107,9 @@ class CameraNode(Node):
                 ret, frame = self.cap.read()
             else:
                 height, width = frame.shape[:2]
+                # 360x202 BGR image optimized for jetson communication
                 target_width = (
-                    360  # 360x202 BGR image optimized for jetson communication
+                    360
                 )
                 target_height = int(height * (target_width / width))
                 resized = cv2.resize(frame, (target_width, target_height))

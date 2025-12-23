@@ -1,4 +1,5 @@
 import traceback
+from typing import Tuple, List
 
 import rclpy
 from rclpy.node import Node
@@ -43,6 +44,12 @@ class PathfinderNode(Node):
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
+        self.line_path = self.get_parameter("line_path").value
+        self.racing_line: List[Tuple[float, float, float]] = []
+        with open(self.line_path, 'r') as f:
+            p1 = [(float(x) for x in f.readline().split(','))]
+            self.racing_line.append(p1)
+
         self.state = self.get_parameter("system_state").value
         self.state_subscriber = self.create_subscription(String, "system_state", self.update_state, 10)
 
@@ -67,7 +74,7 @@ class PathfinderNode(Node):
         self.logger.info("Initialize Pathfinder Node")
 
     def update_state(self, msg: String):
-        if msg.data not in STATES:
+        if msg.data not in [s.value for s in STATES]:
             self.logger.error(f"State {msg.data} not recognized")
             return
 
@@ -81,7 +88,7 @@ class PathfinderNode(Node):
         :return: Publishes commands to motor & steering
         """
         self.cmd_count += 1
-        if self.state == "AUTONOMOUS":
+        if self.state == STATES.AUTONOMOUS:
             self.angles = (msg.data[0], msg.data[1])
 
             motor_speed, steering_angle = pathfinder(msg.data)
@@ -91,7 +98,7 @@ class PathfinderNode(Node):
 
     def manual_loop(self, msg: Float32MultiArray):
         self.cmd_count += 1
-        if self.state == "MANUAL":
+        if self.state == STATES.MANUAL:
             if len(msg.data) < 2:
                 self.logger.error(f"Message length of manual loop is {len(msg.data)}: {msg.data}")
             motor_speed, steering = msg.data[0], msg.data[1]

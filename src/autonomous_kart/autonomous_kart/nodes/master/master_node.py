@@ -1,11 +1,17 @@
 import json
 import threading
+from enum import Enum
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Float32MultiArray
 
-STATES = ["IDLE", "MANUAL", "AUTONOMOUS", "STOPPED"]
+
+class STATES(Enum):
+    IDLE = "IDLE"
+    MANUAL = "MANUAL"
+    AUTONOMOUS = "AUTONOMOUS"
+    STOPPED = "STOPPED"
 
 
 class MasterNode(Node):
@@ -20,7 +26,7 @@ class MasterNode(Node):
         self.state = self.get_parameter("system_state").value
         self.system_frequency = self.get_parameter("system_frequency").value
 
-        assert self.state in STATES
+        assert self.state in [s.value for s in STATES]
 
         self._lock = threading.Lock()
         self._logs = []
@@ -43,7 +49,7 @@ class MasterNode(Node):
             self._logs.append(logs)
 
     def update_state(self, state):
-        if state not in STATES:
+        if state not in [s.value for s in STATES]:
             self.logger.error(f"State {state} not recognized")
             return
 

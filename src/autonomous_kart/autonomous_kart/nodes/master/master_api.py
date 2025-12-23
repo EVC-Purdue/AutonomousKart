@@ -44,7 +44,7 @@ def set_state():
     if "state" not in data:
         return jsonify({"error": "state field not present"})
     state = data["state"]
-    if state not in STATES:
+    if state not in [s.value for s in STATES]:
         return jsonify({"error": f"state {state} is not a valid state."})
 
     master_node.update_state(state)

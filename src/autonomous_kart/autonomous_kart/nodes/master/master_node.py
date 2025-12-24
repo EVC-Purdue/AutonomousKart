@@ -29,6 +29,7 @@ class MasterNode(Node):
         assert self.state in [s.value for s in STATES]
 
         self._lock = threading.Lock()
+        self._pub_lock = threading.Lock()
         self._logs = []
 
         self.state_publisher = self.create_publisher(String, "system_state", 10)
@@ -49,12 +50,13 @@ class MasterNode(Node):
             self._logs.append(logs)
 
     def update_state(self, state):
-        if state not in [s.value for s in STATES]:
-            self.logger.error(f"State {state} not recognized")
-            return
+        with self._pub_lock:
+            if state not in [s.value for s in STATES]:
+                self.logger.error(f"State {state} not recognized")
+                return
 
-        self.state = state
-        self.state_publisher.publish(String(data=state))
+            self.state = state
+            self.state_publisher.publish(String(data=state))
 
     def get_logs(self):
         logs = list(self._logs)
@@ -63,7 +65,8 @@ class MasterNode(Node):
         return logs
 
     def manual_control(self, speed, steering):
-        self.manual_publisher.publish(Float32MultiArray(data=[speed, steering]))
+        with self._pub_lock:
+            self.manual_publisher.publish(Float32MultiArray(data=[speed, steering]))
 
 
 def main(args=None):

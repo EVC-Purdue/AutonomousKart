@@ -88,7 +88,7 @@ class PathfinderNode(Node):
         :return: Publishes commands to motor & steering
         """
         self.cmd_count += 1
-        if self.state == STATES.AUTONOMOUS:
+        if self.state == STATES.AUTONOMOUS.value:
             self.angles = (msg.data[0], msg.data[1])
 
             motor_speed, steering_angle = pathfinder(msg.data)

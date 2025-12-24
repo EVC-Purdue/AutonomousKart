@@ -10,12 +10,18 @@ from rclpy.qos import DurabilityPolicy, ReliabilityPolicy, QoSProfile
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 
-from autonomous_kart.nodes.opencv_pathfinder.angle_calculator import calculate_track_angles
+from autonomous_kart.nodes.opencv_pathfinder.angle_calculator import (
+    calculate_track_angles,
+)
 
 
 class OpenCVPathfinderNode(Node):
     def __init__(self):
-        super().__init__('opencv_pathfinder_node')
+        super().__init__(
+            "opencv_pathfinder_node",
+            allow_undeclared_parameters=True,
+            automatically_declare_parameters_from_overrides=True,
+        )
         self.last_log_time = 0
         self.frames_since_last_log = 0
         self.logger = self.get_logger()
@@ -23,28 +29,24 @@ class OpenCVPathfinderNode(Node):
         self.frame_count = 0
         self.angle_msg = None
 
-        self.declare_parameter('system_frequency', 60)
-        self.system_frequency = self.get_parameter('system_frequency').value
+        self.system_frequency = self.get_parameter("system_frequency").value
 
         qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
-            lifespan=Duration(seconds=0, nanoseconds=int(1e9 / self.system_frequency))
+            lifespan=Duration(seconds=0, nanoseconds=int(1e9 / self.system_frequency)),
         )
 
         # Subscribe to camera
         self.image_sub = self.create_subscription(
-            Image,
-            'camera/image_raw',
-            self.image_callback,
-            qos
+            Image, "camera/image_raw", self.image_callback, qos
         )
 
         # Publishes two angles in (left angle from center of vision to base of track line, right angle ...)
         self.angle_pub = self.create_publisher(
             Float32MultiArray,
-            'track_angles',
+            "track_angles",
             5,
         )
 
@@ -72,7 +74,7 @@ class OpenCVPathfinderNode(Node):
         if not self.angle_msg:
             self.angle_msg = Float32MultiArray(data=angles)
         else:
-        # self.angle_pub.publish(Float32MultiArray(data=angles))
+            # self.angle_pub.publish(Float32MultiArray(data=angles))
             self.angle_msg.data = angles
         self.angle_pub.publish(self.angle_msg)
 
@@ -83,12 +85,12 @@ def main(args=None):
     node = OpenCVPathfinderNode()
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)
-    
+
     try:
         executor.spin()
     except KeyboardInterrupt:
         pass
-    except Exception as e:
+    except Exception:
         node.get_logger().error(traceback.format_exc())
     finally:
         node.running = False
@@ -97,5 +99,6 @@ def main(args=None):
         if rclpy.ok():
             rclpy.shutdown()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

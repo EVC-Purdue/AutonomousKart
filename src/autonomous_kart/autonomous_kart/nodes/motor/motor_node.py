@@ -7,10 +7,13 @@ from std_msgs.msg import Float32
 
 class MotorNode(Node):
     def __init__(self):
-        super().__init__('motor_node')
+        super().__init__(
+            "motor_node",
+            allow_undeclared_parameters=True,
+            automatically_declare_parameters_from_overrides=True
+        )
 
-        self.declare_parameter('simulation_mode', False)
-        self.sim_mode = self.get_parameter('simulation_mode').value
+        self.sim_mode = self.get_parameter("simulation_mode").value
 
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now()
@@ -20,22 +23,17 @@ class MotorNode(Node):
 
         # Subscribe to speed commands
         self.cmd_vel_sub = self.create_subscription(
-            Float32,
-            'cmd_vel',
-            self.cmd_vel_callback,
-            5
+            Float32, "cmd_vel", self.cmd_vel_callback, 5
         )
 
         # Publisher for motor speed
-        self.speed_pub = self.create_publisher(
-            Float32,
-            'motor_speed',
-            5
-        )
+        self.speed_pub = self.create_publisher(Float32, "motor_speed", 5)
 
         self.current_speed = Float32()
 
-        self.get_logger().info(f'Motor Node started - Mode: {"SIM" if self.sim_mode else "REAL"}')
+        self.get_logger().info(
+            f"Motor Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}"
+        )
 
     def log_command_rate(self):
         """Log average commands per second every 5 seconds"""
@@ -70,16 +68,16 @@ class MotorNode(Node):
 
     def control_sim_motors(self, cmd):
         """Simulation mode - just log the command for now"""
-        self.get_logger().debug(f'SIM: Motors set to commanded speed: {cmd.data:.2f}')
+        self.get_logger().debug(f"SIM: Motors set to commanded speed: {cmd.data:.2f}")
 
     def control_real_motors(self, cmd):
         """Real mode - control actual hardware here"""
-        self.get_logger().debug(f'REAL: Motors set to commanded speed: {cmd.data:.2f}')
+        self.get_logger().debug(f"REAL: Motors set to commanded speed: {cmd.data:.2f}")
 
 
 def main(args=None):
     rclpy.init(args=args)
-    
+
     node = MotorNode()
 
     try:
@@ -94,5 +92,5 @@ def main(args=None):
             rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

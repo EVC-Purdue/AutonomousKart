@@ -1,0 +1,6 @@
+# Params and toggles for motor drive including gain, rates, etc.
+motor_node:
+  ros__parameters:
+    max_linear_speed: 50.0      # m/s
+    max_acceleration: 2.0      # m/s^2
+#    motor_timeout: 1.0         # seconds

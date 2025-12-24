@@ -1,5 +1,5 @@
 # Planner configs including perception thresholds, toggles, etc.
-system_config:
+pathfinder_node:
   ros__parameters:
     max_speed: 50
     acceleration: 0.2

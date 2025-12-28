@@ -1,5 +1,6 @@
 import threading
 import time
+import traceback
 
 import cv2
 import rclpy
@@ -13,29 +14,29 @@ from cv_bridge import CvBridge
 
 class CameraNode(Node):
     def __init__(self):
-        super().__init__("camera_node")
+        super().__init__(
+            "camera_node",
+            allow_undeclared_parameters=True,
+            automatically_declare_parameters_from_overrides=True
+        )
         self.last_callback_time = time.time()
         self.logger = self.get_logger()
 
-        self.declare_parameter("simulation_mode", True)
-        self.declare_parameter("fps", 60.0)
         self.fps = self.get_parameter("fps").value
         self.frame_counter = 0
 
         if self.fps == 0:  # div by 0 error later
-            self.declare_parameter("system_frequency", 60.0)
             self.fps = self.get_parameter("system_frequency").value
 
         self.sim_mode = self.get_parameter("simulation_mode").value
 
         self.bridge = CvBridge()
 
-        # Publisher for steering angular velocity
         qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
-            lifespan=Duration(seconds=0, nanoseconds=int(1e9 / self.fps))
+            lifespan=Duration(seconds=0, nanoseconds=int(1e9 / self.fps)),
         )
         self.image_pub = self.create_publisher(Image, "camera/image_raw", qos)
 
@@ -46,7 +47,6 @@ class CameraNode(Node):
                 self.logger.info(f"Failed to open video: {video_path}")
             self.video_fps = self.cap.get(cv2.CAP_PROP_FPS)
 
-
             self.latest_frame = None
             self.running = True
             self.frame_lock = threading.Lock()
@@ -56,12 +56,13 @@ class CameraNode(Node):
 
         else:
             self.cap = cv2.VideoCapture(0)  # Real camera
+            self.video_fps = self.fps
 
         self.logger.info(f"Video FPS: {self.video_fps}, Given FPS: {self.fps}")
         self.timer = self.create_timer(1.0 / self.fps, self.timer_callback)
 
         self.logger.info(
-            f"Steering Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}"
+            f"Camera Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}"
         )
 
     def timer_callback(self):
@@ -69,7 +70,7 @@ class CameraNode(Node):
         Publishes the next frame
         """
         if self.sim_mode:
-           with self.frame_lock:
+            with self.frame_lock:
                 if self.latest_frame is not None:
                     self.image_pub.publish(self.latest_frame)
                     self.frame_counter += 1
@@ -82,12 +83,13 @@ class CameraNode(Node):
                     except ZeroDivisionError:
                         actual_rate = 0
 
-                    self.logger.info(f"Published {self.frame_counter} frames, actual rate: {actual_rate:.1f} fps")
+                    self.logger.info(
+                        f"Published {self.frame_counter} frames, actual rate: {actual_rate:.1f} fps"
+                    )
                     self.last_callback_time = now
         else:
             # TODO: Implement real mode
             pass
-
 
     def read_frames(self):
         """
@@ -105,7 +107,10 @@ class CameraNode(Node):
                 ret, frame = self.cap.read()
             else:
                 height, width = frame.shape[:2]
-                target_width = 360  # 360x202 BGR image optimized for jetson communication
+                # 360x202 BGR image optimized for jetson communication
+                target_width = (
+                    360
+                )
                 target_height = int(height * (target_width / width))
                 resized = cv2.resize(frame, (target_width, target_height))
                 msg = self.bridge.cv2_to_imgmsg(resized, "bgr8")
@@ -126,13 +131,13 @@ def main(args=None):
     node = CameraNode()
     executor = MultiThreadedExecutor(num_threads=2)
     executor.add_node(node)
-    
+
     try:
         executor.spin()
     except KeyboardInterrupt:
         pass
-    except Exception as e:
-        node.get_logger().error(f'Unhandled exception: {e}', exc_info=True)
+    except Exception:
+        node.get_logger().error(traceback.format_exc())
     finally:
         node.running = False
         executor.shutdown(timeout_sec=1.0)

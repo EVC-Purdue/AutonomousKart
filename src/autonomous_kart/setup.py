@@ -1,5 +1,5 @@
 from glob import glob
-from setuptools import setup, find_packages
+from setuptools import setup
 
 package_name = "autonomous_kart"
 
@@ -18,6 +18,8 @@ setup(
         'autonomous_kart.nodes.e_comms',
         "autonomous_kart.nodes.3dgs_localization",
         # "autonomous_kart_cpp.camera"
+        'autonomous_kart.nodes.metrics',
+        'autonomous_kart.nodes.master',
     ],
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
@@ -39,6 +41,7 @@ setup(
         "console_scripts": [
             "motor_node = autonomous_kart.nodes.motor.motor_node:main",
             "pathfinder_node = autonomous_kart.nodes.pathfinder.pathfinder_node:main",
+            'manual_pathfinder_api = autonomous_kart.nodes.manual.pathfinder_api:main',
             "gps_node = autonomous_kart.nodes.gps.gps_node:main",
             "3dgs_localization_node = autonomous_kart.nodes.3dgs_localization.3dgs_localization_node:main",
             "opencv_pathfinder_node = autonomous_kart.nodes.opencv_pathfinder.opencv_pathfinder_node:main",
@@ -46,6 +49,8 @@ setup(
             "steering_node = autonomous_kart.nodes.steering.steering_node:main",
             # "camera_node = autonomous_kart.nodes.camera.camera_node:main",
             "camera_node = autonomous_kart_cpp.camera_node_cpp:main",
+            'metrics_api = autonomous_kart.nodes.metrics.metrics_api:main',
+            'master_node = autonomous_kart.nodes.master.master_api:main',
         ],
     },
 )

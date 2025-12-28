@@ -1,39 +1,53 @@
 from typing import Optional
 
+import traceback
+
 import spidev
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32, UInt16
 from rclpy.impl.rcutils_logger import RcutilsLogger
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms
 
+SPI_MAX_SPEED_HZ = 500000  # 500 kHz
+SPI_DEV_BUS = 12
+SPI_DEV_DEVICE = 0
+SPI_MODE = 0b00
+
 
 class ECommsNode(Node):
     def __init__(self):
-        super().__init__("ECommsNode")
+        super().__init__(
+            "ECommsNode",
+            allow_undeclared_parameters=True,
+            automatically_declare_parameters_from_overrides=True,
+        )
         self.logger: RcutilsLogger = self.get_logger()
-        
+
         # Parameters
-        self.declare_parameter("simulation_mode", False)
         self.simulation_mode: bool = self.get_parameter("simulation_mode").value
 
         # Inputs
         self.motor_percent: float = 0.0
         self.steering_angle: float = 0.0
 
+        # Outputs
+        self.motor_pwm: int = 0
+        self.steering_pwm: int = 0
+
         # SPI buffers
-        self.tx_buffer: bytearray = bytearray(4)
-        self.rx_buffer: bytearray = bytearray(4)
+        self.tx_buffer: list[int] = [0] * 4
+        self.rx_buffer: list[int] = [0] * 4
 
         # SPI Device
         if not self.simulation_mode:
             self.spi: Optional[spidev.SpiDev] = spidev.SpiDev()
-            self.spi.open(0, 0)
-            self.spi.max_speed_hz = 500000  # 500 kHz
-            self.spi.mode = 0b00
+            self.spi.open(SPI_DEV_BUS, SPI_DEV_DEVICE)
+            self.spi.max_speed_hz = SPI_MAX_SPEED_HZ
+            self.spi.mode = SPI_MODE
             self.spi.bits_per_word = 8
         else:
             self.spi: Optional[spidev.SpiDev] = None
@@ -51,10 +65,18 @@ class ECommsNode(Node):
         self.ts: ApproximateTimeSynchronizer = ApproximateTimeSynchronizer(
             [self.motor_sub, self.steering_sub],
             queue_size=3,
-            slop=0.1, # Time tolerance in seconds
-            allow_headerless=True # Float32 has no header
+            slop=0.1,  # Time tolerance in seconds
+            allow_headerless=True,  # Float32 has no header
         )
         self.ts.registerCallback(self.cmd_callback)
+
+        # Publishers
+        self.motor_pwm_publisher = self.create_publisher(
+            UInt16, "e_comms/pwm_rx/motor", 1
+        )
+        self.steering_pwm_publisher = self.create_publisher(
+            UInt16, "e_comms/pwm_rx/steering", 1
+        )
 
         # Init finished
         self.logger.info("Initialize EComms Node")
@@ -63,16 +85,18 @@ class ECommsNode(Node):
         """
         Send the motor and steering command to the Electrical Stack via SPI.
         Part of hot loop so must be efficient
-        
+
         :param motor_msg: Float32 message for motor command (percent throttle)
-        :param steering_msg: Float32 message for steering command (steering angle, -90 to 90)
+        :param steering_msg: Float32 message for steering command (percent steering, -100 to 100)
         :return: None
         """
         self.cmd_count += 1
 
         # Ensure values are within expected ranges
-        if not (0.0 <= motor_msg.data <= 100.0) or not (-90.0 <= steering_msg.data <= 90.0):
-            self.get_logger().error(
+        if not (0.0 <= motor_msg.data <= 100.0) or not (
+            -100.0 <= steering_msg.data <= 100.0
+        ):
+            self.logger.error(
                 f"Received out-of-bounds command values: "
                 f"motor_percent={motor_msg.data}, steering_angle={steering_msg.data}"
             )
@@ -80,10 +104,19 @@ class ECommsNode(Node):
 
         self.motor_percent = motor_msg.data
         self.steering_angle = steering_msg.data
+        self.tx_buffer = e_comms.pack_to_tx_buffer(
+            self.motor_percent, self.steering_angle
+        )
 
-        self.tx_buffer = e_comms.pack_to_buffer(self.motor_percent, self.steering_angle)
         if self.spi is not None:
+            # Full-duplex SPI transfer
             self.rx_buffer = self.spi.xfer2(self.tx_buffer)
+            (self.motor_pwm, self.steering_pwm) = e_comms.unpack_from_rx_buffer(
+                self.rx_buffer, self.logger
+            )
+            # Publish received feedback
+            self.motor_pwm_publisher.publish(UInt16(data=self.motor_pwm))
+            self.steering_pwm_publisher.publish(UInt16(data=self.steering_pwm))
 
     def destroy_node(self):
         # Close SPI
@@ -100,7 +133,7 @@ class ECommsNode(Node):
 
         if elapsed > 0:
             avg_rate = self.cmd_count / elapsed
-            self.get_logger().info(
+            self.logger.info(
                 f"Average command rate: {avg_rate:.2f} commands/sec "
                 f"(Total: {self.cmd_count} in {elapsed:.1f}s)"
             )
@@ -112,7 +145,7 @@ class ECommsNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    
+
     node = ECommsNode()
 
     try:
@@ -120,14 +153,14 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     except Exception:
-        node.get_logger().error('Unhandled exception', exc_info=True)
+        node.get_logger().error(traceback.format_exc())
     finally:
         node.destroy_node()
         try:
             rclpy.shutdown()
         except:
-            pass # Context already shutdown, ignore
+            pass  # Context already shutdown, ignore
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -1,0 +1,7 @@
+# Planner configs including perception thresholds, toggles, etc.
+pathfinder_node:
+  ros__parameters:
+    max_speed: 50
+    acceleration: 0.2
+    max_steering: 10
+    steering_accel: 0.05

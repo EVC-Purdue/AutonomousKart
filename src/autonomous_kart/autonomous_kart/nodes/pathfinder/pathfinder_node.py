@@ -6,8 +6,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Float32, String
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
-from src.autonomous_kart.autonomous_kart.nodes.master.master_node import STATES
-
+from autonomous_kart.nodes.master.master_node import STATES
 
 class PathfinderNode(Node):
     def __init__(self):

@@ -5,3 +5,4 @@ pathfinder_node:
     acceleration: 0.2
     max_steering: 10
     steering_accel: 0.05
+    line_path: /ws/data/racing_line/line.csv

@@ -1,7 +1,9 @@
+import math
 import traceback
 from typing import Tuple, List
 
 import rclpy
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Float32, String
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
@@ -36,6 +38,31 @@ class PathfinderNode(Node):
         self.max_steering = self.get_parameter("max_steering").value
         self.steering_accel = self.get_parameter("steering_accel").value
 
+        self.wheelbase_m = float(self.get_parameter("wheelbase_m").value)
+        self.v_max_mps = float(self.get_parameter("v_max_mps").value)
+        self.steer_max_deg = float(self.get_parameter("steer_max_deg").value)
+
+        self.use_velocity_scaled_lookahead = bool(self.get_parameter("use_velocity_scaled_lookahead").value)
+        self.lookahead_time_s = float(self.get_parameter("lookahead_time_s").value)
+        self.min_lookahead_m = float(self.get_parameter("min_lookahead_m").value)
+        self.max_lookahead_m = float(self.get_parameter("max_lookahead_m").value)
+
+        self.use_curvature_regulation = bool(self.get_parameter("use_curvature_regulation").value)
+        self.min_radius_m = float(self.get_parameter("min_radius_m").value)
+        self.min_reg_speed_pct = float(self.get_parameter("min_reg_speed_pct").value)
+
+        self.approach_dist_m = float(self.get_parameter("approach_dist_m").value)
+        self.min_approach_speed_pct = float(self.get_parameter("min_approach_speed_pct").value)
+
+        self.pose_ready = False
+        self.current_xy = (0.0, 0.0)
+        self.current_yaw = 0.0
+        self.current_speed_mps = 0.0
+
+        # self.localization_sub = self.create_subscription(Localization, "localization", self.localization, 10)
+
+        self.closest_idx = 0
+
         self.metrics_publisher = self.create_publisher(
             Float32MultiArray, "pathfinder_params", 5
         )
@@ -46,8 +73,12 @@ class PathfinderNode(Node):
         self.line_path = self.get_parameter("line_path").value
         self.racing_line: List[Tuple[float, float, float]] = []
         with open(self.line_path, 'r') as f:
-            p1 = [(float(x) for x in f.readline().split(','))]
-            self.racing_line.append(p1)
+            for line in f:
+                try:
+                    p1 = tuple(float(x) for x in line.strip().split(','))
+                except ValueError:
+                    continue
+                self.racing_line.append(p1)
 
         self.state = self.get_parameter("system_state").value
         self.state_subscriber = self.create_subscription(String, "system_state", self.update_state, 10)
@@ -67,10 +98,24 @@ class PathfinderNode(Node):
         # Publisher to motor
         self.motor_publisher = self.create_publisher(Float32, "cmd_vel", 5)
 
-        # # Publisher to steering
+        # Publisher to steering
         self.steering_publisher = self.create_publisher(Float32, "cmd_turn", 5)
 
         self.logger.info("Initialize Pathfinder Node")
+
+    def _yaw_from_quaternion(q) -> float:
+        # yaw from quaternion (x,y,z,w)
+        x, y, z, w = q.x, q.y, q.z, q.w
+        siny_cosp = 2.0 * (w * z + x * y)
+        cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+        return math.atan2(siny_cosp, cosy_cosp)
+
+    def localization(self, msg: Odometry):
+        p = msg.pose.pose.position
+        self.current_xy = (float(p.x), float(p.y))
+        self.current_yaw = self._yaw_from_quaternion(msg.pose.pose.orientation)
+        self.current_speed_mps = float(msg.twist.twist.linear.x)
+        self.pose_ready = True
 
     def update_state(self, msg: String):
         if msg.data not in [s.value for s in STATES]:
@@ -88,12 +133,51 @@ class PathfinderNode(Node):
         """
         self.cmd_count += 1
         if self.state == STATES.AUTONOMOUS.value:
-            self.angles = (msg.data[0], msg.data[1])
+            # speed in % (0..1) for the controller
+            speed_pct = (self.current_speed_mps / self.v_max_mps if self.v_max_mps > 1e-6 else 0.0) / 100
+            if speed_pct < 0.0:
+                speed_pct = 0.0
+            elif speed_pct > 1.0:
+                speed_pct = 1.0
 
-            motor_speed, steering_angle = pathfinder(msg.data)
+            # Choose lookahead distance like Nav2 "velocity-scaled lookahead"
+            if self.use_velocity_scaled_lookahead:
+                lookahead_m = self.current_speed_mps * self.lookahead_time_s
+                if lookahead_m < self.min_lookahead_m:
+                    lookahead_m = self.min_lookahead_m
+                elif lookahead_m > self.max_lookahead_m:
+                    lookahead_m = self.max_lookahead_m
+            else:
+                lookahead_m = self.min_lookahead_m
 
-            self.steering_publisher.publish(Float32(data=steering_angle))
-            self.motor_publisher.publish(Float32(data=motor_speed))
+            target_xy, speed_ref_pct = self._pick_lookahead_point(lookahead_m)
+
+            motor_pct, steering_pct = pathfinder(
+                current_xy=self.current_xy,
+                target_xy=target_xy,
+                yaw_rad=self.current_yaw,
+                speed_pct=speed_pct,
+
+                wheelbase_m=self.wheelbase_m,
+                v_max_mps=self.v_max_mps,
+                steer_max_deg=self.steer_max_deg,
+
+                desired_speed_pct=speed_ref_pct,
+                use_velocity_scaled_lookahead=self.use_velocity_scaled_lookahead,
+                lookahead_time_s=self.lookahead_time_s,
+                min_lookahead_m=self.min_lookahead_m,
+                max_lookahead_m=self.max_lookahead_m,
+
+                use_curvature_regulation=self.use_curvature_regulation,
+                min_radius_m=self.min_radius_m,
+                min_reg_speed_pct=self.min_reg_speed_pct,
+
+                approach_dist_m=self.approach_dist_m,
+                min_approach_speed_pct=self.min_approach_speed_pct,
+            )
+
+            self.steering_publisher.publish(Float32(data=steering_pct))
+            self.motor_publisher.publish(Float32(data=motor_pct))
 
     def manual_loop(self, msg: Float32MultiArray):
         self.cmd_count += 1
@@ -189,6 +273,11 @@ class PathfinderNode(Node):
         # Reset counters
         self.cmd_count = 0
         self.last_log_time = current_time
+
+    def _pick_lookahead_point(self, lookahead_m) -> Tuple[Tuple[float, float], float]:
+        """Returns (target_xy, speed_ref_pct)."""
+        # TODO: Implement lookahead
+        pass
 
 
 def main(args=None):

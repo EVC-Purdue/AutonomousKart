@@ -6,5 +6,6 @@
     ],
     "files.associations": {
         "chrono": "cpp"
-    }
+    },
+    "ROS2.distro": "humble"
 }

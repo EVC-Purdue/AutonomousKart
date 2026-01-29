@@ -30,6 +30,10 @@ ENV WS=/ws
 RUN mkdir -p ${WS}/src
 WORKDIR ${WS}
 
+# Adds python paths
+RUN python3 -c "import site, pathlib; p=pathlib.Path(site.getsitepackages()[0])/'ros2.pth'; \
+p.write_text('/opt/ros/humble/lib/python3.10/site-packages\n/opt/ros/humble/local/lib/python3.10/dist-packages\n')"
+
 # Entrypoint will source ROS and the workspace, then exec your command
 COPY scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

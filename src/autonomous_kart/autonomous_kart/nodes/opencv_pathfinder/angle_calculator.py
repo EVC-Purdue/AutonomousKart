@@ -1,3 +1,4 @@
+from random import random
 from typing import Tuple
 import cv2
 
@@ -10,4 +11,4 @@ def calculate_track_angles(frame: cv2.Mat) -> Tuple[float, float]:
     :param frame: Most recent image from camera
     :return: Tuple of [left angle (degrees), right angle (degrees)]. For example, return 75.0, 75.0
     """
-    return 75.0, 75.0  # dummy
+    return 75.0 * random(), 75.0 * random() # dummy

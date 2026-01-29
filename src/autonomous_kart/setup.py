@@ -44,7 +44,7 @@ setup(
             'e_comms_node = autonomous_kart.nodes.e_comms.e_comms_node:main',
             'steering_node = autonomous_kart.nodes.steering.steering_node:main',
             'camera_node = autonomous_kart.nodes.camera.camera_node:main',
-            'metrics_api = autonomous_kart.nodes.metrics.metrics_api:main',
+            'metrics_node = autonomous_kart.nodes.metrics.metrics_node:main',
             'master_api = autonomous_kart.nodes.master.master_api:main',
         ],
     },

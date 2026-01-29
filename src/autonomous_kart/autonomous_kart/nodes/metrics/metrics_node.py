@@ -39,7 +39,8 @@ class MetricsNode(Node):
             "turn_angle": Float32,
             "motor_speed": Float32,
             "track_angles": Float32MultiArray,
-            "camera/image_raw": Image,
+            # "camera/image_raw": Image, # Note: This does not work because of invalid qos.
+            # Regardless, images don't need to be saved.
             "e_comms/pwm_rx/motor": Int16,
             "e_comms/pwm_rx/steering": Int16,
             "pathfinder_params": Float32MultiArray,

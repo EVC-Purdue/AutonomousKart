@@ -186,7 +186,7 @@ class PathfinderNode(Node):
                 approach_dist_m=self.approach_dist_m,
                 min_approach_speed_pct=self.min_approach_speed_pct,
             )
-            self.logger.info(f"Steering/Motor output: {steering_pct}, {motor_pct}")
+            self.logger.debug(f"Steering/Motor output: {steering_pct}, {motor_pct}")
             self.steering_publisher.publish(Float32(data=steering_pct))
             self.motor_publisher.publish(Float32(data=motor_pct))
 

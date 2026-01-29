@@ -141,4 +141,6 @@ def pathfinder(
     elif throttle_pct > 1.0:
         throttle_pct = 1.0
 
-    return throttle_pct, steering_pct
+    return throttle_pct * 100, steering_pct * steer_max_deg
+
+

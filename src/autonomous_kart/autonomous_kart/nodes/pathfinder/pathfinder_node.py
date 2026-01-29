@@ -134,7 +134,7 @@ class PathfinderNode(Node):
         self.cmd_count += 1
         if self.state == STATES.AUTONOMOUS.value:
             # speed in % (0..1) for the controller
-            speed_pct = (self.current_speed_mps / self.v_max_mps if self.v_max_mps > 1e-6 else 0.0) / 100
+            speed_pct = (self.current_speed_mps / self.v_max_mps if self.v_max_mps > 1e-6 else 1.0)
             if speed_pct < 0.0:
                 speed_pct = 0.0
             elif speed_pct > 1.0:

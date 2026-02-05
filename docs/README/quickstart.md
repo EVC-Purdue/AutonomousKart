@@ -46,10 +46,9 @@ source install/setup.bash
 Note: Ensure this code is efficient as it is in the hot loop
 
 ### Pathfinding Team:
-1) Implement solution in `autonomous_kart/nodes/pathfinder/pathfinder.py
-3) Build optimal line
-4) Update line dynamically when off
-5) Add efficient error checking
+1) Build optimal line
+2) Update line dynamically when off
+3) Add efficient error checking
 
 Note: Ensure this is efficient as it is in the hot loop
 
@@ -57,7 +56,7 @@ Note: Ensure this is efficient as it is in the hot loop
 1) Fix library :(
 2) Think about optimizations to localization
 
-Note: Not critical until after winter break
+Note: Not critical, put off
 
 
 ## Info

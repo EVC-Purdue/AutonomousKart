@@ -5,7 +5,7 @@
 1) Run DevContainer (instructions in `docs/setup`)
 2) Run **Once**
 ```bash
-source install/setup.bash 
+source /opt/ros/humble/setup.bash
 ```
 3) To build/test, run:
 ```bash

@@ -50,7 +50,6 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
-
 # Translations
 *.mo
 *.pot
@@ -177,3 +176,6 @@ cython_debug/
 install
 log
 build
+
+.vscode/
+.DS_Store

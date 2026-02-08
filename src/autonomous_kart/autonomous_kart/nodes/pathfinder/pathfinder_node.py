@@ -80,6 +80,14 @@ class PathfinderNode(Node):
                 except ValueError:
                     continue
                 self.racing_line.append(p1)
+        self.line_manager = DynamicLineManager(self.racing_line, logger=self.logger)
+        self.line_manager.register(RejoinStrategy(
+            cte_activate=3.0,
+            cte_deactivate=1.0,
+            merge_lookahead_m=15.0,
+            min_turning_radius=self.min_radius_m,
+        ))
+        # Future: self.line_manager.register(ObstacleAvoidanceStrategy(...))
 
         self.state = self.get_parameter("system_state").value
         self.state_subscriber = self.create_subscription(String, "system_state", self.update_state, 10)
@@ -154,14 +162,33 @@ class PathfinderNode(Node):
             else:
                 lookahead_m = self.min_lookahead_m
 
-            target_xy, speed_ref_pct = self.pick_lookahead_point(lookahead_m)
-            if (self.cmd_count % 50) == 0:
-                self.get_logger().debug(
-                    f"pose=({self.current_xy[0]:.2f},{self.current_xy[1]:.2f}) yaw={self.current_yaw:.2f} "
-                    f"target=({target_xy[0]:.2f},{target_xy[1]:.2f}) "
-                    f"lookahead={lookahead_m:.2f} closest_idx={self.closest_idx} "
-                    f"speed_ref_pct={speed_ref_pct:.2f} speed_pct={speed_pct:.2f}"
-                )
+            cte = DynamicLineManager.compute_cte(
+                self.current_xy, self.racing_line, self.closest_idx
+            )
+            kart_state = KartState(
+                xy=self.current_xy,
+                yaw=self.current_yaw,
+                speed_mps=self.current_speed_mps,
+                closest_idx=self.closest_idx,
+                cross_track_error=cte,
+            )
+            self.line_manager.update(kart_state)
+
+            if self.line_manager.is_active:
+                line, dyn_idx = self.line_manager.get_line_and_idx()
+                # Swap for pick_lookahead_point
+                orig_line, orig_idx = self.racing_line, self.closest_idx
+                self.racing_line = line
+                self.closest_idx = dyn_idx
+
+                target_xy, speed_ref_pct = self.pick_lookahead_point(lookahead_m)
+
+                self.line_manager.set_dynamic_closest_idx(self.closest_idx)
+                self.racing_line = orig_line
+                self.closest_idx = kart_state.closest_idx  # May have been updated by manager
+            else:
+                self.closest_idx = kart_state.closest_idx
+                target_xy, speed_ref_pct = self.pick_lookahead_point(lookahead_m)
 
             motor_pct, steering_pct = pathfinder(
                 current_xy=self.current_xy,
@@ -213,7 +240,7 @@ class PathfinderNode(Node):
             steering_ok = abs(target_steering - self.steering) > tolerance
 
     def manual_speed_helper(self, speed: float = 0.0, steering: float = 0.0):
-        """Updates speed & steering params from given values, speed & steering are absolute"""
+        """Updates absolute speed & steering params from given values"""
         self.cmd_count += 1
 
         if speed < 0:

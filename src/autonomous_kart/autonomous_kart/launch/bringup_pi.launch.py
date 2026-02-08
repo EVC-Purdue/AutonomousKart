@@ -66,8 +66,8 @@ def generate_launch_description():
                     ),
                     Node(
                         package="autonomous_kart",
-                        executable="metrics_api",
-                        name="metrics_api",
+                        executable="metrics_node",
+                        name="metrics_node",
                     ),
                     Node(
                         package="autonomous_kart",

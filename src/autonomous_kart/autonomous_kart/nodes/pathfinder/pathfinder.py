@@ -79,10 +79,10 @@ def pathfinder(
     x_v = cy * dx + sy * dy
     y_v = -sy * dx + cy * dy
 
-    # If target is behind, can't "pure pursue" so force a hard turn + slow.
+    # If target is behind, can't pure pursue so force a 0 turn + slow.
     if x_v <= 1e-6:
         steering_pct = -1.0 if y_v < 0.0 else 1.0
-        return 100 * min(0.10, desired_speed_pct), steering_pct * steer_max_deg
+        return 100 * min(0.10, desired_speed_pct), 0
 
     # Use actual distance to target as L (pure pursuit chord length).
     # If target is actually a lookahead point, this will be close to Ld regardless

@@ -39,7 +39,7 @@ def generate_launch_description():
                         parameters=[steering_yaml],
                     ),
                     Node(
-                        package="autonomous_kart",
+                        package="autonomous_kart_cpp",
                         executable="camera_node",
                         name="camera_node",
                         parameters=[camera_yaml],

@@ -25,7 +25,7 @@ public:
     rclcpp::QoS qos(1);
     qos.best_effort();
     qos.durability_volatile();
-    qos.lifespan(rclcpp::Duration(1, static_cast<int>(1e9 / fps_)));
+    qos.lifespan(rclcpp::Duration::from_seconds(1.0 / fps_));
 
     image_pub_ = this->create_publisher<sensor_msgs::msg::Image>("camera/image_raw", qos);
 
@@ -39,6 +39,10 @@ public:
         RCLCPP_ERROR(this->get_logger(), "Failed to open video: %s", video_path.c_str());
       }
       video_fps_ = cap_.get(cv::CAP_PROP_FPS);
+      if (video_fps_ <= 0.0) {
+        video_fps_ = 60.0;
+        RCLCPP_WARN(this->get_logger(), "Failed to get video FPS, defaulting to 60.0");
+      }
       reader_thread_ = std::thread(&CameraNode::read_frames, this);
     }
     else
@@ -132,6 +136,7 @@ private:
       }
       else
       {
+        // Frame time logging every 1000 frames or if we're slower than real-time
         RCLCPP_WARN(this->get_logger(), "Processing is slower than frame time at %.2f / 16.6 ms", elapsed.count() / 1e6);
         float avg_frame_time = 0.0;
         for (const auto &t : frame_times_)
@@ -143,7 +148,7 @@ private:
         // Print time to proccess each stage
         RCLCPP_INFO(this->get_logger(), "CPP Camera Node full frame time: %.2f ms, Load Image Time: %.2f ms, Resize Time: %.2f ms",
                     process_time_ms(start, now), process_time_ms(start, loadImageTime), process_time_ms(loadImageTime, resizeTime));
-        // frame_times_.clear();
+        frame_times_.clear();
       }
     }
   }

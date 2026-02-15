@@ -3,8 +3,8 @@
 <package format="3">
   <name>autonomous_kart_cpp</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="90635383+DueroBone@users.noreply.github.com">root</maintainer>
+  <description>Package containing all high performance nodes for driving in different states.</description>
+  <maintainer email="shay.manor@gmail.com">root</maintainer>
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

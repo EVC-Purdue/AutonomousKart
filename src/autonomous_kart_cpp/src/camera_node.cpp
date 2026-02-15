@@ -5,7 +5,6 @@
 #include <thread>
 #include <mutex>
 
-// This was made entirely by chatgpt, quality is unknown
 class CameraNode : public rclcpp::Node
 {
 public:
@@ -40,8 +39,8 @@ public:
       }
       video_fps_ = cap_.get(cv::CAP_PROP_FPS);
       if (video_fps_ <= 0.0) {
-        video_fps_ = 60.0;
-        RCLCPP_WARN(this->get_logger(), "Failed to get video FPS, defaulting to 60.0");
+        video_fps_ = fps_;
+        RCLCPP_WARN(this->get_logger(), "Failed to get video FPS, defaulting to configured FPS: %.2f", fps_);
       }
       reader_thread_ = std::thread(&CameraNode::read_frames, this);
     }

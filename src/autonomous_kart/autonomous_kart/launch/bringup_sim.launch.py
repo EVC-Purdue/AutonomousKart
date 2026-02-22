@@ -66,6 +66,12 @@ def generate_launch_description():
                         executable="master_api",
                         name="master_api",
                     ),
+                    Node(
+                        package="autonomous_kart",
+                        executable="localization_node",
+                        name="localization_node",
+                        parameters=[pathfinder_yaml, system_yaml],
+                    ),
                 ]
             ),
         ]

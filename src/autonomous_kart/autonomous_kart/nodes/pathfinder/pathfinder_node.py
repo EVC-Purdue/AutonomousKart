@@ -54,13 +54,13 @@ class PathfinderNode(Node):
         self.approach_dist_m = float(self.get_parameter("approach_dist_m").value)
         self.min_approach_speed_pct = float(self.get_parameter("min_approach_speed_pct").value)
 
-        # self.pose_ready = False
-        self.pose_ready = True  # Dummy until localization works
+        self.pose_ready = False
+        # self.pose_ready = True  # Dummy until localization works
         self.current_xy = (0.0, 0.0)
         self.current_yaw = 0.0
         self.current_speed_mps = 0.0
 
-        # self.localization_sub = self.create_subscription(Odometry, "odom", self.localization, 10)
+        self.localization_sub = self.create_subscription(Odometry, "odom", self.localization, 10)
 
         self.closest_idx = 0
 

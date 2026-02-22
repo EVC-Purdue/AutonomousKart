@@ -19,6 +19,7 @@ setup(
         'autonomous_kart.nodes.3dgs_localization',
         'autonomous_kart.nodes.metrics',
         'autonomous_kart.nodes.master',
+        'autonomous_kart.nodes.localization',
     ],
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
@@ -46,6 +47,7 @@ setup(
             'camera_node = autonomous_kart.nodes.camera.camera_node:main',
             'metrics_node = autonomous_kart.nodes.metrics.metrics_node:main',
             'master_api = autonomous_kart.nodes.master.master_api:main',
+            'localization_node = autonomous_kart.nodes.localization.localization_node:main',
         ],
     },
 )

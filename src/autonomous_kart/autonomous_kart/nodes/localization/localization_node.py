@@ -14,7 +14,7 @@ from std_msgs.msg import Float32
 from geometry_msgs.msg import Quaternion, TransformStamped
 from tf2_ros import TransformBroadcaster
 
-from sim_bicycle import BicycleModel
+from .sim_bicycle import BicycleModel
 
 
 class LocalizationNode(Node):

@@ -314,17 +314,15 @@ class PathfinderNode(Node):
         # Find closest index - windowed
         # Tune these bounds
         best_i = self.closest_idx
-        best_d2 = float("inf")
-
         if best_i < 0 or best_i >= n:
             best_i = 0
 
-        # Window wraps around the array
-        for offset in range(-50, 250):
-            i = (best_i + offset) % n
-            row = line[i]
-            dx = row[1] - cx
-            dy = row[2] - cy
+        best_d2 = float("inf")
+        search_start = best_i
+        for offset in range(80):  # only look forward
+            i = (search_start + offset) % n
+            dx = line[i][1] - cx
+            dy = line[i][2] - cy
             d2 = dx * dx + dy * dy
             if d2 < best_d2:
                 best_d2 = d2

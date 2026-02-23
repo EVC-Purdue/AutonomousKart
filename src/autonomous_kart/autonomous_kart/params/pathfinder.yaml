@@ -14,12 +14,12 @@ pathfinder_node:
     steer_max_deg: 25.0        # physical max front-wheel steering angle (degrees)
     
     use_velocity_scaled_lookahead: true  # Nav2: use_velocity_scaled_lookahead_dist
-    lookahead_time_s: 1.0                # Nav2: lookahead_time (s)
-    min_lookahead_m: 4.0                 # Nav2: min_lookahead_dist (m)
+    lookahead_time_s: 0.6                # Nav2: lookahead_time (s)
+    min_lookahead_m: 3.0                 # Nav2: min_lookahead_dist (m)
     max_lookahead_m: 8.0                 # Nav2: max_lookahead_dist (m)
     
     use_curvature_regulation: true       # Nav2: use_regulated_linear_velocity_scaling
-    min_radius_m: 6.0                    # Nav2: regulated_linear_scaling_min_radius (m)
+    min_radius_m: 12.0                    # Nav2: regulated_linear_scaling_min_radius (m)
     min_reg_speed_pct: 0.20              # like regulated_linear_scaling_min_speed / v_max
     
     approach_dist_m: 1.0                 # Nav2: approach_velocity_scaling_dist (m)

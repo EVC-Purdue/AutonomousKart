@@ -31,6 +31,12 @@
     position:fixed; bottom:16px; left:16px;
     font-size:11px; color:#555;
   }
+  #controls button {
+    background:#1a1a22; color:#aaa; border:1px solid #333;
+    padding:4px 12px; margin-right:4px; border-radius:3px;
+    font-family:inherit; font-size:11px; cursor:pointer;
+  }
+  #controls button:hover { border-color:#555; color:#fff; }
 </style>
 </head>
 <body>
@@ -47,6 +53,12 @@
 <div id="status" class="err">disconnected</div>
 
 <div id="controls">
+  <div style="margin-bottom:8px;">
+    <button onclick="setState('IDLE')">IDLE</button>
+    <button onclick="setState('MANUAL')">MANUAL</button>
+    <button onclick="setState('AUTONOMOUS')" style="background:#1a2a4a;color:#60a5fa;">AUTO</button>
+    <button onclick="setState('STOPPED')" style="background:#3a1a1a;color:#f87171;">STOP</button>
+  </div>
   scroll: zoom · drag: pan · R: reset view
 </div>
 
@@ -109,10 +121,14 @@ function w2s(wx, wy) {
 // ── Fetch ──
 async function fetchOdom() {
   try {
-    const r = await fetch(API + '/odom');
-    const d = await r.json();
+    const [odomRes, stateRes] = await Promise.all([
+      fetch(API + '/odom'),
+      fetch(API + '/get_state'),
+    ]);
+    const d = await odomRes.json();
+    const s = await stateRes.json();
     odom = d;
-    // Append trail
+    odom.state = s.state || d.state || 'IDLE';
     trail.push({x:d.x, y:d.y});
     if (trail.length > MAX_TRAIL) trail.shift();
     connected = true;
@@ -247,6 +263,15 @@ function updateHUD() {
   const s = document.getElementById('status');
   s.textContent = connected ? 'connected' : 'disconnected';
   s.className = connected ? 'ok' : 'err';
+}
+async function setState(state) {
+  try {
+    await fetch(API + '/set_state', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({state}),
+    });
+  } catch(e) { console.error('setState failed', e); }
 }
 
 // ── Init ──

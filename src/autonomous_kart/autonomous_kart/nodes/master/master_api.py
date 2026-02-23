@@ -55,6 +55,12 @@ def set_state():
     master_node.update_state(state)
     return jsonify({"success": "ok"})
 
+@app.route("/get_state", methods=["GET"])
+def get_state():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify({"state": master_node.state})
+
 @app.route("/odom", methods=["GET"])
 def odom():
     if not master_node:

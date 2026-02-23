@@ -23,9 +23,9 @@ This guide walks you through setting up the EVC 2025 development environment usi
    - [Python](https://www.python.org/downloads/release/python-31018/)
 
 4. **Authenticate with GHCR**  
-    To get your token, click [here](https://github.com/settings/tokens) and generate a new token.
+    To get your token, click [here](https://github.com/settings/tokens) and generate a new classic token in [github/tokens](https://github.com/settings/tokens/new) with `write:packages`.
    ```bash
-   docker login ghcr.io -u <your-username> -p <your-github-pat>
+   docker login ghcr.io -u your-username -p your-github-pat
 5. **Clone the repo into a new project**  
     ```bash
    git clone https://github.com/EVC-Purdue/AutonomousKart

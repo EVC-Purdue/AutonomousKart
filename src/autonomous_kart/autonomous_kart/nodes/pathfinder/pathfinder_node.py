@@ -54,13 +54,13 @@ class PathfinderNode(Node):
         self.approach_dist_m = float(self.get_parameter("approach_dist_m").value)
         self.min_approach_speed_pct = float(self.get_parameter("min_approach_speed_pct").value)
 
-        # self.pose_ready = False
-        self.pose_ready = True  # Dummy until localization works
+        self.pose_ready = False
+        # self.pose_ready = True  # Dummy until localization works
         self.current_xy = (0.0, 0.0)
         self.current_yaw = 0.0
         self.current_speed_mps = 0.0
 
-        # self.localization_sub = self.create_subscription(Odometry, "odom", self.localization, 10)
+        self.localization_sub = self.create_subscription(Odometry, "odom", self.localization, 10)
 
         self.closest_idx = 0
 
@@ -311,25 +311,18 @@ class PathfinderNode(Node):
 
         cx, cy = self.current_xy
 
-        # Find closest index (windowed)
+        # Find closest index - windowed
         # Tune these bounds
-        start = max(0, self.closest_idx - 50)
-        end = min(n, self.closest_idx + 250)
-
         best_i = self.closest_idx
-        best_d2 = float("inf")
-
-        # If closest_idx is uninitialized or line is small, widen to full scan once.
         if best_i < 0 or best_i >= n:
-            start, end = 0, n
             best_i = 0
 
-        for i in range(start, end):
-            row = line[i]
-            x = row[1]  # x_m
-            y = row[2]  # y_m
-            dx = x - cx
-            dy = y - cy
+        best_d2 = float("inf")
+        search_start = best_i
+        for offset in range(80):  # only look forward
+            i = (search_start + offset) % n
+            dx = line[i][1] - cx
+            dy = line[i][2] - cy
             d2 = dx * dx + dy * dy
             if d2 < best_d2:
                 best_d2 = d2

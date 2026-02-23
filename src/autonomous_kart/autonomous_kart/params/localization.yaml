@@ -1,0 +1,6 @@
+localization_node:
+  ros__parameters:
+    wheelbase_m: 1.05
+    v_max_mps: 15.0
+    steer_max_deg: 25.0
+    line_path: /ws/data/racing_line/line.csv

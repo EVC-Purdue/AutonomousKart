@@ -311,25 +311,20 @@ class PathfinderNode(Node):
 
         cx, cy = self.current_xy
 
-        # Find closest index (windowed)
+        # Find closest index - windowed
         # Tune these bounds
-        start = max(0, self.closest_idx - 50)
-        end = min(n, self.closest_idx + 250)
-
         best_i = self.closest_idx
         best_d2 = float("inf")
 
-        # If closest_idx is uninitialized or line is small, widen to full scan once.
         if best_i < 0 or best_i >= n:
-            start, end = 0, n
             best_i = 0
 
-        for i in range(start, end):
+        # Window wraps around the array
+        for offset in range(-50, 250):
+            i = (best_i + offset) % n
             row = line[i]
-            x = row[1]  # x_m
-            y = row[2]  # y_m
-            dx = x - cx
-            dy = y - cy
+            dx = row[1] - cx
+            dy = row[2] - cy
             d2 = dx * dx + dy * dy
             if d2 < best_d2:
                 best_d2 = d2

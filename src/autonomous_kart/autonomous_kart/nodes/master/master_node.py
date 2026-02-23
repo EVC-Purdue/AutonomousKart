@@ -34,6 +34,10 @@ class MasterNode(Node):
         self._logs = []
 
         self.state_publisher = self.create_publisher(String, "system_state", 10)
+
+        self.state_subscriber = self.create_subscription(
+            String, "system_state", self._state_callback, 10
+        )
         # Publish speed + steering for manual mode
         self.manual_publisher = self.create_publisher(
             Float32MultiArray, "manual_commands", 10
@@ -73,6 +77,11 @@ class MasterNode(Node):
 
             self.state = state
             self.state_publisher.publish(String(data=state))
+
+    def _state_callback(self, msg: String):
+        if msg.data in [s.value for s in STATES]:
+            with self._pub_lock:
+                self.state = msg.data
 
     def get_logs(self):
         logs = list(self._logs)

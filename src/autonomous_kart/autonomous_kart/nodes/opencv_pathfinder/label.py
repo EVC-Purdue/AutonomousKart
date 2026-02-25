@@ -1,35 +1,38 @@
 import cv2 as cv
 import numpy as np
-import math
+import time
 
 # @param img: Image Matrix
 # @param y_cutoff: Only consider y percent of image
 # @param colored: Return a colored image
 # @ret: Mask of the road
-def get_img_mask(img: np.ndarray, y_cutoff: float=0.7, colored: bool=False):
+def get_img_mask(img: np.ndarray, percent: float=0.7, colored: bool=False):
     if img is None:
         print ('Error opening image!')
         return None
     
-     # Roi mask for a portion of image
-    h, w = img.shape[:2]
-    roi_mask = np.zeros((h, w), dtype="uint8")
-    y_index = math.floor(h * y_cutoff)
+    # Roi mask for a portion of image
+    h = img.shape[0]
+    y_index = int(h * percent)
+    roi_mask = np.zeros_like(img)
     roi_mask[y_index:, :] = 255
-    roi_image = cv.bitwise_and(img, img, mask=roi_mask)
+    roi_image = np.zeros_like(img)
+    roi_image[roi_mask > 0] = img[roi_mask > 0]
 
     # Get hue mask
     image_hsv = get_hsv(roi_image)
     lower_red = np.array([0, 0, 100])
-    higher_red = np.array([179, 12, 255])
+    higher_red = np.array([60, 40, 255])
     mask_red = cv.inRange(image_hsv, lower_red, higher_red)
 
     if not colored:
-        result = cv.bitwise_and(roi_image, roi_image, mask=mask_red)
+        result = np.zeros_like(roi_image)
+        result[mask_red > 0] = roi_image[mask_red > 0]
     else:
-        result = cv.bitwise_and(image_hsv, image_hsv, mask=mask_red)
+        result = np.zeros_like(image_hsv)
+        result[mask_red > 0] = image_hsv[mask_red > 0]
 
-    kernel = np.ones((12, 12), np.uint8)
+    kernel = np.ones((9, 9), np.uint8)
     result = cv.morphologyEx(result, cv.MORPH_OPEN, kernel)
     
     return result
@@ -61,6 +64,7 @@ def get_video_mask(vid):
     
     vid.release()
     video.release()
+    cv.destroyAllWindows()
     
     return video
 
@@ -84,7 +88,7 @@ def get_hsv(img: np.ndarray):
 def get_greyscale(img: np.ndarray):
     return cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
-# @param: An image
+# Logic for closing image window
 def display_img(img):
     cv.imshow("Window", img)
 
@@ -94,24 +98,20 @@ def display_img(img):
             return
 
 
-original_img = get_image("/ws/src/autonomous_kart/autonomous_kart/nodes/opencv_pathfinder/track_photo.png")
+original_img = get_image("/ws/data/internet_test_footage/driver-pov-img.png")
 
-# display_img(original_img)
+display_img(original_img)
 
+start = time.perf_counter()
+road_image = get_img_mask(original_img, percent=0.0)
+end = time.perf_counter()
 
-# img = get_greyscale(original_img)
+time = start - end
+print(f"Time: {time} secs", time)
 
-# display_img(img)
-
-
-road_image = get_img_mask(original_img)
-
-# display_img(road_image)
+display_img(road_image)
 
 
 # original_video = get_video("/ws/data/EVC_test_footage/video.mp4")
 
 # video = get_video_mask(original_video)
-
-#cv.destroyAllWindows()
-

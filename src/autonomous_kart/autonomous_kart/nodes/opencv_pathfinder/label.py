@@ -4,15 +4,14 @@ import time
 
 # @param img: Image Matrix
 # @param y_cutoff: Only consider y percent of image
-# @param colored: Return a colored image
 # @ret: Mask of the road
-def get_img_mask(img: np.ndarray, percent: float=0.6, colored: bool=False):
+def get_img_mask(img: np.ndarray, percent: float=0.0, r_coord=(0,0), l_coord=(0,0)):
     if img is None:
         print ('Error opening image!')
         return None
     
     # Roi mask for a portion of image
-    h = img.shape[0]
+    h, w = img.shape[:2]
     y_index = int(h * percent)
     roi_mask = np.zeros_like(img)
     roi_mask[y_index:, :] = 255
@@ -22,25 +21,18 @@ def get_img_mask(img: np.ndarray, percent: float=0.6, colored: bool=False):
     # Get hue mask
     image_hsv = get_hsv(roi_image)
     lower_red = np.array([0, 0, 100])
-    higher_red = np.array([50, 50, 255])
-    mask_red = cv.inRange(image_hsv, lower_red, higher_red)
+    higher_red = np.array([200, 50, 255])
+    mask_red = cv.inRange(image_hsv, lower_red, higher_red) 
 
-    if not colored:
-        result = np.zeros_like(roi_image)
-        result[mask_red > 0] = roi_image[mask_red > 0]
-    else:
-        result = np.zeros_like(image_hsv)
-        result[mask_red > 0] = image_hsv[mask_red > 0]
+    kernel = np.ones((5, 5), np.uint8)
+    result = cv.morphologyEx(mask_red, cv.MORPH_OPEN, kernel)
 
-    kernel = np.ones((13, 13), np.uint8)
-    result = cv.morphologyEx(result, cv.MORPH_OPEN, kernel)
+    right = find_road_right(result, r_coord, fast_lookup=True)
+    left = find_road_left(result, l_coord, fast_lookup=True)
 
-    r = find_road_right(result)
-    l = find_road_left(result)
-
-    draw_lines(result, r, l)
+    draw_lines(result, right, left)
     
-    return result
+    return (result, right, left)
 
 # @param: Video
 # @ret: Mask of the video's road
@@ -59,52 +51,112 @@ def get_video_mask(vid):
     if fps == 0:
         fps = 30
 
-    video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (width, height)) 
+    right = (0,0)
+    left = (0,0)
+    video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (width, height), isColor=False) 
     vid.set(cv.CAP_PROP_POS_FRAMES, 0)
     while (True):
         ret, frame = vid.read()
 
         if not ret:
             break
-
-        video.write(get_img_mask(frame))
+            
+        result, right, left = get_img_mask(frame, r_coord=right, l_coord=left)
+        video.write(result)
     
     vid.release()
     video.release()
     cv.destroyAllWindows()
 
-def find_road_right(img):
-    h, w = img.shape[:2]
-    for i in range(h):
-        if img[i, w-3].any():
-            return (w - 3, i)
-    
-    for i in range(w - 1, w // 2, -1):
-        if img[h - 5, i].any():
-            return (i, h - 5)
-    
-    return (0,0)
+def find_road_right(img, prev, fast_lookup: bool=False, threshold=20):
+    height, width = img.shape[:2]
 
-def find_road_left(img):
-    h, w = img.shape[:2]
-    for i in range(h):
-        if img[i, 2].any():
-            return (2, i)
+    # # Starting & Ending pos based on bool
+    # if fast_lookup and prev != (0,0):
+    #     c, r = prev
+    #     h_start = max(0, r - threshold)
+    #     h_end = min(height, r + threshold)
+    # else:
+    #     h_start = height - 1
+    #     h_end = 0
     
-    for i in range(w // 2):
-        if img[h - 5, i].any():
-            return (i, h - 5)
+    if img[height - 5, width - 5].any():
+        for i in range(height - 5, height // 2, -1):
+            if not img[i, width - 5].any():     # Offset pixels bc. border pixels are black
+                return (width - 5, i)
+    else:
+        for i in range(width - 5, width // 2, -1):
+            if img[height - 5, i].any():
+                return (i, height - 5)
     
-    return (0,0)
+    # # Didn't find it so do slow loop
+    # if fast_lookup and prev != (0,0):
+    #     return find_road_right(img, prev, fast_lookup=False)
+    
+    return prev
+
+def find_road_left(img, prev, fast_lookup=False, threshold=20):
+    height, width= img.shape[:2]
+
+    if img[height - 5, 5].any():
+        for i in range(height - 5, height // 2, -1):
+            if not img[i, 5].any():     # Offset pixels bc. border pixels are black
+                return (5, i)
+    else:
+        for i in range(width // 2):
+            if img[height - 5, i].any():
+                return (i, height - 5)
+
+    # if fast_lookup and prev != (0,0):
+    #     c, r = prev
+    #     h_start = max(0, r - threshold)
+    #     h_end = min(height - 1, r + threshold)
+    # else:
+    #     h_start = 0
+    #     h_end = height
+
+    # for i in range(h_start, h_end):
+    #     if img[i, 5].any():             # Offset pixels bc. border pixels are black
+    #         return (5, i)
+    
+    # if fast_lookup and prev != (0,0):
+    #     c, r = prev
+    #     w_start = max(0, c - threshold)
+    #     w_end = min(width // 2, c + threshold)
+    # else:
+    #     w_start = 0
+    #     w_end = width // 2
+    
+    # for i in range(w_start, w_end):
+    #     if img[height - 5, i].any():    # Offset pixels bc. border pixels are black
+    #         return (i, height - 5)
+    
+    # # Didn't find it so do slow loop
+    # if fast_lookup and prev != (0,0):
+    #     return find_road_left(img, prev, fast_lookup=False)
+    
+    return prev
+
+def within_difference(r_coord, l_coord, threshold):
+    c1, r1 = r_coord
+    c2, r2 = l_coord
+
+    if (abs(r2 - r1) <= threshold and abs(c2 - c1) <= threshold):
+        return True
+    else:
+        return False
 
 # @param r_coord: Right road coord 
 # @param l_coord: Left road coord
 # @ret: Return img with lines
-def draw_lines(img, r_coord, l_coord):
-    middle = img.shape[1]
-    m: int = middle // 2
-    cv.line(img, (m, 0), r_coord, (200, 0, 200), 3)
-    cv.line(img, (m, 0), l_coord, (200, 0, 200), 3)
+def draw_lines(img, r_coord, l_coord, middle=None):
+    if not middle:
+        middle = img.shape[1]
+        middle: int = middle // 2
+            
+
+    cv.line(img, (middle, 0), r_coord, (200, 0, 200), 3)
+    cv.line(img, (middle, 0), l_coord, (200, 0, 200), 3)
     return img
 
 def get_threshold(img):
@@ -114,6 +166,17 @@ def get_contours(thresh):
     contours, hierachy = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
     
     return contours
+
+def get_gradient(img):
+    h, w = img.shape[:2]
+    gradient = np.linspace(0, 1, h).reshape(h, 1)
+    gradient = np.repeat(gradient, w, axis=1)
+    gradient = cv.merge([gradient]*3).astype(np.float32)
+
+    img_float = img.astype(np.float32)
+    img_grad = img_float * gradient
+    img_grad = np.clip(img_grad, 0, 255).astype(np.uint8)
+    return img_grad
 
 # @param: Takes a str file path
 # @ret: Return a video
@@ -143,6 +206,14 @@ def display_img(img):
         if (cv.waitKey(1) == 13 or cv.getWindowProperty("Window", cv.WND_PROP_VISIBLE) < 1):
             cv.destroyAllWindows()
             return
+
+# photo = get_image("./another_6.png")
+
+# display_img(photo)
+
+# img, r, l = get_img_mask(photo)
+
+# display_img(img)
 
 
 

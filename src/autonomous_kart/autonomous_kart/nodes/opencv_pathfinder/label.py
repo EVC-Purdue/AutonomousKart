@@ -1,10 +1,12 @@
 import cv2 as cv
 import numpy as np
 import time
+import math
 
 # @param img: Image Matrix
 # @param y_cutoff: Only consider y percent of image
 # @ret: Mask of the road
+
 def get_img_mask(img: np.ndarray, percent: float=0.65, r_coord=None, l_coord=None):
     if img is None:
         print ('Error opening image!')
@@ -69,18 +71,34 @@ def get_video_mask(vid):
             break
             
         result, right, left = get_img_mask(frame, r_coord=right, l_coord=left)
+
+        left_deg = get_angle((0,0), (width // 2, 0), left)
+        right_deg = get_angle((width - 1, 0), (width // 2, 0), right)
+
+        cv.putText(result, f"{left_deg:.1f}", (100, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv.putText(result, f"{right_deg:.1f}", (1300, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
         video.write(result)
     
     vid.release()
     video.release()
     cv.destroyAllWindows()
 
+# Start in bottom right of image
+#
+# @param prev: Takes previous coord found in format: (col, row) 
+# @param fast_lookup: Optimize boolean
+# @param threshold: Amt of neighbor pixels to check
+#
+# @return: Either edge of road or previous pixel
 def find_road_right(img, prev, fast_lookup: bool=False, threshold=20):
     height, width = img.shape[:2]
 
-    # Starting & Ending pos based on bool
+    # Optimization code (check threshold amt of pixels)
+    #
+    # All width/height offset by 5 to ensure color detection
     if fast_lookup and prev != (width - 5, height - 5):
-        c, r = prev
+        c, r = prev     # Input takes (col, row)
 
         if (r == height - 5):
             w_start = min(width - 5, c + threshold)
@@ -113,10 +131,19 @@ def find_road_right(img, prev, fast_lookup: bool=False, threshold=20):
     
     return prev
 
+# Start in bottom left of image
+#
+# @param prev: Takes previous coord found in format: (col, row) 
+# @param fast_lookup: Optimize boolean
+# @param threshold: Amt of neighbor pixels to check
+#
+# @return: Either edge of road or previous pixel
 def find_road_left(img, prev, fast_lookup=False, threshold=20):
     height, width= img.shape[:2]
 
-    # Starting & Ending pos based on bool
+    # Optimization code (check threshold amt of pixels)
+    #
+    # All width/height offset by 5 to ensure color detection
     if fast_lookup and prev != (5, height - 5):
         c, r = prev
 
@@ -151,6 +178,29 @@ def find_road_left(img, prev, fast_lookup=False, threshold=20):
         return find_road_left(img, prev, fast_lookup=False)
     
     return prev
+
+def get_angle_vector(middle_coord, road_coord):
+    dx = road_coord[0] - middle_coord[0] 
+    dy = road_coord[1] - middle_coord[1]  
+    angle_rad = math.atan2(dy, dx)
+    return math.degrees(angle_rad)
+
+def get_angle(zero_coord, middle_coord, road_coord):
+    a = get_distance(road_coord, zero_coord)
+    b = get_distance(zero_coord, middle_coord)
+    c = get_distance(middle_coord, road_coord)
+
+    numerator = a*a - c*c - b*b
+    denominator = -2 * c * b
+
+    rads = math.acos( numerator / denominator)
+    return math.degrees(rads)
+
+
+def get_distance(point1, point2):
+    dx = point1[0] - point2[0]
+    dy = point1[1] - point2[1]
+    return math.sqrt(dx*dx + dy *dy)
 
 def within_difference(r_coord, l_coord, threshold):
     c1, r1 = r_coord
@@ -222,14 +272,22 @@ def display_img(img):
             cv.destroyAllWindows()
             return
 
-photo = get_image("./track.png")
+# photo = get_image("/ws/data/internet_test_footage/driver-pov-img.png")
 
-display_img(photo)
+# display_img(photo)
 
-img, r, l = get_img_mask(photo)
+# img, right, left = get_img_mask(photo, percent=0.0)
 
-display_img(img)
+# width, height = photo.shape[:2]
 
-# original_video = get_video("/ws/data/EVC_test_footage/video.mp4")
+# left_deg = get_angle((0,0), (width // 2, 0), (left[0], left[1]))
+# right_deg = get_angle((width - 1, 0), (width // 2, 0), (right[0], right[1]))
 
-# get_video_mask(original_video)
+# print(left_deg)
+# print(right_deg)
+
+# display_img(img)
+
+original_video = get_video("/ws/data/EVC_test_footage/video.mp4")
+
+get_video_mask(original_video)

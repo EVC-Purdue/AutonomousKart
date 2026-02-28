@@ -5,7 +5,7 @@ import time
 # @param img: Image Matrix
 # @param y_cutoff: Only consider y percent of image
 # @ret: Mask of the road
-def get_img_mask(img: np.ndarray, percent: float=0.0, r_coord=(0,0), l_coord=(0,0)):
+def get_img_mask(img: np.ndarray, percent: float=0.0, r_coord=None, l_coord=None):
     if img is None:
         print ('Error opening image!')
         return None
@@ -20,7 +20,7 @@ def get_img_mask(img: np.ndarray, percent: float=0.0, r_coord=(0,0), l_coord=(0,
 
     # Get hue mask
     image_hsv = get_hsv(roi_image)
-    lower_red = np.array([0, 0, 100])
+    lower_red = np.array([0, 0, 70])
     higher_red = np.array([200, 50, 255])
     mask_red = cv.inRange(image_hsv, lower_red, higher_red) 
 
@@ -51,8 +51,8 @@ def get_video_mask(vid):
     if fps == 0:
         fps = 30
 
-    right = (0,0)
-    left = (0,0)
+    right = (width - 5, height - 5)
+    left = (5, height - 5)
     video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (width, height), isColor=False) 
     vid.set(cv.CAP_PROP_POS_FRAMES, 0)
     while (True):
@@ -71,69 +71,77 @@ def get_video_mask(vid):
 def find_road_right(img, prev, fast_lookup: bool=False, threshold=20):
     height, width = img.shape[:2]
 
-    # # Starting & Ending pos based on bool
-    # if fast_lookup and prev != (0,0):
-    #     c, r = prev
-    #     h_start = max(0, r - threshold)
-    #     h_end = min(height, r + threshold)
-    # else:
-    #     h_start = height - 1
-    #     h_end = 0
-    
-    if img[height - 5, width - 5].any():
-        for i in range(height - 5, height // 2, -1):
-            if not img[i, width - 5].any():     # Offset pixels bc. border pixels are black
-                return (width - 5, i)
+    # Starting & Ending pos based on bool
+    if fast_lookup and prev != (width - 5, height - 5):
+        c, r = prev
+
+        if (r == height - 5):
+            w_start = min(width - 5, c + threshold)
+            w_end = max(width // 2, c - threshold)
+            h_start = height - 5
+            h_end = 0
+        else:
+            h_start = min(height - 5, r + threshold)
+            h_end = max(0, r - threshold)
+            w_start = width - 5
+            w_end = width // 2
     else:
-        for i in range(width - 5, width // 2, -1):
-            if img[height - 5, i].any():
-                return (i, height - 5)
+        h_start = height - 5
+        h_end = 0
+        w_start = width - 5
+        w_end = width // 2
     
-    # # Didn't find it so do slow loop
-    # if fast_lookup and prev != (0,0):
-    #     return find_road_right(img, prev, fast_lookup=False)
+    if img[h_start, w_start].any():
+        for i in range(h_start, h_end, -1):
+            if not img[i, w_start].any():
+                return (w_start, i)
+    
+    if not img[h_start, w_start].any():
+        for i in range(w_start, w_end, -1):
+            if img[h_start, i].any():
+                return (i, h_start)
+    
+    if fast_lookup and prev != (w_start, h_start):
+        return find_road_right(img, prev, fast_lookup=False)
     
     return prev
 
 def find_road_left(img, prev, fast_lookup=False, threshold=20):
     height, width= img.shape[:2]
 
-    if img[height - 5, 5].any():
-        for i in range(height - 5, height // 2, -1):
-            if not img[i, 5].any():     # Offset pixels bc. border pixels are black
-                return (5, i)
+    # Starting & Ending pos based on bool
+    if fast_lookup and prev != (5, height - 5):
+        c, r = prev
+
+        if (r == height - 5):
+            w_start = max(5, c - threshold)
+            w_end = min(width // 2, c + threshold)
+            h_start = height - 5
+            h_end = height // 2
+        else:
+            h_start = min(height - 5, r + threshold)
+            h_end = max(0, r - threshold)
+            w_start = 5
+            w_end = width // 2
     else:
-        for i in range(width // 2):
-            if img[height - 5, i].any():
-                return (i, height - 5)
+        h_start = height - 5
+        h_end = 0
+        w_start = 5
+        w_end = width // 2
 
-    # if fast_lookup and prev != (0,0):
-    #     c, r = prev
-    #     h_start = max(0, r - threshold)
-    #     h_end = min(height - 1, r + threshold)
-    # else:
-    #     h_start = 0
-    #     h_end = height
-
-    # for i in range(h_start, h_end):
-    #     if img[i, 5].any():             # Offset pixels bc. border pixels are black
-    #         return (5, i)
+    if img[h_start, w_start].any():
+        for i in range(h_start, h_end, -1):
+            if not img[i, w_start].any():
+                return (w_start, i)
     
-    # if fast_lookup and prev != (0,0):
-    #     c, r = prev
-    #     w_start = max(0, c - threshold)
-    #     w_end = min(width // 2, c + threshold)
-    # else:
-    #     w_start = 0
-    #     w_end = width // 2
+    if not img[h_start, w_start].any():
+        for i in range(w_start, w_end):
+            if img[h_start, i].any():
+                return (i, h_start)
     
-    # for i in range(w_start, w_end):
-    #     if img[height - 5, i].any():    # Offset pixels bc. border pixels are black
-    #         return (i, height - 5)
-    
-    # # Didn't find it so do slow loop
-    # if fast_lookup and prev != (0,0):
-    #     return find_road_left(img, prev, fast_lookup=False)
+    # Didn't find it so do slow loop
+    if fast_lookup and prev != (w_start, h_start):
+        return find_road_left(img, prev, fast_lookup=False)
     
     return prev
 
@@ -207,15 +215,13 @@ def display_img(img):
             cv.destroyAllWindows()
             return
 
-# photo = get_image("./another_6.png")
+# photo = get_image("/ws/data/internet_test_footage/driver-pov-img.png")
 
 # display_img(photo)
 
 # img, r, l = get_img_mask(photo)
 
 # display_img(img)
-
-
 
 original_video = get_video("/ws/data/EVC_test_footage/video.mp4")
 

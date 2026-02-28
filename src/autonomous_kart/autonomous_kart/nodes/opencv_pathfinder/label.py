@@ -5,7 +5,7 @@ import time
 # @param img: Image Matrix
 # @param y_cutoff: Only consider y percent of image
 # @ret: Mask of the road
-def get_img_mask(img: np.ndarray, percent: float=0.0, r_coord=None, l_coord=None):
+def get_img_mask(img: np.ndarray, percent: float=0.65, r_coord=None, l_coord=None):
     if img is None:
         print ('Error opening image!')
         return None
@@ -26,6 +26,12 @@ def get_img_mask(img: np.ndarray, percent: float=0.0, r_coord=None, l_coord=None
 
     kernel = np.ones((5, 5), np.uint8)
     result = cv.morphologyEx(mask_red, cv.MORPH_OPEN, kernel)
+
+    if r_coord is None:
+        r_coord = (w - 5, h - 5)
+    
+    if l_coord is None:
+        l_coord = (5, h - 5)
 
     right = find_road_right(result, r_coord, fast_lookup=True)
     left = find_road_left(result, l_coord, fast_lookup=True)
@@ -56,6 +62,7 @@ def get_video_mask(vid):
     video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (width, height), isColor=False) 
     vid.set(cv.CAP_PROP_POS_FRAMES, 0)
     while (True):
+
         ret, frame = vid.read()
 
         if not ret:
@@ -215,14 +222,14 @@ def display_img(img):
             cv.destroyAllWindows()
             return
 
-# photo = get_image("/ws/data/internet_test_footage/driver-pov-img.png")
+photo = get_image("./track.png")
 
-# display_img(photo)
+display_img(photo)
 
-# img, r, l = get_img_mask(photo)
+img, r, l = get_img_mask(photo)
 
-# display_img(img)
+display_img(img)
 
-original_video = get_video("/ws/data/EVC_test_footage/video.mp4")
+# original_video = get_video("/ws/data/EVC_test_footage/video.mp4")
 
-get_video_mask(original_video)
+# get_video_mask(original_video)

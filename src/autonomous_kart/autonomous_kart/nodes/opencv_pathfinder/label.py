@@ -7,14 +7,14 @@ import math
 # @param y_cutoff: Only consider y percent of image
 # @ret: Mask of the road
 
-def get_img_mask(img: np.ndarray, percent=0.65, prev_right=None, prev_left=None, optimize=True, pixel_range=5, pixel_offset=5, steps=10):
+def get_img_mask(img: np.ndarray, percent=0.65, prev_right=None, prev_left=None, optimize=True, pixel_range=5, pic_offset=5, steps=20):
     if img is None:
         print ('Error opening image!')
         return None
     
     # Roi mask for a portion of image
     h, w = img.shape[:2]
-    height, width = h - pixel_offset, w - pixel_offset
+    height, width = h - 1 - pic_offset, w - 1 - pic_offset
 
     y_index = int(height * percent)
     roi_mask = np.zeros_like(img)
@@ -35,10 +35,10 @@ def get_img_mask(img: np.ndarray, percent=0.65, prev_right=None, prev_left=None,
         prev_right = (width, height)
     
     if prev_left is None:
-        prev_left = (pixel_offset, height)
+        prev_left = (pic_offset, height)
 
-    right = find_road_coord(result, prev_right, True, optimize=optimize, pixel_range=pixel_range, pixel_offset=pixel_offset, steps=steps)
-    left = find_road_coord(result, prev_left, False, optimize=optimize, pixel_range=pixel_range, pixel_offset=pixel_offset, steps=steps)
+    right = find_road_coord(result, prev_right, True, optimize=optimize, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
+    left = find_road_coord(result, prev_left, False, optimize=optimize, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
 
     draw_lines(result, right, left)
     
@@ -46,7 +46,7 @@ def get_img_mask(img: np.ndarray, percent=0.65, prev_right=None, prev_left=None,
 
 # @param: Video
 # @ret: Mask of the video's road
-def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=5, pic_offset=5, steps=10):
+def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=5, pic_offset=5, steps=20):
     if vid is None:
         print("Error opening video")
         return None
@@ -56,7 +56,7 @@ def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=5, pic_offset=5
         print("Can't get initial video frame")
         return None
     h, w = f.shape[:2]
-    height, width = h - pic_offset, w - pic_offset
+    height, width = h - 1 - pic_offset, w - 1 - pic_offset
 
     fps = vid.get(cv.CAP_PROP_FPS)
     if fps == 0:
@@ -64,7 +64,7 @@ def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=5, pic_offset=5
 
     prev_right = (width, height)
     prev_left = (pic_offset, height)
-    video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (width, height), isColor=False) 
+    video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (w, h), isColor=False) 
     vid.set(cv.CAP_PROP_POS_FRAMES, 0)
     while (True):
 
@@ -87,36 +87,36 @@ def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=5, pic_offset=5
     video.release()
     cv.destroyAllWindows()
 
-def find_road_coord(img, prev_pixel, right_side: bool, optimize=True, pixel_range=10, pic_offset=5, steps=10):
-    h, w = img[:2]
-    height, width = h - pic_offset, w - pic_offset
+def find_road_coord(img, prev_pixel, right_side: bool, optimize=True, pixel_range=10, pic_offset=5, steps=30):
+    h, w = img.shape[:2]
+    height, width = h - 1 - pic_offset, w - 1 - pic_offset
 
     if (optimize):
         new_pixel = lookup_road_coord(img, prev_pixel, right_side, pixel_range=pixel_range, pic_offset=pic_offset)
         if new_pixel:
             return new_pixel
-       
+    
+    steps_h = -1 * steps
+    steps_w = -1 * steps if right_side else steps
+    slow_step_h = 1
+    slow_step_w = 1 if right_side else -1
+
     h_start = height
     h_end = 0
+    w_start = width if right_side else pic_offset
     w_end = width // 2
-
-    if right_side:
-        w_start = width
-    else:
-        w_start = pic_offset
     
     if img[h_start, w_start].any():
-        for i in range(h_start, h_end, -steps):
+        for i in range(h_start, h_end, steps_h):
             if not img[i, w_start].any():
-                for j in range(i, i + steps, 1):
+                for j in range(i, h_start, slow_step_h):
                     if img[j, w_start].any():
                         return (w_start, j)
-    
-    if not img[h_start, w_start].any():
-        for i in range(w_start, w_end, steps):
+    else:
+        for i in range(w_start, w_end, steps_w):
             if img[h_start, i].any():
-                for j in range(i, i - steps, -1):
-                    if not img[j, h_start].any():
+                for j in range(i, w_start, slow_step_w):
+                    if not img[h_start, j].any():
                         return (j, h_start)
     
     return prev_pixel
@@ -124,7 +124,7 @@ def find_road_coord(img, prev_pixel, right_side: bool, optimize=True, pixel_rang
 
 def lookup_road_coord(img, prev_pixel, right_side, pixel_range=10, pic_offset=5):
     h, w = img.shape[:2]
-    height, width = h - pic_offset, w - pic_offset
+    height, width = h - 1 -pic_offset, w - pic_offset
     prev_height, prev_width = prev_pixel.shape[:2]
 
     if right_side:
@@ -144,109 +144,6 @@ def lookup_road_coord(img, prev_pixel, right_side, pixel_range=10, pic_offset=5)
         return None
     else:
         return None
-    
-
-
-# Start in bottom right of image
-#
-# @param prev: Takes previous coord found in format: (col, row) 
-# @param fast_lookup: Optimize boolean
-# @param threshold: Amt of neighbor pixels to check
-#
-# @return: Either edge of road or previous pixel
-def find_road_right(img, prev, fast_lookup: bool=False, threshold=20):
-    height, width = img.shape[:2]
-
-    # Optimization code (check threshold amt of pixels)
-    #
-    # All width/height offset by 5 to ensure color detection
-    if fast_lookup and prev != (width - 5, height - 5):
-        c, r = prev     # Input takes (col, row)
-
-        if (r == height - 5):
-            w_start = min(width - 5, c + threshold)
-            w_end = max(width // 2, c - threshold)
-            h_start = height - 5
-            h_end = 0
-            for i in range(w_start, w_end, -1):
-                if img[h_start, i].any():
-                    return (i, h_start)
-        else:
-            h_start = min(height - 5, r + threshold)
-            h_end = max(0, r - threshold)
-            w_start = width - 5
-            w_end = width // 2
-            for i in range(h_start, h_end, -1):
-                if not img[i, w_start].any():
-                    return (w_start, i)
-   
-    h_start = height - 5
-    h_end = 0
-    w_start = width - 5
-    w_end = width // 2
-    
-    if img[h_start, w_start].any():
-        for i in range(h_start, h_end, -1):
-            if not img[i, w_start].any():
-                return (w_start, i)
-    
-    if not img[h_start, w_start].any():
-        for i in range(w_start, w_end, -1):
-            if img[h_start, i].any():
-                return (i, h_start)
-    
-    return prev
-
-# Start in bottom left of image
-#
-# @param prev: Takes previous coord found in format: (col, row) 
-# @param fast_lookup: Optimize boolean
-# @param threshold: Amt of neighbor pixels to check
-#
-# @return: Either edge of road or previous pixel
-def find_road_left(img, prev, fast_lookup=False, threshold=20):
-    height, width= img.shape[:2]
-
-    # Optimization code (check threshold amt of pixels)
-    #
-    # All width/height offset by 5 to ensure color detection
-    if fast_lookup and prev != (5, height - 5):
-        c, r = prev
-
-        if (r == height - 5):
-            w_start = max(5, c - threshold)
-            w_end = min(width // 2, c + threshold)
-            h_start = height - 5
-            h_end = height // 2
-            for i in range(h_start, h_end, -1):
-                if img[i, w_start].any():
-                    return (w_start, i)
-
-        else:
-            h_start = min(height - 5, r + threshold)
-            h_end = max(0, r - threshold)
-            w_start = 5
-            w_end = width // 2
-            for i in range(w_start, w_end):
-                if not img[h_start, i].any():
-                    return (i, h_start)
-    
-    h_start = height - 5
-    h_end = 0
-    w_start = 5
-    w_end = width // 2
-
-    if img[h_start, w_start].any():
-        for i in range(h_start, h_end, -1):
-            if not img[i, w_start].any():
-                return (w_start, i)
-    
-    if not img[h_start, w_start].any():
-        for i in range(w_start, w_end):
-            if img[h_start, i].any():
-                return (i, h_start)
-    
-    return prev
 
 def get_angle_vector(middle_coord, road_coord):
     dx = road_coord[0] - middle_coord[0] 
@@ -358,4 +255,4 @@ def display_img(img):
 
 original_video = get_video("/ws/data/EVC_test_footage/video.mp4")
 
-get_video_mask(original_video, optimize=False)
+get_video_mask(original_video, optimize=False, steps=1)

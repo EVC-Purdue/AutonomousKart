@@ -7,7 +7,7 @@ import math
 # @param y_cutoff: Only consider y percent of image
 # @ret: Mask of the road
 
-def get_img_mask(img: np.ndarray, percent: float=0.65, r_coord=None, l_coord=None, fast_lookup=True, threshold=5):
+def get_img_mask(img: np.ndarray, percent=0.65, prev_right=None, prev_left=None, optimize=True, pixel_range=5, pixel_offset=5, steps=10):
     if img is None:
         print ('Error opening image!')
         return None
@@ -29,14 +29,14 @@ def get_img_mask(img: np.ndarray, percent: float=0.65, r_coord=None, l_coord=Non
     kernel = np.ones((3, 3), np.uint8)
     result = cv.morphologyEx(mask_red, cv.MORPH_OPEN, kernel)
 
-    if r_coord is None:
-        r_coord = (w - 5, h - 5)
+    if prev_right is None:
+        prev_right = (w - pixel_offset, h - pixel_offset)
     
-    if l_coord is None:
-        l_coord = (5, h - 5)
+    if prev_left is None:
+        prev_left = (pixel_offset, h - pixel_offset)
 
-    right = find_road_right(result, r_coord, fast_lookup=fast_lookup, threshold=threshold)
-    left = find_road_left(result, l_coord, fast_lookup=fast_lookup, threshold=threshold)
+    right = find_road_coord(result, prev_right, True, optimize=optimize, pixel_range=pixel_range, pixel_offset=pixel_offset, steps=steps)
+    left = find_road_coord(result, prev_left, False, optimize=optimize, pixel_range=pixel_range, pixel_offset=pixel_offset, steps=steps)
 
     draw_lines(result, right, left)
     
@@ -44,7 +44,7 @@ def get_img_mask(img: np.ndarray, percent: float=0.65, r_coord=None, l_coord=Non
 
 # @param: Video
 # @ret: Mask of the video's road
-def get_video_mask(vid, fast_lookup=True):
+def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=5, pixel_offset=5, steps=10):
     if vid is None:
         print("Error opening video")
         return None
@@ -53,14 +53,16 @@ def get_video_mask(vid, fast_lookup=True):
     if not r:
         print("Can't get initial video frame")
         return None
-    height, width = f.shape[:2]
+    h, w = f.shape[:2]
+    height = h - pixel_offset
+    width = w - pixel_offset
 
     fps = vid.get(cv.CAP_PROP_FPS)
     if fps == 0:
         fps = 30
 
-    right = (width - 5, height - 5)
-    left = (5, height - 5)
+    prev_right = (width, height)
+    prev_left = (pixel_offset, height)
     video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (width, height), isColor=False) 
     vid.set(cv.CAP_PROP_POS_FRAMES, 0)
     while (True):
@@ -70,13 +72,13 @@ def get_video_mask(vid, fast_lookup=True):
         if not ret:
             break
             
-        result, right, left = get_img_mask(frame, r_coord=right, l_coord=left, fast_lookup=fast_lookup)
+        result, prev_right, prev_left = get_img_mask(frame, prev_right=prev_right, prev_left=prev_left, optimize=optimize)
 
-        left_deg = get_angle((0,0), (width // 2, 0), left)
-        right_deg = get_angle((width - 1, 0), (width // 2, 0), right)
+        right_deg = get_angle((width, pixel_offset), (width // 2, pixel_offset), prev_right)
+        left_deg = get_angle((pixel_offset, pixel_offset), (width // 2, pixel_offset), prev_left)
 
-        cv.putText(result, f"{left_deg:.1f}", (100, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         cv.putText(result, f"{right_deg:.1f}", (1300, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv.putText(result, f"{left_deg:.1f}", (100, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
         video.write(result)
     
@@ -84,7 +86,7 @@ def get_video_mask(vid, fast_lookup=True):
     video.release()
     cv.destroyAllWindows()
 
-def find_road_coord(img, prev_pixel, right_side: bool, optimize=True, pixel_range=10, steps=10, pic_offset=5):
+def find_road_coord(img, prev_pixel, right_side: bool, optimize=True, pixel_range=10, pic_offset=5, steps=10):
     h, w = img[:2]
     height, width = h - pic_offset, w - pic_offset
 
@@ -136,9 +138,9 @@ def lookup_road_coord(img, prev_pixel, right_side, pixel_range=10, pic_offset=5)
         w_end = width // 2
 
     if (prev_width == w_start):
-        
+        return None
     elif (prev_height == width):
-        
+        return None
     else:
         return None
     
@@ -338,13 +340,7 @@ def display_img(img):
             cv.destroyAllWindows()
             return
 
-photo = get_image("./track.png")
-
-width, height = photo.shape[:2]
-
-right = (width - 5, height - 5)
-left = (5, height - 5)
-
+# photo = get_image("./track.png")
 
 # display_img(photo)
 # track, r, l = get_img_mask(photo, percent=0.0)
@@ -359,14 +355,6 @@ left = (5, height - 5)
 # t = (end - start) / 1000
 # print(f"Time: {t}", t)
 
-width, height = photo.shape[:2]
-
-left_deg = get_angle((0,0), (width // 2, 0), (left[0], left[1]))
-right_deg = get_angle((width - 1, 0), (width // 2, 0), (right[0], right[1]))
-
-print(left_deg)
-print(right_deg)
-
 original_video = get_video("/ws/data/EVC_test_footage/video.mp4")
 
-get_video_mask(original_video)
+get_video_mask(original_video, optimize=False)

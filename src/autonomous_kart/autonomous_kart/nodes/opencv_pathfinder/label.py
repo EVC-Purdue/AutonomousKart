@@ -14,7 +14,9 @@ def get_img_mask(img: np.ndarray, percent=0.65, prev_right=None, prev_left=None,
     
     # Roi mask for a portion of image
     h, w = img.shape[:2]
-    y_index = int(h * percent)
+    height, width = h - pixel_offset, w - pixel_offset
+
+    y_index = int(height * percent)
     roi_mask = np.zeros_like(img)
     roi_mask[y_index:, :] = 255
     roi_image = np.zeros_like(img)
@@ -30,10 +32,10 @@ def get_img_mask(img: np.ndarray, percent=0.65, prev_right=None, prev_left=None,
     result = cv.morphologyEx(mask_red, cv.MORPH_OPEN, kernel)
 
     if prev_right is None:
-        prev_right = (w - pixel_offset, h - pixel_offset)
+        prev_right = (width, height)
     
     if prev_left is None:
-        prev_left = (pixel_offset, h - pixel_offset)
+        prev_left = (pixel_offset, height)
 
     right = find_road_coord(result, prev_right, True, optimize=optimize, pixel_range=pixel_range, pixel_offset=pixel_offset, steps=steps)
     left = find_road_coord(result, prev_left, False, optimize=optimize, pixel_range=pixel_range, pixel_offset=pixel_offset, steps=steps)
@@ -44,7 +46,7 @@ def get_img_mask(img: np.ndarray, percent=0.65, prev_right=None, prev_left=None,
 
 # @param: Video
 # @ret: Mask of the video's road
-def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=5, pixel_offset=5, steps=10):
+def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=5, pic_offset=5, steps=10):
     if vid is None:
         print("Error opening video")
         return None
@@ -54,15 +56,14 @@ def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=5, pixel_offset
         print("Can't get initial video frame")
         return None
     h, w = f.shape[:2]
-    height = h - pixel_offset
-    width = w - pixel_offset
+    height, width = h - pic_offset, w - pic_offset
 
     fps = vid.get(cv.CAP_PROP_FPS)
     if fps == 0:
         fps = 30
 
     prev_right = (width, height)
-    prev_left = (pixel_offset, height)
+    prev_left = (pic_offset, height)
     video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (width, height), isColor=False) 
     vid.set(cv.CAP_PROP_POS_FRAMES, 0)
     while (True):
@@ -72,10 +73,10 @@ def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=5, pixel_offset
         if not ret:
             break
             
-        result, prev_right, prev_left = get_img_mask(frame, prev_right=prev_right, prev_left=prev_left, optimize=optimize)
+        result, prev_right, prev_left = get_img_mask(frame, percent=percent, prev_right=prev_right, prev_left=prev_left, optimize=optimize, pic_offset=pic_offset, pixel_range=pixel_range, steps=steps)
 
-        right_deg = get_angle((width, pixel_offset), (width // 2, pixel_offset), prev_right)
-        left_deg = get_angle((pixel_offset, pixel_offset), (width // 2, pixel_offset), prev_left)
+        right_deg = get_angle((width, pic_offset), (width // 2, pic_offset), prev_right)
+        left_deg = get_angle((pic_offset, pic_offset), (width // 2, pic_offset), prev_left)
 
         cv.putText(result, f"{right_deg:.1f}", (1300, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         cv.putText(result, f"{left_deg:.1f}", (100, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)

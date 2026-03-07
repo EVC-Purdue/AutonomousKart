@@ -3,50 +3,9 @@ import numpy as np
 import time
 import math
 
-# @param img: Image Matrix
-# @param y_cutoff: Only consider y percent of image
-# @ret: Mask of the road
-
-def get_img_mask(img: np.ndarray, percent=0.65, prev_right=None, prev_left=None, optimize=True, pixel_range=6, pic_offset=5, steps=20):
-    if img is None:
-        print ('Error opening image!')
-        return None
-    
-    # Roi mask for a portion of image
-    h, w = img.shape[:2]
-    height, width = h - 1 - pic_offset, w - 1 - pic_offset
-
-    y_index = int(height * percent)
-    roi_mask = np.zeros_like(img)
-    roi_mask[y_index:, :] = 255
-    roi_image = np.zeros_like(img)
-    roi_image[roi_mask > 0] = img[roi_mask > 0]
-
-    # Get hue mask
-    image_hsv = get_hsv(roi_image)
-    lower_red = np.array([0, 0, 70])
-    higher_red = np.array([200, 50, 255])
-    mask_red = cv.inRange(image_hsv, lower_red, higher_red) 
-
-    kernel = np.ones((3, 3), np.uint8)
-    result = cv.morphologyEx(mask_red, cv.MORPH_OPEN, kernel)
-
-    if prev_right is None:
-        prev_right = (width, height)
-    
-    if prev_left is None:
-        prev_left = (pic_offset, height)
-
-    right = find_road_coord(result, prev_right, True, optimize=optimize, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
-    left = find_road_coord(result, prev_left, False, optimize=optimize, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
-
-    draw_lines(result, right, left)
-    
-    return (result, right, left)
-
 # @param: Video
 # @ret: Mask of the video's road
-def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=6, pic_offset=5, steps=20):
+def get_video_mask(vid, debug=False, percent=0.65, optimize=True, pixel_range=6, pic_offset=5, steps=20):
     if vid is None:
         print("Error opening video")
         return None
@@ -76,7 +35,7 @@ def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=6, pic_offset=5
         pl = prev_left
         pr = prev_right
             
-        result, prev_right, prev_left = get_img_mask(frame, percent=percent, prev_right=prev_right, prev_left=prev_left, optimize=optimize, pic_offset=pic_offset, pixel_range=pixel_range, steps=steps)
+        result, prev_right, prev_left = get_img_mask(frame, debug=debug, percent=percent, prev_right=prev_right, prev_left=prev_left, optimize=optimize, pic_offset=pic_offset, pixel_range=pixel_range, steps=steps)
 
         right_deg = get_angle((width, pic_offset), (width // 2, pic_offset), prev_right)
         left_deg = get_angle((pic_offset, pic_offset), (width // 2, pic_offset), prev_left)
@@ -96,6 +55,56 @@ def get_video_mask(vid, percent=0.65, optimize=True, pixel_range=6, pic_offset=5
     vid.release()
     video.release()
     cv.destroyAllWindows()
+
+
+# @param img: Image Matrix
+# @param y_cutoff: Only consider y percent of image
+# @ret: Mask of the road
+def get_img_mask(img: np.ndarray, debug=False, percent=0.65, prev_right=None, prev_left=None, optimize=True, pixel_range=6, pic_offset=5, steps=20):
+    if img is None:
+        print ('Error opening image!')
+        return None
+    
+    # Roi mask for a portion of image
+    h, w = img.shape[:2]
+    height, width = h - 1 - pic_offset, w - 1 - pic_offset
+
+    h, w = img.shape[:2]
+    
+    y_index = int(height * percent)
+
+    roi_mask = np.zeros(img.shape[:2], dtype=np.uint8)
+    roi_mask[y_index:, :] = 255
+
+    if debug:
+        roi_mask[y_index:, :] = 255
+    else:
+        roi_mask[y_index:height-10, pic_offset+10:width-10] = 255
+
+    roi_image = cv.bitwise_and(img, img, mask=roi_mask)
+
+    # Get hue mask
+    image_hsv = get_hsv(roi_image)
+    lower_red = np.array([0, 0, 70])
+    higher_red = np.array([200, 50, 255])
+    mask_red = cv.inRange(image_hsv, lower_red, higher_red) 
+
+    kernel = np.ones((3, 3), np.uint8)
+    result = cv.morphologyEx(mask_red, cv.MORPH_OPEN, kernel)
+
+    if prev_right is None:
+        prev_right = (width, height)
+    
+    if prev_left is None:
+        prev_left = (pic_offset, height)
+
+    right = find_road_coord(result, prev_right, True, optimize=optimize, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
+    left = find_road_coord(result, prev_left, False, optimize=optimize, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
+
+    if debug:
+        draw_lines(result, right, left)
+    
+    return (result, right, left)
 
 def find_road_coord(img, prev_pixel, right_side: bool, optimize=True, pixel_range=6, pic_offset=5, steps=20):
     h, w = img.shape[:2]
@@ -268,6 +277,7 @@ def display_img(img):
             cv.destroyAllWindows()
             return
 
+
 # photo = get_image("/ws/data/internet_test_footage/driver-pov-img.png")
 
 # display_img(photo)
@@ -283,6 +293,6 @@ def display_img(img):
 # t = (end - start) / 1000
 # print(f"Time: {t}")
 
-original_video = get_video("/ws/data/EVC_test_footage/video.mp4")
+# original_video = get_video("/ws/data/EVC_test_footage/video.mp4")
 
-get_video_mask(original_video, steps=40, pixel_range=6)
+# get_video_mask(original_video, debug=True)

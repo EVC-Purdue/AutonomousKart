@@ -10,9 +10,7 @@ from rclpy.qos import DurabilityPolicy, ReliabilityPolicy, QoSProfile
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 
-from autonomous_kart.nodes.opencv_pathfinder.angle_calculator import (
-    calculate_track_angles,
-)
+from label import get_img_angles
 
 
 class OpenCVPathfinderNode(Node):
@@ -70,13 +68,8 @@ class OpenCVPathfinderNode(Node):
             self.frames_since_last_log = 0
 
         # Publish angles
-        angles = calculate_track_angles(frame)
-        if not self.angle_msg:
-            self.angle_msg = Float32MultiArray(data=angles)
-        else:
-            # self.angle_pub.publish(Float32MultiArray(data=angles))
-            self.angle_msg.data = angles
-        self.angle_pub.publish(self.angle_msg)
+        right_angle, left_angle = get_img_angles(frame, percent=0.65)
+        self.angle_pub.publish((right_angle, left_angle))
 
 
 def main(args=None):

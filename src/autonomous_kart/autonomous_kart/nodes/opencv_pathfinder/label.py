@@ -3,9 +3,16 @@ import numpy as np
 import time
 import math
 
+KERNEL = np.ones((3,3), np.uint8)
+LOWER_RED = np.array([0,0,70])
+UPPER_RED = np.array([200,50,255])
+
 # @param: Video
-# @ret: Mask of the video's road
-def get_video_mask(vid, debug=False, percent=0.65, optimize=True, pixel_range=6, pic_offset=5, steps=20):
+# @param: Percent of the road (top down)
+# @param: Optimize if you want or dont want vectorized
+# 
+# Note the rest of params are for search based algo
+def get_video_mask(vid, debug=False, percent=0.0, optimize=True, pixel_range=3, pic_offset=5, steps=40):
     if vid is None:
         print("Error opening video")
         return None
@@ -45,7 +52,7 @@ def get_video_mask(vid, debug=False, percent=0.65, optimize=True, pixel_range=6,
         width = w - 1 - pic_offset
         y_index = int(height * percent)
 
-        presult[y_index:height-10, pic_offset:width] = result
+        presult[y_index:height, pic_offset:width] = result
 
         right_deg = get_angle((width, pic_offset), (width // 2, pic_offset), prev_right)
         left_deg = get_angle((pic_offset, pic_offset), (width // 2, pic_offset), prev_left)
@@ -66,11 +73,26 @@ def get_video_mask(vid, debug=False, percent=0.65, optimize=True, pixel_range=6,
     video.release()
     cv.destroyAllWindows()
 
+# Takes parameters for get_img_mask
+# Return Coords and their angles
+def get_img_angles(img, debug=False, percent=0.0, prev_right=None, prev_left=None, optimize=True, pixel_range=3, pic_offset=5, steps=40):
+    image, right, left = get_img_mask(img, debug=debug, optimize=optimize, percent=percent, prev_right=prev_right, prev_left=prev_left, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
+
+    w = img.shape[1]
+    width = w - 1 - pic_offset
+
+    right_deg = get_angle((width, pic_offset), (width // 2, pic_offset), right)
+    left_deg = get_angle((pic_offset, pic_offset), (width // 2, pic_offset), left)
+
+    return (right_deg, left_deg)
+
 
 # @param img: Image Matrix
-# @param y_cutoff: Only consider y percent of image
-# @ret: Mask of the road
-def get_img_mask(img: np.ndarray, debug=False, percent=0.65, prev_right=None, prev_left=None, optimize=True, pixel_range=6, pic_offset=5, steps=20):
+# @param: Percent of the road (top down)
+# @param: Optimize if you want or dont want vectorized
+#
+# @ret: Right and left angles of track
+def get_img_mask(img: np.ndarray, debug=False, percent=0.0, prev_right=None, prev_left=None, optimize=True, pixel_range=3, pic_offset=5, steps=40):
     if img is None:
         print ('Error opening image!')
         return None, None, None
@@ -80,16 +102,13 @@ def get_img_mask(img: np.ndarray, debug=False, percent=0.65, prev_right=None, pr
     height, width = h - 1 - pic_offset, w - 1 - pic_offset
     y_index = int(height * percent)
 
-    roi_image = img[y_index:height-pic_offset, pic_offset:width]
+    roi_image = img[y_index:height, pic_offset:width]
 
     # Get hue mask
     image_hsv = get_hsv(roi_image)
-    lower_red = np.array([0, 0, 70])
-    higher_red = np.array([200, 50, 255])
-    mask_red = cv.inRange(image_hsv, lower_red, higher_red) 
+    mask_red = cv.inRange(image_hsv, LOWER_RED, UPPER_RED) 
 
-    kernel = np.ones((3, 3), np.uint8)
-    result = cv.morphologyEx(mask_red, cv.MORPH_OPEN, kernel)
+    result = cv.morphologyEx(mask_red, cv.MORPH_OPEN, KERNEL)
 
     if prev_right is None:
         prev_right = (width, height)
@@ -107,6 +126,7 @@ def get_img_mask(img: np.ndarray, debug=False, percent=0.65, prev_right=None, pr
         right = vectorized_road_coord(result, True)
         left = vectorized_road_coord(result, False)
     else:
+        # Old algo logic, being included for future uses just in case
         right = find_road_coord(img, prev_right, True, optimize=optimize, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
         left = find_road_coord(img, prev_left, False, optimize=optimize, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
 
@@ -115,6 +135,8 @@ def get_img_mask(img: np.ndarray, debug=False, percent=0.65, prev_right=None, pr
     
     return (result, right, left)
 
+# Fast road lookup
+# @ret: Rigth and left road coords
 def vectorized_road_coord(img, right_side, pic_offset=5):
     h, w = img.shape[:2]
     height, width = h - 1 - pic_offset, w - 1 - pic_offset
@@ -124,7 +146,7 @@ def vectorized_road_coord(img, right_side, pic_offset=5):
     h_start = height
     h_end = pic_offset
 
-    if img[h_start, w_start].any():
+    if img[h_start, w_start] != 0:
         column = img[h_end:h_start + 1, w_start]
         inv = np.logical_not(column[::-1])
         idx = np.argmax(inv)
@@ -139,42 +161,7 @@ def vectorized_road_coord(img, right_side, pic_offset=5):
             idx = np.argmax(row)
             return (w_start + idx, h_start)
 
-
-def find_road_coord(img, prev_pixel, right_side: bool, optimize=True, pixel_range=6, pic_offset=5, steps=20):
-    h, w = img.shape[:2]
-    height, width = h - 1 - pic_offset, w - 1 - pic_offset
-
-    if (optimize):
-        new_pixel = lookup_road_coord(img, prev_pixel, right_side, pixel_range=pixel_range, pic_offset=pic_offset)
-        if new_pixel:
-            return new_pixel
-    
-    steps_h = -1 * steps
-    steps_w = -1 * steps if right_side else steps
-    slow_step_h = 1
-    slow_step_w = 1 if right_side else -1
-
-    h_start = height
-    h_end = pic_offset
-    w_start = width if right_side else pic_offset
-    w_end = width // 2
-    
-    if img[h_start, w_start].any():
-        for i in range(h_start, h_end, steps_h):
-            if not img[i, w_start].any():
-                for j in range(i, h_start + 1, slow_step_h):
-                    if img[j, w_start].any():
-                        return (w_start, j)
-    else:
-        for i in range(w_start, w_end, steps_w):
-            if img[h_start, i].any():
-                for j in range(i, w_start + slow_step_w, slow_step_w):
-                    if not img[h_start, j].any():
-                        return (j, h_start)
-    
-    return prev_pixel
-           
-
+# O(1) road lookup
 def lookup_road_coord(img, prev_pixel, right_side, pixel_range=6, pic_offset=5):
     h, w = img.shape[:2]
     height, width = h - 1 - pic_offset, w - 1 - pic_offset
@@ -218,12 +205,44 @@ def lookup_road_coord(img, prev_pixel, right_side, pixel_range=6, pic_offset=5):
     
     return None
 
-def get_angle_vector(middle_coord, road_coord):
-    dx = road_coord[0] - middle_coord[0] 
-    dy = road_coord[1] - middle_coord[1]  
-    angle_rad = math.atan2(dy, dx)
-    return math.degrees(angle_rad)
 
+# Old algorithm to find the road coord
+# Very optimized but still slower than vectorized operations
+def find_road_coord(img, prev_pixel, right_side: bool, optimize=True, pixel_range=6, pic_offset=5, steps=20):
+    h, w = img.shape[:2]
+    height, width = h - 1 - pic_offset, w - 1 - pic_offset
+
+    if (optimize):
+        new_pixel = lookup_road_coord(img, prev_pixel, right_side, pixel_range=pixel_range, pic_offset=pic_offset)
+        if new_pixel:
+            return new_pixel
+    
+    steps_h = -1 * steps
+    steps_w = -1 * steps if right_side else steps
+    slow_step_h = 1
+    slow_step_w = 1 if right_side else -1
+
+    h_start = height
+    h_end = pic_offset
+    w_start = width if right_side else pic_offset
+    w_end = width // 2
+    
+    if img[h_start, w_start].any():
+        for i in range(h_start, h_end, steps_h):
+            if not img[i, w_start].any():
+                for j in range(i, h_start + 1, slow_step_h):
+                    if img[j, w_start].any():
+                        return (w_start, j)
+    else:
+        for i in range(w_start, w_end, steps_w):
+            if img[h_start, i].any():
+                for j in range(i, w_start + slow_step_w, slow_step_w):
+                    if not img[h_start, j].any():
+                        return (j, h_start)
+    
+    return prev_pixel
+
+# Angle calc
 def get_angle(zero_coord, middle_coord, road_coord):
     a = get_distance(road_coord, zero_coord)
     b = get_distance(zero_coord, middle_coord)
@@ -235,12 +254,13 @@ def get_angle(zero_coord, middle_coord, road_coord):
     rads = math.acos( numerator / denominator)
     return math.degrees(rads)
 
-
+# Distance calc 
 def get_distance(point1, point2):
     dx = point1[0] - point2[0]
     dy = point1[1] - point2[1]
     return math.sqrt(dx*dx + dy *dy)
 
+# If coords are within a certain threshold of each other
 def within_difference(r_coord, l_coord, threshold):
     c1, r1 = r_coord
     c2, r2 = l_coord
@@ -263,14 +283,22 @@ def draw_lines(img, r_coord, l_coord, middle=None):
     cv.line(img, (middle, 0), l_coord, (200, 0, 200), 3)
     return img
 
+
+# @param: Image
+# @ret: Adaptive Gaussain threshold
 def get_threshold(img):
     return cv.adaptiveThreshold(img,255,cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY,11,2)
 
+
+# @param: Threshold
+# @ret: Traditional contours
 def get_contours(thresh):
     contours, hierachy = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
     
     return contours
 
+# @param: Image
+# @ret: Gaussian
 def get_gradient(img):
     h, w = img.shape[:2]
     gradient = np.linspace(0, 1, h).reshape(h, 1)

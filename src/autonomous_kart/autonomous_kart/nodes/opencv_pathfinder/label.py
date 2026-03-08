@@ -25,8 +25,8 @@ def get_video_mask(vid, debug=False, percent=0.65, optimize=True, pixel_range=6,
     prev_left = (pic_offset, height)
     video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (w, h), isColor=False) 
     vid.set(cv.CAP_PROP_POS_FRAMES, 0)
-    while (True):
 
+    while (True):
         ret, frame = vid.read()
 
         if not ret:
@@ -35,22 +35,32 @@ def get_video_mask(vid, debug=False, percent=0.65, optimize=True, pixel_range=6,
         pl = prev_left
         pr = prev_right
             
-        result, prev_right, prev_left = get_img_mask(frame, debug=debug, percent=percent, prev_right=prev_right, prev_left=prev_left, optimize=optimize, pic_offset=pic_offset, pixel_range=pixel_range, steps=steps)
+        result, prev_right, prev_left = get_img_mask(frame, debug=debug, percent=percent,
+                                                     prev_right=prev_right, prev_left=prev_left, optimize=optimize,
+                                                     pic_offset=pic_offset, pixel_range=pixel_range, steps=steps)
+        
+        presult= np.zeros((h, w), dtype=result.dtype)
+
+        height = h - 1 - pic_offset
+        width = w - 1 - pic_offset
+        y_index = int(height * percent)
+
+        presult[y_index:height-10, pic_offset:width] = result
 
         right_deg = get_angle((width, pic_offset), (width // 2, pic_offset), prev_right)
         left_deg = get_angle((pic_offset, pic_offset), (width // 2, pic_offset), prev_left)
 
-        cv.putText(result, f"{pl}", (500, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        cv.putText(result, f"{pr}", (700, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv.putText(presult, f"{pl}", (500, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv.putText(presult, f"{pr}", (700, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
-        cv.putText(result, f"{prev_left}", (500, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        cv.putText(result, f"{prev_right}", (700, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv.putText(presult, f"{prev_left}", (500, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv.putText(presult, f"{prev_right}", (700, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         
 
-        cv.putText(result, f"{right_deg:.1f}", (1300, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        cv.putText(result, f"{left_deg:.1f}", (100, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv.putText(presult, f"{right_deg:.1f}", (1300, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv.putText(presult, f"{left_deg:.1f}", (100, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
-        video.write(result)
+        video.write(presult)
     
     vid.release()
     video.release()
@@ -63,25 +73,14 @@ def get_video_mask(vid, debug=False, percent=0.65, optimize=True, pixel_range=6,
 def get_img_mask(img: np.ndarray, debug=False, percent=0.65, prev_right=None, prev_left=None, optimize=True, pixel_range=6, pic_offset=5, steps=20):
     if img is None:
         print ('Error opening image!')
-        return None
+        return None, None, None
     
     # Roi mask for a portion of image
     h, w = img.shape[:2]
     height, width = h - 1 - pic_offset, w - 1 - pic_offset
-
-    h, w = img.shape[:2]
-    
     y_index = int(height * percent)
 
-    roi_mask = np.zeros(img.shape[:2], dtype=np.uint8)
-    roi_mask[y_index:, :] = 255
-
-    if debug:
-        roi_mask[y_index:, :] = 255
-    else:
-        roi_mask[y_index:height-10, pic_offset+10:width-10] = 255
-
-    roi_image = cv.bitwise_and(img, img, mask=roi_mask)
+    roi_image = img[y_index:height-pic_offset, pic_offset:width]
 
     # Get hue mask
     image_hsv = get_hsv(roi_image)
@@ -98,13 +97,48 @@ def get_img_mask(img: np.ndarray, debug=False, percent=0.65, prev_right=None, pr
     if prev_left is None:
         prev_left = (pic_offset, height)
 
-    right = find_road_coord(result, prev_right, True, optimize=optimize, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
-    left = find_road_coord(result, prev_left, False, optimize=optimize, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
+    right = lookup_road_coord(result, prev_right, True, pic_offset=pic_offset, pixel_range=pixel_range)
+    left = lookup_road_coord(result, prev_left, False, pic_offset=pic_offset, pixel_range=pixel_range)
+    
+    if right and left:
+        return (result, right, left)
+
+    if optimize:
+        right = vectorized_road_coord(result, True)
+        left = vectorized_road_coord(result, False)
+    else:
+        right = find_road_coord(img, prev_right, True, optimize=optimize, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
+        left = find_road_coord(img, prev_left, False, optimize=optimize, pixel_range=pixel_range, pic_offset=pic_offset, steps=steps)
 
     if debug:
         draw_lines(result, right, left)
     
     return (result, right, left)
+
+def vectorized_road_coord(img, right_side, pic_offset=5):
+    h, w = img.shape[:2]
+    height, width = h - 1 - pic_offset, w - 1 - pic_offset
+
+    w_start = width if right_side else pic_offset
+    w_end = width // 2
+    h_start = height
+    h_end = pic_offset
+
+    if img[h_start, w_start].any():
+        column = img[h_end:h_start + 1, w_start]
+        inv = np.logical_not(column[::-1])
+        idx = np.argmax(inv)
+        return (w_start, h_start - idx)
+    else:
+        if right_side:
+            row = img[h_start, w_end:w_start + 1][::-1]
+            idx = np.argmax(row)
+            return (w_start - idx, h_start)
+        else:
+            row = img[h_start, w_start:w_end + 1]
+            idx = np.argmax(row)
+            return (w_start + idx, h_start)
+
 
 def find_road_coord(img, prev_pixel, right_side: bool, optimize=True, pixel_range=6, pic_offset=5, steps=20):
     h, w = img.shape[:2]
@@ -281,9 +315,10 @@ def display_img(img):
 # photo = get_image("/ws/data/internet_test_footage/driver-pov-img.png")
 
 # display_img(photo)
-# track, r, l = get_img_mask(photo, percent=0.0)
 
-# display_img(track)
+# img, r, l = get_img_mask(photo, debug=True, percent=0.0)
+
+# display_img(img)
 
 # start = time.perf_counter()
 # for i in range(0, 1000): 

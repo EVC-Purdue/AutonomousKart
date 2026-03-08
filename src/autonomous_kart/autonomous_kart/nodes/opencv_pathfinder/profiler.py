@@ -7,20 +7,18 @@ def get_avg_time(vid, trips=1, optimize=True, percent=0.70, steps=40, pixel_rang
     frames = get_frames(vid)
     total_time = 0
 
-    w, h = frames[0].shape[:2]
+    h, w= frames[0].shape[:2]
     width, height = w - 1 - pic_offset, h - 1 - pic_offset
 
     right = (width, height)
     left = (pic_offset, height)
 
     for i in range(min(trips, 2)):
-        t = 0
+        start = time.perf_counter()
         for j in frames:
-            start = time.perf_counter()
-            img, right, left = label.get_img_mask(j, prev_right=right, prev_left=left, optimize=optimize, percent=percent, steps=steps, pixel_range=pixel_range, pic_offset=pic_offset)
-            end = time.perf_counter()
-            t += end - start
-        t /= len(frames)
+            img, right, left = label.get_img_mask(j, debug=False, prev_right=right, prev_left=left, optimize=optimize, percent=percent, steps=steps, pixel_range=pixel_range, pic_offset=pic_offset)
+        end = time.perf_counter()
+        t = (end - start) / len(frames)
         total_time += t
 
     return total_time / trips
@@ -49,6 +47,6 @@ def get_frames(vid):
 # cProfile.run('label.get_img_mask(photo)')
 original_video = label.get_video("/ws/data/EVC_test_footage/video.mp4")
 
-avg = get_avg_time(original_video, trips=1, optimize=True, percent=0.7, steps=100, pixel_range=6, pic_offset=5)
+avg = get_avg_time(original_video, trips=1, optimize=True, percent=0.7, steps=40, pixel_range=4, pic_offset=5)
 
 print(avg)

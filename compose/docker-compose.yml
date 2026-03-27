@@ -18,6 +18,8 @@ services:
 #      - "/dev/spidev12.0:/dev/spidev12.0" # SPI bus 12, CS0
     stdin_open: true
     tty: true
+    restart: always
+    command: bash /ws/scripts/start.bash
     network_mode: host
 volumes:
   ros_cache:

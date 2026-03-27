@@ -131,10 +131,15 @@ class ECommsNode(Node):
                 try:
                     adb_state, rc_mode, throttle_pwm, steering_pwm = e_comms.unpack_status_message(msg.data, self.logger)
 
-                    self.adb_state_pub.publish(String(data=adb_state))
-                    self.rc_mode_pub.publish(Bool(data=rc_mode))
-                    self.throttle_pwm_pub.publish(UInt16(data=throttle_pwm))
-                    self.steering_pwm_pub.publish(UInt16(data=steering_pwm))
+                    self.adb_state = adb_state
+                    self.rc_mode = rc_mode
+                    self.throttle_pwm = throttle_pwm
+                    self.steering_pwm = steering_pwm
+
+                    self.adb_state_pub.publish(String(data=self.adb_state))
+                    self.rc_mode_pub.publish(Bool(data=self.rc_mode))
+                    self.throttle_pwm_pub.publish(UInt16(data=self.throttle_pwm))
+                    self.steering_pwm_pub.publish(UInt16(data=self.steering_pwm))
                 except Exception as e:
                     self.logger.error(f"Failed to parse CAN message: {e}")
 

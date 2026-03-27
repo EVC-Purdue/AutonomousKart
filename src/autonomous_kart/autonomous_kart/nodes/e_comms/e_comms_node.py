@@ -12,8 +12,8 @@ from message_filters import Subscriber, ApproximateTimeSynchronizer
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms
 
-CAN_INTERFACE = "can0"
-# CAN_BITRATE = 500000 # Configured at the system/OS level for socketcan
+CAN_CHANNEL = "/dev/ttyACM0"
+CAN_BITRATE = 500000
 
 CONTROL_ID = 0x100
 STATUS_ID = 0x101
@@ -43,7 +43,7 @@ class ECommsNode(Node):
 
         # CAN bus
         if not self.simulation_mode:
-            self.bus: Optional[can.interface.Bus] = can.interface.Bus(channel=CAN_INTERFACE, bustype="socketcan")
+            self.bus: Optional[can.interface.Bus] = can.interface.Bus(interface="slcan", channel=CAN_CHANNEL, bitrate=CAN_BITRATE)
         else:
             self.bus: Optional[can.interface.Bus] = None
 

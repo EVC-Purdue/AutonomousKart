@@ -6,14 +6,14 @@ import can
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from std_msgs.msg import Float32, UInt16, UInt8, Bool 
+from std_msgs.msg import Float32, UInt16, Bool, String
 from rclpy.impl.rcutils_logger import RcutilsLogger
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms
 
 CAN_INTERFACE = "can0"
-CAN_BITRATE = 500000
+# CAN_BITRATE = 500000 # Configured at the system/OS level for socketcan
 
 CONTROL_ID = 0x100
 STATUS_ID = 0x101
@@ -69,16 +69,16 @@ class ECommsNode(Node):
         self.ts.registerCallback(self.cmd_callback)
 
         # Publishers
-        self.adb_state_publisher = self.create_publisher(
-            UInt8, "e_comms/rx/adb_state", 1
+        self.adb_state_pub = self.create_publisher(
+            String, "e_comms/rx/adb_state", 1
         )
-        self.rc_mode_publisher = self.create_publisher(
+        self.rc_mode_pub = self.create_publisher(
             Bool, "e_comms/rx/rc_mode", 1
         )
-        self.throttle_pwm_publisher = self.create_publisher(
+        self.throttle_pwm_pub = self.create_publisher(
             UInt16, "e_comms/rx/throttle", 1
         )
-        self.steering_pwm_publisher = self.create_publisher(
+        self.steering_pwm_pub = self.create_publisher(
             UInt16, "e_comms/rx/steering", 1
         )
 
@@ -87,7 +87,7 @@ class ECommsNode(Node):
 
     def cmd_callback(self, throttle_msg: Float32, steering_msg: Float32):
         """
-        Send the throttle and steering command to the Electrical Stack via SPI.
+        Send the throttle and steering command to the Electrical Stack via CAN.
         Part of hot loop so must be efficient
 
         :param throttle_msg: Float32 message for throttle command (percent throttle)
@@ -129,11 +129,11 @@ class ECommsNode(Node):
 
             if msg.arbitration_id == STATUS_ID:
                 try:
-                    adb_state, rc_mode, motor_pwm, steering_pwm = e_comms.unpack_status_message(msg.data)
+                    adb_state, rc_mode, throttle_pwm, steering_pwm = e_comms.unpack_status_message(msg.data, self.logger)
 
-                    self.adb_state_publisher.publish(UInt8(data=adb_state))
-                    self.rc_mode_publisher.publish(Bool(data=rc_mode))
-                    self.motor_pwm_pub.publish(UInt16(data=motor_pwm))
+                    self.adb_state_pub.publish(String(data=adb_state))
+                    self.rc_mode_pub.publish(Bool(data=rc_mode))
+                    self.throttle_pwm_pub.publish(UInt16(data=throttle_pwm))
                     self.steering_pwm_pub.publish(UInt16(data=steering_pwm))
                 except Exception as e:
                     self.logger.error(f"Failed to parse CAN message: {e}")

@@ -3,10 +3,12 @@ import os, csv
 
 import rclpy
 from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 
 from .master_node import MasterNode, STATES
 
 app = Flask(__name__)
+CORS(app)
 master_node: MasterNode | None = None
 
 @app.after_request

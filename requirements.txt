@@ -7,3 +7,4 @@ pyyaml>=5
 catkin_pkg==0.4.24
 spidev==3.8
 flask
+flask-cors

@@ -10,6 +10,9 @@ from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
 from autonomous_kart.nodes.master.master_node import STATES
 
+from autonomous_kart.nodes.pathfinder.dynamic_line import DynamicLineManager, KartState
+from autonomous_kart.nodes.pathfinder.strategies.rejoin import RejoinStrategy
+
 class PathfinderNode(Node):
     def __init__(self):
         super().__init__(
@@ -162,7 +165,7 @@ class PathfinderNode(Node):
             else:
                 lookahead_m = self.min_lookahead_m
 
-            cte = DynamicLineManager.compute_cte(
+            cte = self.line_manager.compute_cte(
                 self.current_xy, self.racing_line, self.closest_idx
             )
             kart_state = KartState(

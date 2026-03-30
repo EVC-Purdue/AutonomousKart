@@ -4,7 +4,7 @@ import traceback
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from sensor_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray
 
 
 class GpsNode(Node):

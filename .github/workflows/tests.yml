@@ -66,7 +66,7 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          set -euxo pipefail
+          set -exo pipefail
           source /opt/ros/humble/setup.bash
           cd /ws
           colcon build --packages-select autonomous_kart --symlink-install \
@@ -75,7 +75,7 @@ jobs:
       - name: Run tests
         shell: bash
         run: |
-          set -euxo pipefail
+          set -exo pipefail
           source /opt/ros/humble/setup.bash
           source /ws/install/setup.bash
           cd /ws

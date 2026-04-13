@@ -1,25 +1,40 @@
 """
-End-to-end smoke test: bring up the full sim stack with `ros2 launch`,
-wait for the driving loop to produce commands, assert nothing crashes.
+End-to-end tests against the full sim stack.
 
-Requires the installed package, so run this under `colcon test` or after
-`colcon build` + sourcing install/setup.bash.
+The stack is launched once per module (fixture `running_stack`) so every
+test in this file amortises the ~10 s bringup cost:
 
-The camera sim reads an mp4 from /ws/data/EVC_test_footage/video.mp4.
-If that file isn't present (fresh CI checkout), we synthesize a tiny
-one so we don't have to ship a 75 MB asset.
+  1. Synthesize a tiny mp4 if the real EVC footage isn't on disk.
+  2. Spawn `ros2 launch autonomous_kart bringup_sim.launch.py`.
+  3. Wait for localization (/odom) and for master_api on :8000 to
+     answer `GET /`.
+  4. Yield a context with: base URL, the subprocess, a rclpy listener
+     already subscribed to /odom, /cmd_vel, /cmd_turn, /manual_commands.
+  5. SIGINT the subprocess in teardown.
+
+Tests cover both the HTTP API surface of `master_api` and the
+end-to-end autonomous driving loop. Everything in one stack lifecycle.
 """
+import json
 import os
 import shutil
 import signal
 import subprocess
 import time
+import urllib.error
+import urllib.request
 
 import pytest
 
 rclpy_mod = pytest.importorskip("rclpy")
 
 SIM_VIDEO_PATH = "/ws/data/EVC_test_footage/video.mp4"
+BASE_URL = "http://127.0.0.1:8000"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _ensure_sim_video():
@@ -61,7 +76,50 @@ def _ros_available():
     return bool(out.strip())
 
 
-def test_full_stack_launches_and_drives(ros_ctx):
+def _http_get(path, timeout=3.0):
+    with urllib.request.urlopen(BASE_URL + path, timeout=timeout) as r:
+        return r.status, json.loads(r.read().decode() or "null")
+
+
+def _http_post(path, payload, timeout=3.0):
+    body = json.dumps(payload).encode() if payload is not None else b""
+    req = urllib.request.Request(
+        BASE_URL + path,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, json.loads(r.read().decode() or "null")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read().decode() or "null")
+        except Exception:
+            return e.code, None
+
+
+def _http_post_raw(path, raw_body, timeout=3.0):
+    req = urllib.request.Request(
+        BASE_URL + path,
+        data=raw_body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()
+
+
+# ---------------------------------------------------------------------------
+# Module-scoped stack fixture
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def running_stack():
     if not _ros_available():
         pytest.skip("autonomous_kart not installed in this environment")
 
@@ -85,58 +143,86 @@ def test_full_stack_launches_and_drives(ros_ctx):
         preexec_fn=os.setsid,
     )
 
+    import rclpy
+    import rclpy.executors  # noqa: F401
+
+    rclpy.init(args=["--ros-args"])
+    listener = None
     try:
-        with ros_ctx({}) as rclpy:
-            from nav_msgs.msg import Odometry
-            from std_msgs.msg import Float32, String
+        from nav_msgs.msg import Odometry
+        from std_msgs.msg import Float32, Float32MultiArray
 
-            listener = rclpy.create_node("e2e_listener")
-            got = {"odom": 0, "cmd_vel": 0, "cmd_turn": 0}
-            listener.create_subscription(
-                Odometry, "odom", lambda m: got.__setitem__("odom", got["odom"] + 1), 10
-            )
-            listener.create_subscription(
-                Float32, "cmd_vel", lambda m: got.__setitem__("cmd_vel", got["cmd_vel"] + 1), 10
-            )
-            listener.create_subscription(
-                Float32, "cmd_turn", lambda m: got.__setitem__("cmd_turn", got["cmd_turn"] + 1), 10
-            )
-            state_pub = listener.create_publisher(String, "system_state", 10)
+        listener = rclpy.create_node("e2e_api_listener")
+        counters = {"odom": 0, "cmd_vel": 0, "cmd_turn": 0}
+        manual_cmds = []
 
-            # Phase 1: wait for localization to come up.
-            deadline = time.monotonic() + 25.0
-            while time.monotonic() < deadline:
-                if proc.poll() is not None:
-                    out = proc.stdout.read() if proc.stdout else ""
-                    pytest.fail(
-                        f"bringup_sim exited early with code {proc.returncode}\n--- output ---\n{out}"
-                    )
-                rclpy.spin_once(listener, timeout_sec=0.1)
-                if got["odom"] > 0:
+        listener.create_subscription(
+            Odometry, "odom", lambda m: counters.__setitem__("odom", counters["odom"] + 1), 10
+        )
+        listener.create_subscription(
+            Float32, "cmd_vel", lambda m: counters.__setitem__("cmd_vel", counters["cmd_vel"] + 1), 10
+        )
+        listener.create_subscription(
+            Float32, "cmd_turn", lambda m: counters.__setitem__("cmd_turn", counters["cmd_turn"] + 1), 10
+        )
+        listener.create_subscription(
+            Float32MultiArray,
+            "manual_commands",
+            lambda m: manual_cmds.append(list(m.data)),
+            10,
+        )
+
+        # Phase 1: wait for localization.
+        deadline = time.monotonic() + 25.0
+        while time.monotonic() < deadline and counters["odom"] == 0:
+            if proc.poll() is not None:
+                out = proc.stdout.read() if proc.stdout else ""
+                pytest.fail(
+                    f"bringup_sim exited early (rc={proc.returncode})\n--- output ---\n{out}"
+                )
+            rclpy.spin_once(listener, timeout_sec=0.1)
+        if counters["odom"] == 0:
+            pytest.fail("localization never published /odom within 25s")
+
+        # Phase 2: wait for master_api HTTP to respond.
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline:
+            try:
+                status, body = _http_get("/", timeout=1.0)
+                if status == 200 and body == {"ping": "pong"}:
                     break
-            assert got["odom"] > 0, "localization never published /odom"
+            except Exception:
+                time.sleep(0.25)
+        else:
+            pytest.fail("master_api never responded on :8000")
 
-            # Phase 2: flip to AUTONOMOUS and wait for driving commands.
-            for _ in range(10):
-                state_pub.publish(String(data="AUTONOMOUS"))
-                rclpy.spin_once(listener, timeout_sec=0.1)
+        def pump(predicate, timeout=3.0):
+            t_end = time.monotonic() + timeout
+            while time.monotonic() < t_end:
+                rclpy.spin_once(listener, timeout_sec=0.05)
+                if predicate():
+                    return True
+            return False
 
-            deadline = time.monotonic() + 25.0
-            while time.monotonic() < deadline and (
-                got["cmd_vel"] == 0 or got["cmd_turn"] == 0
-            ):
-                if proc.poll() is not None:
-                    out = proc.stdout.read() if proc.stdout else ""
-                    pytest.fail(
-                        f"bringup_sim crashed mid-run, rc={proc.returncode}\n--- output ---\n{out}"
-                    )
-                rclpy.spin_once(listener, timeout_sec=0.1)
-
-            assert got["cmd_vel"] > 0, "pathfinder never published cmd_vel"
-            assert got["cmd_turn"] > 0, "pathfinder never published cmd_turn"
-            assert proc.poll() is None, "launch process died before shutdown"
-            listener.destroy_node()
+        yield {
+            "proc": proc,
+            "rclpy": rclpy,
+            "listener": listener,
+            "counters": counters,
+            "manual_cmds": manual_cmds,
+            "pump": pump,
+        }
     finally:
+        try:
+            if listener is not None:
+                listener.destroy_node()
+        except Exception:
+            pass
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+        except Exception:
+            pass
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGINT)
             proc.wait(timeout=10)
@@ -146,3 +232,128 @@ def test_full_stack_launches_and_drives(ros_ctx):
                 proc.wait(timeout=5)
             except Exception:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# API tests — ordered so state transitions compound naturally.
+# ---------------------------------------------------------------------------
+
+
+def test_ping(running_stack):
+    status, body = _http_get("/")
+    assert status == 200
+    assert body == {"ping": "pong"}
+
+
+def test_initial_state_is_idle(running_stack):
+    status, body = _http_get("/get_state")
+    assert status == 200
+    assert body["state"] == "IDLE"
+
+
+def test_racing_line_endpoint_returns_points(running_stack):
+    status, body = _http_get("/racing_line")
+    assert status == 200
+    assert "points" in body
+    assert len(body["points"]) > 0
+    assert len(body["points"][0]) == 2  # [x, y]
+
+
+def test_get_logs_returns_list(running_stack):
+    status, body = _http_get("/get_logs")
+    assert status == 200
+    assert isinstance(body, list)
+
+
+def test_odom_endpoint_returns_snapshot(running_stack):
+    # odom callback only fires after the topic publishes, so give the
+    # master node a tick to ingest /odom.
+    running_stack["pump"](lambda: running_stack["counters"]["odom"] > 0, timeout=2.0)
+    status, body = _http_get("/odom")
+    assert status == 200
+    for key in ("x", "y", "yaw", "speed", "motor", "steer", "state"):
+        assert key in body, f"missing {key} in /odom response"
+
+
+def test_set_state_rejects_garbage(running_stack):
+    status, body = _http_post("/set_state", {"state": "GARBAGE"})
+    # master_api returns 200 with an error field for bad state values.
+    assert status == 200
+    assert "error" in body
+    # State must be unchanged.
+    _, body = _http_get("/get_state")
+    assert body["state"] == "IDLE"
+
+
+def test_set_state_missing_field(running_stack):
+    status, body = _http_post("/set_state", {"not_state": "IDLE"})
+    assert "error" in body
+    _, body = _http_get("/get_state")
+    assert body["state"] == "IDLE"
+
+
+def test_set_state_invalid_json_body(running_stack):
+    status, raw = _http_post_raw("/set_state", b"this is not json")
+    assert status == 400
+    assert "error" in raw
+
+
+def test_set_state_to_manual(running_stack):
+    status, body = _http_post("/set_state", {"state": "MANUAL"})
+    assert status == 200
+    assert body.get("success") == "ok"
+    _, body = _http_get("/get_state")
+    assert body["state"] == "MANUAL"
+
+
+def test_manual_control_publishes_on_topic(running_stack):
+    before = len(running_stack["manual_cmds"])
+    status, body = _http_post(
+        "/manual_control", {"speed": 1.5, "steering": -2.5}
+    )
+    assert status == 200
+    assert body.get("success") == "ok"
+    assert running_stack["pump"](
+        lambda: len(running_stack["manual_cmds"]) > before, timeout=2.0
+    )
+    assert running_stack["manual_cmds"][-1] == [1.5, -2.5]
+
+
+def test_manual_control_rejects_missing_field(running_stack):
+    status, body = _http_post("/manual_control", {"speed": 1.0})
+    assert status == 400
+    assert "error" in body
+
+
+def test_manual_control_rejects_non_dict(running_stack):
+    status, raw = _http_post_raw("/manual_control", b"[1, 2, 3]")
+    assert status == 400
+    assert "error" in raw
+
+
+def test_set_state_to_autonomous_and_driving_loop(running_stack):
+    # Snapshot counters before the switch so we can assert delta, not
+    # anything an earlier test may have produced.
+    counters = running_stack["counters"]
+    vel0, turn0 = counters["cmd_vel"], counters["cmd_turn"]
+
+    status, body = _http_post("/set_state", {"state": "AUTONOMOUS"})
+    assert status == 200
+    assert body.get("success") == "ok"
+
+    ok = running_stack["pump"](
+        lambda: counters["cmd_vel"] > vel0 and counters["cmd_turn"] > turn0,
+        timeout=25.0,
+    )
+    if not ok:
+        proc = running_stack["proc"]
+        if proc.poll() is not None:
+            out = proc.stdout.read() if proc.stdout else ""
+            pytest.fail(f"launch died, rc={proc.returncode}\n{out}")
+        pytest.fail("pathfinder never produced commands after state=AUTONOMOUS")
+
+    # Process must still be alive at the end of the whole API suite.
+    assert running_stack["proc"].poll() is None
+    # /odom endpoint should now show AUTONOMOUS.
+    _, body = _http_get("/odom")
+    assert body["state"] == "AUTONOMOUS"

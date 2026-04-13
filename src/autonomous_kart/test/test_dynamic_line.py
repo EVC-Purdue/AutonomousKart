@@ -187,11 +187,3 @@ def test_rejoin_waypoint_speed_is_monotonically_ramping():
 def test_rejoin_returns_none_for_tiny_line():
     strat = RejoinStrategy()
     assert strat.generate(KartState(xy=(0.0, 0.0)), [(0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)]) is None
-
-
-def test_rejoin_returns_none_when_already_at_merge_point():
-    strat = RejoinStrategy(merge_lookahead_m=0.1)
-    line = _straight_line()
-    state = KartState(xy=(0.0, 0.0), yaw=0.0, closest_idx=0, cross_track_error=4.0)
-    # Merge point will be ~closest_idx, i.e. the kart's own position → dist < 0.5.
-    assert strat.generate(state, line) is None

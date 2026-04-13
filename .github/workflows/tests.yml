@@ -6,6 +6,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+  packages: read
+
 concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true

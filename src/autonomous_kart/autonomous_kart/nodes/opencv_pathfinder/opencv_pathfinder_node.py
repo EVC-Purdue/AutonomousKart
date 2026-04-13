@@ -10,7 +10,7 @@ from rclpy.qos import DurabilityPolicy, ReliabilityPolicy, QoSProfile
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 
-from label import get_img_angles
+from autonomous_kart.autonomous_kart.nodes.opencv_pathfinder.angle import AngleFinder
 
 
 class OpenCVPathfinderNode(Node):
@@ -49,6 +49,7 @@ class OpenCVPathfinderNode(Node):
         )
 
         self.logger.info("Pathfinder Node started - subscribed to /camera/image_raw")
+        self.angle_finder = AngleFinder()
 
     def image_callback(self, msg):
         frame = self.bridge.imgmsg_to_cv2(msg, "passthrough")
@@ -68,7 +69,7 @@ class OpenCVPathfinderNode(Node):
             self.frames_since_last_log = 0
 
         # Publish angles
-        right_angle, left_angle = get_img_angles(frame, percent=0.65)
+        right_angle, left_angle = self.angle_finder.get_img_angles(frame, percent=0.5)
         self.angle_pub.publish((right_angle, left_angle))
 
 

@@ -1,13 +1,16 @@
-import label
+import sys
+sys.path.insert(0, '/ws/src')
+import autonomous_kart.autonomous_kart.nodes.opencv_pathfinder.angle as angle
 import cv2 as cv
 import time
 import cProfile
+
 
 def get_avg_time(vid, trips=1, optimize=True, percent=0.70, steps=40, pixel_range=6, pic_offset=5):
     frames = get_frames(vid)
     total_time = 0
 
-    h, w= frames[0].shape[:2]
+    h, w = frames[0].shape[:2]
     width, height = w - 1 - pic_offset, h - 1 - pic_offset
 
     right = (width, height)
@@ -16,12 +19,14 @@ def get_avg_time(vid, trips=1, optimize=True, percent=0.70, steps=40, pixel_rang
     for i in range(min(trips, 2)):
         start = time.perf_counter()
         for j in frames:
-            right, left, right_angle, left_angle = label.get_img_angles(j, debug=False, prev_right=right, prev_left=left, optimize=optimize, percent=percent, steps=steps, pixel_range=pixel_range, pic_offset=pic_offset)
+            right, left, right_angle, left_angle = angle.get_img_angles(
+                j, debug=False, prev_right=right, prev_left=left, optimize=optimize, percent=percent, steps=steps, pixel_range=pixel_range, pic_offset=pic_offset)
         end = time.perf_counter()
         t = (end - start) / len(frames)
         total_time += t
 
     return total_time / trips
+
 
 def get_frames(vid):
     fps = vid.get(cv.CAP_PROP_FPS)
@@ -38,7 +43,7 @@ def get_frames(vid):
             break
 
         frames.append(frame)
-    
+
     return frames
 
 
@@ -50,3 +55,25 @@ def get_frames(vid):
 # avg = get_avg_time(original_video, trips=1, optimize=True)
 
 # print(avg)
+
+# an = angle.AngleFinder()
+
+# photo = an.get_image("/ws/data/internet_test_footage/driver-pov-img.png")
+
+# an.display_img(photo)
+
+# img, r, l = an.get_img_mask(photo, debug=True, percent=0.5)
+
+# an.display_img(img)
+
+# start = time.perf_counter()
+# for i in range(0, 1000):
+#     img, right, left = an.get_img_mask(photo, percent=0.5, pixel_range=6)
+# end = time.perf_counter()
+
+# t = (end - start) / 1000
+# print(f"Time: {t}")
+
+# original_video = an.get_video("/ws/data/EVC_test_footage/video.mp4")
+
+# an.get_video_mask(original_video, debug=True, percent=0.4)

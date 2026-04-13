@@ -37,12 +37,13 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p /ws/src /ws/data /ws/scripts
-          # Copy sources without deleting build/install/log caches that the
-          # next step will restore.
-          rsync -a "${GITHUB_WORKSPACE}/ws-src/src/" /ws/src/
-          rsync -a "${GITHUB_WORKSPACE}/ws-src/data/" /ws/data/
-          rsync -a "${GITHUB_WORKSPACE}/ws-src/scripts/" /ws/scripts/
-          cp "${GITHUB_WORKSPACE}/ws-src/requirements.txt" /ws/requirements.txt || true
+          # cp -a preserves symlinks/perms and works in minimal images that
+          # don't ship rsync. The trailing /. copies directory contents
+          # rather than nesting the directory under itself.
+          cp -a "${GITHUB_WORKSPACE}/ws-src/src/." /ws/src/
+          cp -a "${GITHUB_WORKSPACE}/ws-src/data/." /ws/data/
+          cp -a "${GITHUB_WORKSPACE}/ws-src/scripts/." /ws/scripts/
+          cp -a "${GITHUB_WORKSPACE}/ws-src/requirements.txt" /ws/requirements.txt || true
           ls /ws
 
       - name: Restore colcon build cache
@@ -53,7 +54,11 @@ jobs:
             /ws/build
             /ws/install
             /ws/log
-          key: colcon-${{ runner.os }}-${{ hashFiles('ws-src/src/**/package.xml', 'ws-src/src/**/setup.py', 'ws-src/requirements.txt', 'ws-src/docker/Dockerfile') }}-${{ hashFiles('ws-src/src/**/*.py') }}
+          # Source hash intentionally excludes test/** so that test-only
+          # changes reuse the previous colcon build instead of triggering
+          # a full rebuild. Package metadata + non-test sources define
+          # what needs recompiling.
+          key: colcon-${{ runner.os }}-${{ hashFiles('ws-src/src/**/package.xml', 'ws-src/src/**/setup.py', 'ws-src/requirements.txt', 'ws-src/docker/Dockerfile') }}-${{ hashFiles('ws-src/src/**/*.py', '!ws-src/src/**/test/**') }}
           restore-keys: |
             colcon-${{ runner.os }}-${{ hashFiles('ws-src/src/**/package.xml', 'ws-src/src/**/setup.py', 'ws-src/requirements.txt', 'ws-src/docker/Dockerfile') }}-
             colcon-${{ runner.os }}-

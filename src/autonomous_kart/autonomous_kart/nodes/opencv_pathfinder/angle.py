@@ -1,7 +1,10 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
+
 import cv2 as cv
 import numpy as np
-import math
-import time
+import utils
 
 KERNEL = np.ones((3,3), np.uint8)
 LOWER_RED = np.array([0,0,70])
@@ -55,8 +58,14 @@ class AngleFinder:
 
             # Write debug info on video
             if debug:
-                right_deg = self.get_angle((width, pic_offset), (width // 2, pic_offset), cur_right)
-                left_deg = self.get_angle((pic_offset, pic_offset), (width // 2, pic_offset), cur_left)
+                right_deg = utils.get_angle((width, pic_offset), (width // 2, pic_offset), cur_right)
+                left_deg = utils.get_angle((pic_offset, pic_offset), (width // 2, pic_offset), cur_left)
+
+                if right_deg is None:
+                    right_deg = -1
+                
+                if left_deg is None:
+                    left_deg = -1
             
                 cv.putText(presult, f"Previous left: {self.prev_left}", (300, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
                 cv.putText(presult, f"Previous right: {self.prev_right}", (900, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
@@ -89,8 +98,11 @@ class AngleFinder:
         w = img.shape[1]
         width = w - 1 - pic_offset
 
-        right_deg = self.get_angle((width, pic_offset), (width // 2, pic_offset), right)
-        left_deg = self.get_angle((pic_offset, pic_offset), (width // 2, pic_offset), left)
+        right_deg = utils.get_angle((width, pic_offset), (width // 2, pic_offset), right)
+        left_deg = utils.get_angle((pic_offset, pic_offset), (width // 2, pic_offset), left)
+
+        if right_deg is None or left_deg is None:
+            return (None, None)
 
         return (right_deg, left_deg)
 
@@ -114,7 +126,7 @@ class AngleFinder:
         roi_image = img[y_index:height, pic_offset:width]
 
         # Get hue mask
-        image_hsv = self.get_hsv(roi_image)
+        image_hsv = utils.convert_bgr_to_hsv(roi_image)
         mask_red = cv.inRange(image_hsv, LOWER_RED, UPPER_RED) 
         result = cv.morphologyEx(mask_red, cv.MORPH_OPEN, KERNEL)
 
@@ -136,7 +148,7 @@ class AngleFinder:
         self.prev_left = left
         
         if debug:
-            self.draw_lines(result, right, left)
+            utils.draw_lines(result, right, left)
         
         return (result, right, left)
 
@@ -220,91 +232,3 @@ class AngleFinder:
                         return (i, height)
 
         return None
-
-
-    # Angle calculation
-    def get_angle(self, zero_coord, middle_coord, road_coord):
-        a = self.get_distance(road_coord, zero_coord)
-        b = self.get_distance(zero_coord, middle_coord)
-        c = self.get_distance(middle_coord, road_coord)
-
-        numerator = a*a - c*c - b*b
-        denominator = -2 * c * b
-
-        rads = math.acos( numerator / denominator)
-        return math.degrees(rads)
-
-    # Distance calculation
-    def get_distance(self, point1, point2):
-        dx = point1[0] - point2[0]
-        dy = point1[1] - point2[1]
-        return math.sqrt(dx*dx + dy *dy)
-
-    # @param r_coord: Right road coord 
-    # @param l_coord: Left road coord
-    # @ret: Return img with lines
-    def draw_lines(self, img, r_coord, l_coord, middle=None):
-        if not middle:
-            middle = img.shape[1]
-            middle: int = middle // 2
-                
-
-        cv.line(img, (middle, 0), r_coord, (200, 0, 200), 3)
-        cv.line(img, (middle, 0), l_coord, (200, 0, 200), 3)
-        return img
-
-
-    # @param: Image
-    # @ret: Adaptive Gaussain threshold
-    def get_threshold(self, img):
-        return cv.adaptiveThreshold(img,255,cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY,11,2)
-
-
-    # @param: Threshold
-    # @ret: Traditional contours
-    def get_contours(self, thresh):
-        contours, hierachy = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-        
-        return contours
-
-    # @param: Image
-    # @ret: Gaussian image
-    def get_gradient(self, img):
-        h, w = img.shape[:2]
-        gradient = np.linspace(0, 1, h).reshape(h, 1)
-        gradient = np.repeat(gradient, w, axis=1)
-        gradient = cv.merge([gradient]*3).astype(np.float32)
-
-        img_float = img.astype(np.float32)
-        img_grad = img_float * gradient
-        img_grad = np.clip(img_grad, 0, 255).astype(np.uint8)
-        return img_grad
-
-    # @param: Takes a str file path
-    # @ret: Return a video
-    def get_video(self, path: str):
-        return cv.VideoCapture(path)
-
-    # @param: Takes a str file path
-    # @ret: Photo as a matrix
-    def get_image(self, path: str):
-        return cv.imread(cv.samples.findFile(path), cv.IMREAD_COLOR)
-
-    # @param: Photo matrix
-    # @ret: HSV representation
-    def get_hsv(self, img: np.ndarray):
-        return cv.cvtColor(img, cv.COLOR_BGR2HSV)
-
-    # @param: Photo matrix
-    # @ret: Grayscale representation
-    def get_greyscale(self, img: np.ndarray):
-        return cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-
-    # Logic for closing image window
-    def display_img(self, img):
-        cv.imshow("Window", img)
-
-        while True:
-            if (cv.waitKey(1) == 13 or cv.getWindowProperty("Window", cv.WND_PROP_VISIBLE) < 1):
-                cv.destroyAllWindows()
-                return

@@ -1,0 +1,3 @@
+imu_node:
+  ros__parameters:
+    poll_frequency: 60  # Hz

@@ -172,6 +172,7 @@ cython_debug/
 
 # Too large file size
 .vscode/browse.vc.db
+.vscode/browse.vc.2.db
 
 # Ros build ignored
 install

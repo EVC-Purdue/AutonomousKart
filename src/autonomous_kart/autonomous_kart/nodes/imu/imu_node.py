@@ -28,8 +28,8 @@ class IMUNode(Node):
             MultiArrayDimension(label="cols", size=3, stride=3),
         ]
 
-        self.poll_rate = 100.0  # Hz
-        self.timer = self.create_timer(1.0 / self.poll_rate, self.timer_callback)
+        self.poll_rate = self.get_parameter("poll_frequency").value
+        self.timer = self.create_timer(1.0 / self.poll_rate, self.timer_callback) # type: ignore
 
         self.imu_data_gyro: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self.imu_data_accel: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -67,6 +67,7 @@ class IMUNode(Node):
         # [[accel_x, accel_y, accel_z], [gyro_x, gyro_y, gyro_z]]
         #  [forward,  left,     up   ], [ roll ,  pitch,  yaw  ]
         self.imu_pub.publish(imu_msg)
+        self.get_logger().info(f"Published IMU data: {imu_msg.data}")
 
     def real_poll(self):
         """Real mode - read IMU data"""

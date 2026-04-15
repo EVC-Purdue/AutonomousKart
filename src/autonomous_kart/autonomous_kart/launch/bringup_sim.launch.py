@@ -13,6 +13,7 @@ def generate_launch_description():
     steering_yaml = os.path.join(pkg_share, "params", "steering.yaml")
     camera_yaml = os.path.join(pkg_share, "params", "camera.yaml")
     gps_yaml = os.path.join(pkg_share, "params", "gps.yaml")
+    imu_yaml = os.path.join(pkg_share, "params", "imu.yaml")
     safety_yaml = os.path.join(pkg_share, "params", "safety.yaml")
     system_yaml = os.path.join(pkg_share, "params", "system.yaml")
     pathfinder_yaml = os.path.join(pkg_share, "params", "pathfinder.yaml")
@@ -56,6 +57,12 @@ def generate_launch_description():
                         executable="opencv_pathfinder_node",
                         name="opencv_pathfinder_node",
                         parameters=[gps_yaml],
+                    ),
+                    Node(
+                        package="autonomous_kart",
+                        executable="imu_node",
+                        name="imu_node",
+                        parameters=[imu_yaml],
                     ),
                     Node(
                         package="autonomous_kart",

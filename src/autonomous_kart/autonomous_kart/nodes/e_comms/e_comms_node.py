@@ -46,11 +46,10 @@ class ECommsNode(Node):
         # CAN bus
         if not self.simulation_mode:
             self.bus: Optional[can.interface.Bus] = can.interface.Bus(interface="slcan", channel=CAN_CHANNEL, bitrate=CAN_BITRATE)
+            self.can_notifier: Optional[can.Notifier] = can.Notifier(self.bus, [self._on_can_msg])
         else:
             self.bus: Optional[can.interface.Bus] = None
-
-        # Timer to poll CAN RX
-        self.create_timer(0.1, self.poll_can)
+            self.can_notifier: Optional[can.Notifier] = None
 
         # Logging
         self.cmd_count: int = 0
@@ -65,7 +64,7 @@ class ECommsNode(Node):
         self.ts: ApproximateTimeSynchronizer = ApproximateTimeSynchronizer(
             [self.throttle_sub, self.steering_sub],
             queue_size=3,
-            slop=0.1,  # Time tolerance in seconds
+            slop=0.01,  # Time tolerance in seconds
             allow_headerless=True,  # Float32 has no header
         )
         self.ts.registerCallback(self.cmd_callback)
@@ -122,27 +121,29 @@ class ECommsNode(Node):
                 self.bus.send(msg)
             except can.CanError as e:
                 self.logger.error(f"Failed to send CAN message: {e}")
+
+    def _on_can_msg(self, msg: can.Message):
+        """Called by can.Notifier in a background thread for each received message."""
+        if msg.arbitration_id == STATUS_ID:
+            data = bytes(msg.data) # copy, don't hold a reference
+            # Add to executor to handle in main thread because ros publishers are not thread safe
+            self.executor.create_task(lambda: self.handle_status_msg(data))
+
+    def handle_status_msg(self, msg_data: bytes):
+        try:
+            self.adcb_status = e_comms.unpack_status_message(msg_data, self.logger)
+            
+            self.adcb_state_pub.publish(String(data=self.adcb_status.logic_mode))
+            self.rc_mode_pub.publish(Bool(data=self.adcb_status.rc_mode))
+            self.throttle_pwm_pub.publish(UInt16(data=self.adcb_status.throttle_pwm))
+            self.steering_pwm_pub.publish(UInt16(data=self.adcb_status.steering_pwm))
+        except Exception as e:
+            self.logger.error(f"Failed to parse CAN message: {e}")
     
-    def poll_can(self):
-        if self.bus is not None:
-            while True:
-                msg = self.bus.recv(timeout=0.0)
-                if msg is None:
-                    break
-
-                if msg.arbitration_id == STATUS_ID:
-                    try:
-                        self.adcb_status = e_comms.unpack_status_message(msg.data, self.logger)
-
-                        self.adcb_state_pub.publish(String(data=self.adcb_status.logic_mode))
-                        self.rc_mode_pub.publish(Bool(data=self.adcb_status.rc_mode))
-                        self.throttle_pwm_pub.publish(UInt16(data=self.adcb_status.throttle_pwm))
-                        self.steering_pwm_pub.publish(UInt16(data=self.adcb_status.steering_pwm))
-                    except Exception as e:
-                        self.logger.error(f"Failed to parse CAN message: {e}")
-
     def destroy_node(self):
         # Close CAN
+        if self.can_notifier is not None:
+            self.can_notifier.stop()
         if self.bus is not None:
             self.bus.shutdown()
 

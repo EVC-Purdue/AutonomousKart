@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from rclpy.impl.rcutils_logger import RcutilsLogger
 
 # typedef enum {
@@ -21,6 +22,13 @@ MODE_VALUE_TO_STRING = {
     6: "CAN_DISCONNECTED",
     7: "RECOVERING",
 }
+
+@dataclass
+class AdcbStatus:
+    logic_mode: str   # String representation of the state machine mode (e.g., "RUNNING")
+    rc_mode: bool     # Boolean indicating RC mode (True if in autonomous mode, False if in RC mode)
+    throttle_pwm: int # Integer value of the throttle PWM (1000-2000)
+    steering_pwm: int # Integer value of the steering PWM (1000-2000)
 
 
 def pack_control_message(throttle_percent: float, steering_angle: float) -> bytes:
@@ -55,7 +63,7 @@ def pack_control_message(throttle_percent: float, steering_angle: float) -> byte
 
     return bytes(data)
 
-def unpack_status_message(data: bytes, logger: RcutilsLogger) -> tuple[str, bool, int, int]:
+def unpack_status_message(data: bytes, logger: RcutilsLogger) -> AdcbStatus:
     """
     Unpack the throttle feedback from the received CAN buffer.
 
@@ -70,24 +78,20 @@ def unpack_status_message(data: bytes, logger: RcutilsLogger) -> tuple[str, bool
     
     :param data: byte array of length 8 (>= 5) received from CAN message
     :param logger: Logger for logging errors
-    :return: A tuple containing the unpacked data:
-            - state_mode: String representation of the state machine mode (e.g., "RUNNING")
-            - rc_mode: Boolean indicating RC mode (True if in autonomous mode, False if in RC mode)
-            - throttle_pwm: Integer value of the throttle PWM (1000-2000)
-            - steering_pwm: Integer value of the steering PWM (1000-2000)
+    :return: An AdcbStatus object containing the unpacked data
     """
     if len(data) < 5:
         logger.error(f"CAN RX data length invalid: expected 8 (or >=5), got {len(data)}")
         raise ValueError(f"CAN RX data length invalid: expected 8 (or >=5), got {len(data)}")
     
-    state_mode = data[0] & 0x0F  # Bits 0-3
+    logic_mode = data[0] & 0x0F  # Bits 0-3
     rc_mode = (data[0] & 0x10) >> 4 # Bit 4
     throttle_pwm = int(data[1]) | (int(data[2]) << 8)
     steering_pwm = int(data[3]) | (int(data[4]) << 8)
 
-    state_str = MODE_VALUE_TO_STRING.get(state_mode, f"UNKNOWN({state_mode})")
+    logic_mode_str = MODE_VALUE_TO_STRING.get(logic_mode, f"UNKNOWN({logic_mode})")
     rc_mode_bool = bool(rc_mode)
 
-    return state_str, rc_mode_bool, throttle_pwm, steering_pwm
-    
+    return AdcbStatus(logic_mode_str, rc_mode_bool, throttle_pwm, steering_pwm)
+
     

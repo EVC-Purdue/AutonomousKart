@@ -36,10 +36,12 @@ class ECommsNode(Node):
         self.steering_angle: float = 0.0
 
         # Outputs
-        self.adb_state: str = "not initialized"
-        self.rc_mode: bool = False
-        self.throttle_pwm: int = 0
-        self.steering_pwm: int = 0
+        self.adcb_status: e_comms.AdcbStatus = e_comms.AdcbStatus(
+            state_mode="not initialized",
+            rc_mode=False,
+            throttle_pwm=0,
+            steering_pwm=0,
+        )
 
         # CAN bus
         if not self.simulation_mode:
@@ -48,7 +50,7 @@ class ECommsNode(Node):
             self.bus: Optional[can.interface.Bus] = None
 
         # Timer to poll CAN RX
-        self.create_timer(0.5, self.poll_can)
+        self.create_timer(0.1, self.poll_can)
 
         # Logging
         self.cmd_count: int = 0
@@ -69,17 +71,17 @@ class ECommsNode(Node):
         self.ts.registerCallback(self.cmd_callback)
 
         # Publishers
-        self.adb_state_pub = self.create_publisher(
-            String, "e_comms/rx/adb_state", 1
+        self.adcb_state_pub = self.create_publisher(
+            String, "e_comms/adcb_state", 1
         )
         self.rc_mode_pub = self.create_publisher(
-            Bool, "e_comms/rx/rc_mode", 1
+            Bool, "e_comms/rc_mode", 1
         )
         self.throttle_pwm_pub = self.create_publisher(
-            UInt16, "e_comms/rx/throttle", 1
+            UInt16, "e_comms/throttle_pwm", 1
         )
         self.steering_pwm_pub = self.create_publisher(
-            UInt16, "e_comms/rx/steering", 1
+            UInt16, "e_comms/steering_pwm", 1
         )
 
         # Init finished

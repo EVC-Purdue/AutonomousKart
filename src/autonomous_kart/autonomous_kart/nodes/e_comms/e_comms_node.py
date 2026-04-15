@@ -125,25 +125,21 @@ class ECommsNode(Node):
     
     def poll_can(self):
         if self.bus is not None:
-            msg = self.bus.recv(timeout=0.0)
-            if msg is None:
-                return
+            while True:
+                msg = self.bus.recv(timeout=0.0)
+                if msg is None:
+                    break
 
-            if msg.arbitration_id == STATUS_ID:
-                try:
-                    adb_state, rc_mode, throttle_pwm, steering_pwm = e_comms.unpack_status_message(msg.data, self.logger)
+                if msg.arbitration_id == STATUS_ID:
+                    try:
+                        self.adcb_status = e_comms.unpack_status_message(msg.data, self.logger)
 
-                    self.adb_state = adb_state
-                    self.rc_mode = rc_mode
-                    self.throttle_pwm = throttle_pwm
-                    self.steering_pwm = steering_pwm
-
-                    self.adb_state_pub.publish(String(data=self.adb_state))
-                    self.rc_mode_pub.publish(Bool(data=self.rc_mode))
-                    self.throttle_pwm_pub.publish(UInt16(data=self.throttle_pwm))
-                    self.steering_pwm_pub.publish(UInt16(data=self.steering_pwm))
-                except Exception as e:
-                    self.logger.error(f"Failed to parse CAN message: {e}")
+                        self.adcb_state_pub.publish(String(data=self.adcb_status.logic_mode))
+                        self.rc_mode_pub.publish(Bool(data=self.adcb_status.rc_mode))
+                        self.throttle_pwm_pub.publish(UInt16(data=self.adcb_status.throttle_pwm))
+                        self.steering_pwm_pub.publish(UInt16(data=self.adcb_status.steering_pwm))
+                    except Exception as e:
+                        self.logger.error(f"Failed to parse CAN message: {e}")
 
     def destroy_node(self):
         # Close CAN

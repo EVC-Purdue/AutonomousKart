@@ -8,3 +8,4 @@ catkin_pkg==0.4.24
 python-can
 flask
 flask-cors
+adafruit-circuitpython-bno08x

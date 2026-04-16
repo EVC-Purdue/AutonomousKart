@@ -6,7 +6,7 @@ from typing import Deque, Dict, Any
 import rclpy
 from sensor_msgs.msg import Image
 from rclpy.node import Node
-from std_msgs.msg import Float32, Float32MultiArray, Int16, String
+from std_msgs.msg import Float32, Float32MultiArray, Int16, String, Bool, UInt16
 
 
 class MetricsNode(Node):
@@ -41,8 +41,10 @@ class MetricsNode(Node):
             "track_angles": Float32MultiArray,
             # "camera/image_raw": Image, # Note: This does not work because of invalid qos.
             # Regardless, images don't need to be saved.
-            "e_comms/pwm_rx/motor": Int16,
-            "e_comms/pwm_rx/steering": Int16,
+            "e_comms/adcb_state": String,
+            "e_comms/rc_mode": Bool,
+            "e_comms/throttle_pwm": UInt16,
+            "e_comms/steering_pwm": UInt16,
             "pathfinder_params": Float32MultiArray,
         }
         for topic, msg_type in publishers.items():

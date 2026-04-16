@@ -127,7 +127,10 @@ class ECommsNode(Node):
         if msg.arbitration_id == STATUS_ID:
             data = bytes(msg.data) # copy, don't hold a reference
             # Add to executor to handle in main thread because ros publishers are not thread safe
-            self.executor.create_task(lambda: self.handle_status_msg(data))
+            if executor is not None:
+                executor.create_task(lambda: self.handle_status_msg(data))
+            else:
+                self.logger.warning("CAN message received before executor ready, dropping frame")
 
     def handle_status_msg(self, msg_data: bytes):
         try:

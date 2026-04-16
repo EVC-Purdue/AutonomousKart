@@ -38,16 +38,18 @@ class IMUNode(Node):
             f"IMU Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}"
         )
 
-        self.sensor = BNO08X_UART(serial.Serial("/dev/serial0", 115200))
-        self.sensor.enable_feature(BNO_REPORT_ACCELEROMETER)
-        self.sensor.enable_feature(BNO_REPORT_GYROSCOPE)
-        # self.sensor.enable_feature(BNO_REPORT_ROTATION_VECTOR)
+        self.sensor = None
+        if not self.sim_mode:
+            self.sensor = BNO08X_UART(serial.Serial("/dev/serial0", 115200))
+            self.sensor.enable_feature(BNO_REPORT_ACCELEROMETER)
+            self.sensor.enable_feature(BNO_REPORT_GYROSCOPE)
+            # self.sensor.enable_feature(BNO_REPORT_ROTATION_VECTOR)
 
     def timer_callback(self):
         if self.sim_mode:
-            self.real_poll()
-        else:
             self.sim_poll()
+        else:
+            self.real_poll()
 
         # Format data into a 2x3 array
         imu_msg = Float32MultiArray()
@@ -67,10 +69,13 @@ class IMUNode(Node):
         # [[accel_x, accel_y, accel_z], [gyro_x, gyro_y, gyro_z]]
         #  [forward,  left,     up   ], [ roll ,  pitch,  yaw  ]
         self.imu_pub.publish(imu_msg)
-        self.get_logger().info(f"Published IMU data: {imu_msg.data}")
+        # self.get_logger().info(f"Published IMU data: {imu_msg.data}")
 
     def real_poll(self):
         """Real mode - read IMU data"""
+
+        if self.sensor is None:
+            return
 
         # Poll the sensor for new data
         accel_x, accel_y, accel_z = self.sensor.acceleration  # type: ignore

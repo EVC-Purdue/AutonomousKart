@@ -37,7 +37,7 @@ class ECommsNode(Node):
 
         # Outputs
         self.adcb_status: e_comms.AdcbStatus = e_comms.AdcbStatus(
-            state_mode="not initialized",
+            logic_mode="not initialized",
             rc_mode=False,
             throttle_pwm=0,
             steering_pwm=0,

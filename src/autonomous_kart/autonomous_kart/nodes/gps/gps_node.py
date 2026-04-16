@@ -14,7 +14,7 @@ class GpsNode(Node):
             allow_undeclared_parameters=True,
             automatically_declare_parameters_from_overrides=True
         )
-        self.create_publisher(Float32MultiArray, 'gps', 5)
+        self.gps_publisher = self.create_publisher(Float32MultiArray, 'gps', 5)
 
         self.last_callback_time = time.time()
         self.logger = self.get_logger()
@@ -23,7 +23,7 @@ class GpsNode(Node):
         self.sim_mode = self.get_parameter("simulation_mode").value
 
         self.logger.info(f"Gps Frequency: {self.gps_frequency}")
-        self.timer = self.create_timer(1.0 / self.gps_frequency, self.publish_gps)
+        self.timer = self.create_timer(1.0 / self.gps_frequency, self.publish_gps) # type: ignore
 
         self.logger.info(
             f"Gps Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}"
@@ -58,7 +58,7 @@ def main(args=None):
     except Exception:
         node.get_logger().error(traceback.format_exc())
     finally:
-        node.running = False
+        # node.running = False
         executor.shutdown(timeout_sec=1.0)
         node.destroy_node()
         if rclpy.ok():

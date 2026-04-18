@@ -53,7 +53,7 @@ class OpenCVPathfinderNode(Node):
         )
 
         self.logger.info("Pathfinder Node started - subscribed to /camera/image_raw")
-        self.angle_finder = AngleFinder()
+        self.angle_finder = AngleFinder(self)
 
     def image_callback(self, msg):
         frame = self.bridge.imgmsg_to_cv2(msg, "passthrough")

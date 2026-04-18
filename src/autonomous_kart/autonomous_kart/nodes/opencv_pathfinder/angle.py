@@ -11,9 +11,10 @@ LOWER_RED = np.array([0,0,70])
 UPPER_RED = np.array([200,50,255])
 
 class AngleFinder:
-    def __init__(self):
+    def __init__(self, node):
         self.prev_right = None
         self.prev_left = None
+        self.logger = node
 
     # @param vid: Video
     # @param debug: Draws lines on image
@@ -23,12 +24,12 @@ class AngleFinder:
     # @ret video or None
     def get_video_mask(self, vid, debug=False, percent=0.0, pixel_range=3, pic_offset=5):
         if vid is None:
-            print("Error opening video")
+            self.logger.error("Error opening video")
             return None
         
         r, f = vid.read()
         if not r:
-            print("Can't get initial video frame")
+            self.logger.error("Can't get initial video frame")
             return None
         h, w = f.shape[:2]
         height, width = h - 1 - pic_offset, w - 1 - pic_offset
@@ -92,7 +93,7 @@ class AngleFinder:
     def get_img_angles(self, img, debug=False, percent=0.0, pixel_range=3, pic_offset=5):
         image, right, left = self.get_img_mask(img, debug=debug, percent=percent, pixel_range=pixel_range, pic_offset=pic_offset)
 
-        if not image or not right or not left:
+        if image is None or right is None or left is None:
             return (None, None)
 
         w = img.shape[1]
@@ -115,7 +116,7 @@ class AngleFinder:
     # @ret Masked image mage or None
     def get_img_mask(self, img: np.ndarray, debug=False, percent=0.0, pixel_range=3, pic_offset=5):
         if img is None:
-            print ('Error opening image!')
+            self.error.logger('Error opening image!')
             return None, None, None
         
         # Roi mask for a portion of image
@@ -131,21 +132,20 @@ class AngleFinder:
         result = cv.morphologyEx(mask_red, cv.MORPH_OPEN, KERNEL)
 
         if self.prev_right is None:
-            self.prev_right = (width, height - y_index)
+            self.prev_right = (width, height)
         
         if self.prev_left is None:
-            self.prev_left = (pic_offset, height - y_index)
-
+            self.prev_left = (pic_offset, height)
+        
         right = self.lookup_road_coord(result, self.prev_right, True, pic_offset=pic_offset, pixel_range=pixel_range)
         left = self.lookup_road_coord(result, self.prev_left, False, pic_offset=pic_offset, pixel_range=pixel_range)
+
+        self.prev_right = right
+        self.prev_left = left
 
         if not right or not left:
             right = self.vectorized_road_coord(result, True)
             left = self. vectorized_road_coord(result, False)
-
-        
-        self.prev_right = right
-        self.prev_left = left
         
         if debug:
             utils.draw_lines(result, right, left)

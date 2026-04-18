@@ -46,7 +46,7 @@ def get_threshold(img):
 # @param: Threshold
 # @ret: Traditional contours
 def get_contours(thresh):
-    contours, _ = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    contours, im = cv.findContours(thresh, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
     
     return contours
 

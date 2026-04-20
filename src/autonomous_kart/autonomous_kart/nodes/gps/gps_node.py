@@ -20,6 +20,10 @@ class GpsNode(Node):
         self.logger = self.get_logger()
 
         self.gps_frequency = self.get_parameter("gps_frequency").value
+        if not self.gps_frequency:
+            self.logger.warning("No GPS frequency known, default 10")
+            self.gps_frequency = 10
+
         self.sim_mode = self.get_parameter("simulation_mode").value
 
         self.logger.info(f"Gps Frequency: {self.gps_frequency}")

@@ -46,9 +46,9 @@ class ECommsNode(Node):
             try:
                 self.bus: Optional[can.interface.Bus] = can.interface.Bus(interface="slcan", channel=CAN_CHANNEL, bitrate=CAN_BITRATE)
             except FileNotFoundError:
-                self.logger.error("Can device not connected on {CAN_CHANNEL}")
+                self.logger.error(f"Can device not connected on {CAN_CHANNEL}")
                 self.simulation_mode = True  # Running on-device, off-kart
-                self.bus = None
+                self.bus: Optional[can.interface.Bus] = None
         else:
             self.bus: Optional[can.interface.Bus] = None
 

@@ -14,7 +14,7 @@ class GpsNode(Node):
             allow_undeclared_parameters=True,
             automatically_declare_parameters_from_overrides=True
         )
-        self.create_publisher(Float32MultiArray, 'gps', 5)
+        self.gps_publisher = self.create_publisher(Float32MultiArray, 'gps', 5)
 
         self.last_callback_time = time.time()
         self.logger = self.get_logger()

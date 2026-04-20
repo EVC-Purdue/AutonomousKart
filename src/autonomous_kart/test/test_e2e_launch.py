@@ -148,29 +148,53 @@ def running_stack():
 
     rclpy.init(args=["--ros-args"])
     listener = None
+    cmd_listener = None
+    odom_listener = None
     try:
         from nav_msgs.msg import Odometry
         from std_msgs.msg import Float32, Float32MultiArray
 
+        # Split listeners: high-rate /odom gets its own node + executor so
+        # it can't starve the low-rate manual_commands / cmd_vel / cmd_turn
+        # callbacks. Also use depth=1 for odom — we only need "did it arrive",
+        # not a backlog.
+        from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+
+        odom_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+        )
+
+        odom_listener = rclpy.create_node("e2e_odom_listener")
+        cmd_listener = rclpy.create_node("e2e_cmd_listener")
         listener = rclpy.create_node("e2e_api_listener")
+
         counters = {"odom": 0, "cmd_vel": 0, "cmd_turn": 0}
         manual_cmds = []
 
-        listener.create_subscription(
-            Odometry, "odom", lambda m: counters.__setitem__("odom", counters["odom"] + 1), 10
+        odom_listener.create_subscription(
+            Odometry, "odom",
+            lambda m: counters.__setitem__("odom", counters["odom"] + 1),
+            odom_qos,
+        )
+        cmd_listener.create_subscription(
+            Float32, "cmd_vel",
+            lambda m: counters.__setitem__("cmd_vel", counters["cmd_vel"] + 1), 10,
+        )
+        cmd_listener.create_subscription(
+            Float32, "cmd_turn",
+            lambda m: counters.__setitem__("cmd_turn", counters["cmd_turn"] + 1), 10,
         )
         listener.create_subscription(
-            Float32, "cmd_vel", lambda m: counters.__setitem__("cmd_vel", counters["cmd_vel"] + 1), 10
+            Float32MultiArray, "manual_commands",
+            lambda m: manual_cmds.append(list(m.data)), 10,
         )
-        listener.create_subscription(
-            Float32, "cmd_turn", lambda m: counters.__setitem__("cmd_turn", counters["cmd_turn"] + 1), 10
-        )
-        listener.create_subscription(
-            Float32MultiArray,
-            "manual_commands",
-            lambda m: manual_cmds.append(list(m.data)),
-            10,
-        )
+
+        executor = rclpy.executors.SingleThreadedExecutor()
+        executor.add_node(listener)
+        executor.add_node(cmd_listener)
+        executor.add_node(odom_listener)
 
         # Phase 1: wait for localization.
         deadline = time.monotonic() + 25.0
@@ -180,7 +204,7 @@ def running_stack():
                 pytest.fail(
                     f"bringup_sim exited early (rc={proc.returncode})\n--- output ---\n{out}"
                 )
-            rclpy.spin_once(listener, timeout_sec=0.1)
+            executor.spin_once(timeout_sec=0.1)
         if counters["odom"] == 0:
             pytest.fail("localization never published /odom within 25s")
 
@@ -197,11 +221,30 @@ def running_stack():
             pytest.fail("master_api never responded on :8000")
 
         def pump(predicate, timeout=3.0):
+            # Drain every ready callback on every node per iteration, not
+            # just one. spin_once picks a single ready callback; under load
+            # that lets a 60 Hz publisher starve a one-shot message.
             t_end = time.monotonic() + timeout
             while time.monotonic() < t_end:
-                rclpy.spin_once(listener, timeout_sec=0.05)
+                for _ in range(20):  # drain burst
+                    before = (
+                        counters["odom"],
+                        counters["cmd_vel"],
+                        counters["cmd_turn"],
+                        len(manual_cmds),
+                    )
+                    executor.spin_once(timeout_sec=0.0)
+                    after = (
+                        counters["odom"],
+                        counters["cmd_vel"],
+                        counters["cmd_turn"],
+                        len(manual_cmds),
+                    )
+                    if before == after:
+                        break  # nothing more ready, stop draining
                 if predicate():
                     return True
+                executor.spin_once(timeout_sec=0.02)  # wait for new traffic
             return False
 
         yield {
@@ -214,8 +257,13 @@ def running_stack():
         }
     finally:
         try:
-            if listener is not None:
-                listener.destroy_node()
+            for n in (listener, cmd_listener, odom_listener):
+                if n is None:
+                    continue
+                try:
+                    n.destroy_node()
+                except Exception:
+                    pass
         except Exception:
             pass
         try:

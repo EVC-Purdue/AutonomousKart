@@ -27,9 +27,7 @@ def _straight_line(n=40, step=1.0, vx=10.0):
     return [(i * step, i * step, 0.0, 0.0, 0.0, vx, 0.0) for i in range(n)]
 
 
-# --------------------------------------------------------------------------
 # Pure-helper tests (no ROS)
-# --------------------------------------------------------------------------
 
 
 def test_nearest_idx_forward_no_wrap_on_short_open_line():
@@ -121,9 +119,7 @@ def test_full_nearest_idx_empty_line():
     assert PathfinderNode._full_nearest_idx([], (1.0, 2.0)) == 0
 
 
-# --------------------------------------------------------------------------
 # pick_lookahead_point is now pure
-# --------------------------------------------------------------------------
 
 
 def test_pick_lookahead_point_is_pure(ros_ctx, tiny_racing_line):
@@ -170,10 +166,6 @@ def test_pick_lookahead_point_is_pure(ros_ctx, tiny_racing_line):
         finally:
             node.destroy_node()
 
-
-# --------------------------------------------------------------------------
-# Node-level integration: stale-CTE fix (Issue 1)
-# --------------------------------------------------------------------------
 
 
 def _params(line_path, system_state="AUTONOMOUS"):
@@ -311,11 +303,6 @@ def test_racing_line_closest_idx_advances_while_dynamic_line_active(
             node.destroy_node()
 
 
-# --------------------------------------------------------------------------
-# Node-level integration: initial full-track search (Issue 3)
-# --------------------------------------------------------------------------
-
-
 def test_initial_sync_picks_true_nearest_when_kart_spawns_far_from_idx0(
     ros_ctx, long_racing_line
 ):
@@ -333,11 +320,11 @@ def test_initial_sync_picks_true_nearest_when_kart_spawns_far_from_idx0(
             node.pose_ready = True
 
             assert node.closest_idx == 0
-            assert not node._initial_sync_done
+            assert not node.initial_sync_done
 
             node.autonomous_control_loop(Float32MultiArray(data=[0.0, 0.0]))
 
-            assert node._initial_sync_done
+            assert node.initial_sync_done
             # True nearest on a 1 m-spaced straight is idx 150.
             assert abs(node.closest_idx - 150) <= 1, (
                 f"initial sync failed to find true nearest; got "

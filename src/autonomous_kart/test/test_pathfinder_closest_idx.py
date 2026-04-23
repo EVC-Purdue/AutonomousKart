@@ -161,8 +161,8 @@ def test_pick_lookahead_point_is_pure(ros_ctx, tiny_racing_line):
             pre_racing = node.racing_line
             pre_idx = node.closest_idx
             tgt, _spd = node.pick_lookahead_point(short, 0, lookahead_m=2.0)
-            # Should target the last point of `short` (s=4 >= s_target=2 after
-            # the first index where s >= s_target, which is idx 2 at s=2.0).
+            # Should target the first point in `short` where s >= s_target,
+            # which is idx 2 at s=2.0.
             assert tgt[0] == pytest.approx(2.0)
             # pick_lookahead_point must not have rebound self.racing_line
             assert node.racing_line is pre_racing

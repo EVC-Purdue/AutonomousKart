@@ -226,20 +226,27 @@ class PathfinderNode(Node):
 
             if self.line_manager.is_active:
                 dyn_line, dyn_idx = self.line_manager.get_line_and_idx()
-                # Dynamic lines (e.g. Bezier rejoin) are short and never closed,
-                # so the forward search must NOT wrap — wrapping would let the
-                # search snap back to idx 0 and pick a point behind the kart.
-                dyn_idx = self._nearest_idx_forward(
-                    dyn_line,
-                    self.current_xy,
-                    dyn_idx,
-                    window=self._search_window,
-                    allow_wrap=False,
-                )
-                target_xy, speed_ref_pct = self.pick_lookahead_point(
-                    dyn_line, dyn_idx, lookahead_m
-                )
-                self.line_manager.set_dynamic_closest_idx(dyn_idx)
+                if not dyn_line or dyn_idx < 0:
+                    # get_line_and_idx() can fall back to the closed racing line
+                    # Fallback to normal lookahead
+                    target_xy, speed_ref_pct = self.pick_lookahead_point(
+                        self.racing_line, self.closest_idx, lookahead_m
+                    )
+                else:
+                    # Dynamic lines (e.g. Bezier rejoin) are short and never closed,
+                    # so the forward search must NOT wrap — wrapping would let the
+                    # search snap back to idx 0 and pick a point behind the kart.
+                    dyn_idx = self._nearest_idx_forward(
+                        dyn_line,
+                        self.current_xy,
+                        dyn_idx,
+                        window=self._search_window,
+                        allow_wrap=False,
+                    )
+                    target_xy, speed_ref_pct = self.pick_lookahead_point(
+                        dyn_line, dyn_idx, lookahead_m
+                    )
+                    self.line_manager.set_dynamic_closest_idx(dyn_idx)
             else:
                 target_xy, speed_ref_pct = self.pick_lookahead_point(
                     self.racing_line, self.closest_idx, lookahead_m

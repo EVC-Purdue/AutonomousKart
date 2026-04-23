@@ -57,6 +57,10 @@ class PathfinderNode(Node):
         self.approach_dist_m = float(self.get_parameter("approach_dist_m").value)
         self.min_approach_speed_pct = float(self.get_parameter("min_approach_speed_pct").value)
 
+        self.search_window = int(self.get_parameter("search_window").value)
+        self.initial_sync_done = bool(self.get_parameter("initial_sync_done").value)
+        self.max_resync_dist = float(self.get_parameter("max_resync_dist").value)
+
         self.pose_ready = False
         # self.pose_ready = True  # Dummy until localization works
         self.current_xy = (0.0, 0.0)
@@ -66,17 +70,7 @@ class PathfinderNode(Node):
         self.localization_sub = self.create_subscription(Odometry, "odom", self.localization, 10)
 
         self.closest_idx = 0
-        # First autonomous tick after pose_ready does an O(n) full-line nearest
-        # search so spawning or re-posing anywhere on the track syncs correctly.
-        # Subsequent ticks use a bounded forward search.
-        self._initial_sync_done = False
-        # Bounded forward search window in waypoints.
-        self._search_window = 80
-        # If the kart's distance to racing_line[closest_idx] exceeds this
-        # threshold, the windowed search is presumed stale (localization jump,
-        # large off-track excursion) and we re-run the full-line search.
-        # 20 m is well beyond any normal CTE/waypoint spacing on the racing line.
-        self._resync_distance_m = 20.0
+
 
         self.metrics_publisher = self.create_publisher(
             Float32MultiArray, "pathfinder_params", 5
@@ -186,18 +180,18 @@ class PathfinderNode(Node):
             #   3. Normal operation: bounded forward search with wrap for the
             #      closed racing line.
             if self.racing_line:
-                if not self._initial_sync_done:
+                if not self.initial_sync_done:
                     self.closest_idx = self._full_nearest_idx(
                         self.racing_line, self.current_xy
                     )
-                    self._initial_sync_done = True
+                    self.initial_sync_done = True
                 else:
                     if self.closest_idx < 0 or self.closest_idx >= len(self.racing_line):
                         self.closest_idx = 0
                     row = self.racing_line[self.closest_idx]
                     dx = self.current_xy[0] - float(row[1])
                     dy = self.current_xy[1] - float(row[2])
-                    if math.hypot(dx, dy) > self._resync_distance_m:
+                    if math.hypot(dx, dy) > self.max_resync_dist:
                         self.closest_idx = self._full_nearest_idx(
                             self.racing_line, self.current_xy
                         )
@@ -206,7 +200,7 @@ class PathfinderNode(Node):
                             self.racing_line,
                             self.current_xy,
                             self.closest_idx,
-                            window=self._search_window,
+                            window=self.search_window,
                             allow_wrap=True,
                         )
 
@@ -240,7 +234,7 @@ class PathfinderNode(Node):
                         dyn_line,
                         self.current_xy,
                         dyn_idx,
-                        window=self._search_window,
+                        window=self.search_window,
                         allow_wrap=False,
                     )
                     target_xy, speed_ref_pct = self.pick_lookahead_point(

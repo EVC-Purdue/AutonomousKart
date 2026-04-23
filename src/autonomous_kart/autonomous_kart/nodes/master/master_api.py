@@ -104,7 +104,7 @@ def main():
     ros_thread = threading.Thread(target=start, args=(master_node,), daemon=True)
     ros_thread.start()
 
-    app.run(host="0.0.0.0", port=8000, debug=False)
+    app.run(host="0.0.0.0", port=8000, debug=False, use_reloader=False)
 
     rclpy.shutdown()
 

@@ -147,6 +147,10 @@ def test_pick_lookahead_point_is_pure(ros_ctx, tiny_racing_line):
             "min_reg_speed_pct": 0.20,
             "approach_dist_m": 1.0,
             "min_approach_speed_pct": 0.05,
+            "search_window": 80,
+            "initial_sync_done": False,
+            "max_resync_dist": 80.0,
+            "max_closed_dist": 2.0,
         }
     ):
         node = PathfinderNode()
@@ -190,6 +194,10 @@ def _params(line_path, system_state="AUTONOMOUS"):
         "min_reg_speed_pct": 0.20,
         "approach_dist_m": 1.0,
         "min_approach_speed_pct": 0.05,
+        "search_window": 80,
+        "initial_sync_done": False,
+        "max_resync_dist": 20.0,
+        "max_closed_dist": 2.0,
     }
 
 

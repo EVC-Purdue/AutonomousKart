@@ -27,6 +27,6 @@ pathfinder_node:
 
     search_window: 80                    # Bounded forward search window (number of waypoints)
     initial_sync_done: false             # First autonomous tick after pose_ready does an O(n) full-line nearest
-    max_resync_dist: 80                  # Max allowed distance to race line (m)
+    max_resync_dist: 80                  # Max allowed distance to race line (m) before falling back to a full O(n) search
     max_closed_dist: 2                   # Max distance between start and end for track to be considered closed (m)
     

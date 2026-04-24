@@ -60,7 +60,6 @@ class PathfinderNode(Node):
         self.search_window = int(self.get_parameter("search_window").value)
         self.initial_sync_done = bool(self.get_parameter("initial_sync_done").value)
         self.max_resync_dist = float(self.get_parameter("max_resync_dist").value)
-
         self.max_closed_dist = float(self.get_parameter("max_closed_dist").value)
 
         self.pose_ready = False

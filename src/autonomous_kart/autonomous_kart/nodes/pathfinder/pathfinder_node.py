@@ -61,6 +61,8 @@ class PathfinderNode(Node):
         self.initial_sync_done = bool(self.get_parameter("initial_sync_done").value)
         self.max_resync_dist = float(self.get_parameter("max_resync_dist").value)
 
+        self.max_closed_dist = float(self.get_parameter("max_closed_dist").value)
+
         self.pose_ready = False
         # self.pose_ready = True  # Dummy until localization works
         self.current_xy = (0.0, 0.0)
@@ -473,7 +475,7 @@ class PathfinderNode(Node):
         # Decide if this is a closed track. Most racing lines are one closed lap.
         s_end = float(line[-1][0])
         closed = s_end > 0.0 and (
-            math.hypot(line[0][1] - line[-1][1], line[0][2] - line[-1][2]) < 2.0
+            math.hypot(line[0][1] - line[-1][1], line[0][2] - line[-1][2]) <= self.max_closed_dist
         )
 
         if closed and s_target > s_end:

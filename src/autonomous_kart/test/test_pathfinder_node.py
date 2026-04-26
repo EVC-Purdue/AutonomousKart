@@ -39,6 +39,10 @@ def _params(line_path, system_state="AUTONOMOUS"):
         "min_reg_speed_pct": 0.20,
         "approach_dist_m": 1.0,
         "min_approach_speed_pct": 0.05,
+        "search_window": 80,
+        "initial_sync_done": False,
+        "max_resync_dist": 80.0,
+        "max_closed_dist": 2.0,
     }
 
 

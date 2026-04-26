@@ -70,6 +70,11 @@ class PathfinderNode(Node):
 
         self.localization_sub = self.create_subscription(Odometry, "odom", self.localization, 10)
 
+        self.dynamic_line_pub = self.create_publisher(
+            String, "pathfinder/dynamic_line", 1
+        )
+        self.create_timer(0.5, self.publish_dynamic_line)  # 2 Hz
+
         self.closest_idx = 0
 
 
@@ -500,6 +505,22 @@ class PathfinderNode(Node):
         speed_ref_pct = self._clamp01(vx_mps / self.v_max_mps) if self.v_max_mps > 1e-6 else 0.0
 
         return (tx, ty), speed_ref_pct
+
+    def _publish_dynamic_line(self):
+        import json
+        if self.line_manager.is_active:
+            line = self.line_manager.dynamic_line
+            payload = {
+                "active": True,
+                "strategy": type(self.line_manager.active_strategy).__name__,
+                "merge_idx": int(self.line_manager.merge_idx),
+                "points": [[float(p[1]), float(p[2])] for p in line],
+            }
+        else:
+            payload = {"active": False, "strategy": None, "merge_idx": -1, "points": []}
+        self.dynamic_line_pub.publish(
+            String(data=json.dumps(payload, separators=(",", ":")))
+        )
 
 
 def main(args=None):

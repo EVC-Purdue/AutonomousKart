@@ -26,6 +26,7 @@ class MasterNode(Node):
         self.logger = self.get_logger()
         self.state = self.get_parameter("system_state").value
         self.system_frequency = self.get_parameter("system_frequency").value
+        self.path = self.get_parameter("path").value
 
         assert self.state in [s.value for s in STATES]
 
@@ -70,7 +71,25 @@ class MasterNode(Node):
         self.create_subscription(Float32, "cmd_vel", self._velocity_callback, 5)
         self.create_subscription(Float32, "cmd_turn", self._turn_callback, 5)
 
+        # Dynamic line output
+        self.dynamic_line_data = {"active": False, "strategy": None, "merge_idx": -1, "points": []}
+        self.create_subscription(
+            String, "pathfinder/dynamic_line", self.dynamic_line_callback, 1
+        )
+
         self.logger.info("Initialize Master Node")
+
+    def _dynamic_line_callback(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            return
+        with self._lock:
+            self.dynamic_line_data = data
+
+    def get_dynamic_line(self):
+        with self._lock:
+            return dict(self.dynamic_line_dat)
 
     def logs_callback(self, msg):
         logs = json.loads(msg.data)

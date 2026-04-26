@@ -7,6 +7,7 @@ import rclpy
 from sensor_msgs.msg import Image
 from rclpy.node import Node
 from std_msgs.msg import Float32, Float32MultiArray, Int16, String
+from nav_msgs.msg import Odometry
 
 
 class MetricsNode(Node):

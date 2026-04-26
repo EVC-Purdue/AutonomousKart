@@ -506,7 +506,7 @@ class PathfinderNode(Node):
 
         return (tx, ty), speed_ref_pct
 
-    def _publish_dynamic_line(self):
+    def publish_dynamic_line(self):
         import json
         if self.line_manager.is_active:
             line = self.line_manager.dynamic_line

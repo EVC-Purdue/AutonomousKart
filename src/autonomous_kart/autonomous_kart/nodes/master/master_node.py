@@ -6,6 +6,8 @@ import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from std_msgs.msg import String, Float32MultiArray, Float32
+from nav_msgs.msg import Odometry
+
 
 
 class STATES(Enum):
@@ -79,7 +81,7 @@ class MasterNode(Node):
 
         self.logger.info("Initialize Master Node")
 
-    def _dynamic_line_callback(self, msg: String):
+    def dynamic_line_callback(self, msg: String):
         try:
             data = json.loads(msg.data)
         except Exception:

@@ -20,6 +20,7 @@ setup(
         'autonomous_kart.nodes.metrics',
         'autonomous_kart.nodes.master',
         'autonomous_kart.nodes.localization',
+'autonomous_kart.nodes.pathfinder.strategies',
     ],
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),

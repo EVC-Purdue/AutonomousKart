@@ -141,6 +141,11 @@ class PathfinderNode(Node):
         self.pose_ready = True
 
     def update_state(self, msg: String):
+        if msg.data != self.state:
+            # Set speed to zero on state change
+            self.speed = 0.0
+            self.expected_speed = 0.0
+            self.motor_publisher.publish(Float32(data=0.0))
         if msg.data not in [s.value for s in STATES]:
             self.logger.error(f"State {msg.data} not recognized")
             return

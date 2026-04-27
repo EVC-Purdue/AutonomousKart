@@ -7,6 +7,7 @@ import rclpy
 from sensor_msgs.msg import Image
 from rclpy.node import Node
 from std_msgs.msg import Float32, Float32MultiArray, Int16, String, Bool, UInt16
+from nav_msgs.msg import Odometry
 
 
 class MetricsNode(Node):
@@ -46,6 +47,7 @@ class MetricsNode(Node):
             "e_comms/throttle_pwm": UInt16,
             "e_comms/steering_pwm": UInt16,
             "pathfinder_params": Float32MultiArray,
+            "odom": Odometry,
         }
         for topic, msg_type in publishers.items():
             self.cmd_vel_sub = self.create_subscription(
@@ -95,6 +97,17 @@ class MetricsNode(Node):
                 "width": msg.width,
                 "height": msg.height,
                 "encoding": msg.encoding,
+            }
+        elif isinstance(msg, Odometry):
+            p = msg.pose.pose.position
+            q = msg.pose.pose.orientation
+            tl = msg.twist.twist.linear
+            ta = msg.twist.twist.angular
+            record["value"] = {
+                "x": p.x, "y": p.y, "z": p.z,
+                "qx": q.x, "qy": q.y, "qz": q.z, "qw": q.w,
+                "vx": tl.x, "vy": tl.y, "vz": tl.z,
+                "wx": ta.x, "wy": ta.y, "wz": ta.z,
             }
 
         with self._lock:

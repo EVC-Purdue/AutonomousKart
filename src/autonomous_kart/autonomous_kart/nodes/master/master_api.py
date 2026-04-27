@@ -20,7 +20,36 @@ def cors(response):
 def ping():
     return jsonify({"ping": "pong"})
 
+_STATIC_LINE_CACHE = None
 
+def _load_static_line(path):
+    """
+    Load racing line once
+    returns: list of full waypoint dicts
+    """
+    global _STATIC_LINE_CACHE
+    if _STATIC_LINE_CACHE is not None:
+        return _STATIC_LINE_CACHE
+    if not os.path.exists(path):
+        return []
+    rows = []
+    with open(path, "r") as f:
+        for row in f:
+            parts = row.strip().split(",")
+            if len(parts) >= 6:
+                try:
+                    rows.append({
+                        "s": float(parts[0]),
+                        "x": float(parts[1]),
+                        "y": float(parts[2]),
+                        "psi": float(parts[3]),
+                        "kappa": float(parts[4]),
+                        "vx": float(parts[5]),
+                    })
+                except ValueError:
+                    continue
+    _STATIC_LINE_CACHE = rows
+    return rows
 @app.route("/get_logs", methods=["GET"])
 def get_logs():
     if not master_node:
@@ -72,7 +101,7 @@ def odom():
 
 @app.route("/racing_line", methods=["GET"])
 def racing_line():
-    path = "/ws/data/racing_line/line.csv"
+    path = master_node.path
     if not os.path.exists(path):
         return jsonify({"points": []})
     points = []
@@ -90,6 +119,28 @@ def racing_line():
 @app.route("/viz")
 def viz():
     return send_from_directory("/ws/viz", "viz.html")
+
+@app.route("/map", methods=["GET"])
+def map_endpoint():
+    waypoints = _load_static_line(master_node.path)
+    if not waypoints:
+        return jsonify({"error": "racing line not found", "waypoints": []}), 404
+    return jsonify({
+        "path": master_node.path,
+        "count": len(waypoints),
+        "waypoints": waypoints,
+    })
+
+
+@app.route("/lines", methods=["GET"])
+def lines_endpoint():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    static_xy = [[w["x"], w["y"]] for w in _load_static_line(master_node.path)]
+    return jsonify({
+        "static": static_xy,
+        "dynamic": master_node.get_dynamic_line(),
+    })
 
 
 def start(node: MasterNode) -> None:

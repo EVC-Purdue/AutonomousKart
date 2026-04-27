@@ -6,7 +6,6 @@ import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from std_msgs.msg import String, Float32MultiArray, Float32
-from nav_msgs.msg import Odometry
 
 
 
@@ -91,7 +90,7 @@ class MasterNode(Node):
 
     def get_dynamic_line(self):
         with self._lock:
-            return dict(self.dynamic_line_dat)
+            return dict(self.dynamic_line_data)
 
     def logs_callback(self, msg):
         logs = json.loads(msg.data)

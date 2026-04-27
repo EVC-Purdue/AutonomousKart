@@ -15,7 +15,6 @@ class IMUNode(Node):
         )
 
         self.sim_mode = self.get_parameter("simulation_mode").value
-        self.sim_mode = False
 
         self.imu_pub = self.create_publisher(Odometry, "imu_data", 5)
 

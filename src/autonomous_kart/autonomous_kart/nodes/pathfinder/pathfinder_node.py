@@ -57,6 +57,11 @@ class PathfinderNode(Node):
         self.approach_dist_m = float(self.get_parameter("approach_dist_m").value)
         self.min_approach_speed_pct = float(self.get_parameter("min_approach_speed_pct").value)
 
+        self.search_window = int(self.get_parameter("search_window").value)
+        self.initial_sync_done = bool(self.get_parameter("initial_sync_done").value)
+        self.max_resync_dist = float(self.get_parameter("max_resync_dist").value)
+        self.max_closed_dist = float(self.get_parameter("max_closed_dist").value)
+
         self.pose_ready = False
         # self.pose_ready = True  # Dummy until localization works
         self.current_xy = (0.0, 0.0)
@@ -66,6 +71,7 @@ class PathfinderNode(Node):
         self.localization_sub = self.create_subscription(Odometry, "odom", self.localization, 10)
 
         self.closest_idx = 0
+
 
         self.metrics_publisher = self.create_publisher(
             Float32MultiArray, "pathfinder_params", 5
@@ -165,6 +171,40 @@ class PathfinderNode(Node):
             else:
                 lookahead_m = self.min_lookahead_m
 
+            # Keep the racing-line closest_idx fresh every tick so CTE reflects
+            # actual proximity, even while a dynamic (rejoin) line is active.
+            # Three-tier strategy:
+            #   1. First autonomous tick after pose_ready: full O(n) search so
+            #      we sync correctly regardless of spawn location.
+            #   2. Localization jump / huge off-track excursion: full search
+            #      again (windowed search would stay stuck in the old region).
+            #   3. Normal operation: bounded forward search with wrap for the
+            #      closed racing line.
+            if self.racing_line:
+                if not self.initial_sync_done:
+                    self.closest_idx = self._full_nearest_idx(
+                        self.racing_line, self.current_xy
+                    )
+                    self.initial_sync_done = True
+                else:
+                    if self.closest_idx < 0 or self.closest_idx >= len(self.racing_line):
+                        self.closest_idx = 0
+                    row = self.racing_line[self.closest_idx]
+                    dx = self.current_xy[0] - float(row[1])
+                    dy = self.current_xy[1] - float(row[2])
+                    if math.hypot(dx, dy) > self.max_resync_dist:
+                        self.closest_idx = self._full_nearest_idx(
+                            self.racing_line, self.current_xy
+                        )
+                    else:
+                        self.closest_idx = self._nearest_idx_forward(
+                            self.racing_line,
+                            self.current_xy,
+                            self.closest_idx,
+                            window=self.search_window,
+                            allow_wrap=True,
+                        )
+
             cte = self.line_manager.compute_cte(
                 self.current_xy, self.racing_line, self.closest_idx
             )
@@ -176,22 +216,36 @@ class PathfinderNode(Node):
                 cross_track_error=cte,
             )
             self.line_manager.update(kart_state)
+            # Manager may snap closest_idx on deactivation.
+            self.closest_idx = kart_state.closest_idx
 
             if self.line_manager.is_active:
-                line, dyn_idx = self.line_manager.get_line_and_idx()
-                # Swap for pick_lookahead_point
-                orig_line, orig_idx = self.racing_line, self.closest_idx
-                self.racing_line = line
-                self.closest_idx = dyn_idx
-
-                target_xy, speed_ref_pct = self.pick_lookahead_point(lookahead_m)
-
-                self.line_manager.set_dynamic_closest_idx(self.closest_idx)
-                self.racing_line = orig_line
-                self.closest_idx = kart_state.closest_idx  # May have been updated by manager
+                dyn_line, dyn_idx = self.line_manager.get_line_and_idx()
+                if not dyn_line or dyn_idx < 0:
+                    # get_line_and_idx() can fall back to the closed racing line
+                    # Fallback to normal lookahead
+                    target_xy, speed_ref_pct = self.pick_lookahead_point(
+                        self.racing_line, self.closest_idx, lookahead_m
+                    )
+                else:
+                    # Dynamic lines (e.g. Bezier rejoin) are short and never closed,
+                    # so the forward search must NOT wrap — wrapping would let the
+                    # search snap back to idx 0 and pick a point behind the kart.
+                    dyn_idx = self._nearest_idx_forward(
+                        dyn_line,
+                        self.current_xy,
+                        dyn_idx,
+                        window=self.search_window,
+                        allow_wrap=False,
+                    )
+                    target_xy, speed_ref_pct = self.pick_lookahead_point(
+                        dyn_line, dyn_idx, lookahead_m
+                    )
+                    self.line_manager.set_dynamic_closest_idx(dyn_idx)
             else:
-                self.closest_idx = kart_state.closest_idx
-                target_xy, speed_ref_pct = self.pick_lookahead_point(lookahead_m)
+                target_xy, speed_ref_pct = self.pick_lookahead_point(
+                    self.racing_line, self.closest_idx, lookahead_m
+                )
 
             motor_pct, steering_pct = pathfinder(
                 current_xy=self.current_xy,
@@ -322,16 +376,87 @@ class PathfinderNode(Node):
             return 1.0
         return x
 
-    def pick_lookahead_point(self, lookahead_m: float) -> Tuple[Tuple[float, float], float]:
-        """
-        Returns:
-          target_xy: (x_m, y_m) lookahead point on the racing line in map frame
-          speed_ref_pct: desired speed at that point as fraction of v_max_mps in [0..1]
+    @staticmethod
+    def _nearest_idx_forward(
+        line: list,
+        xy: Tuple[float, float],
+        start_idx: int,
+        window: int,
+        allow_wrap: bool,
+    ) -> int:
+        """Bounded forward nearest-index search.
 
-        Core idea (Pure Pursuit / Nav2 RPP): pick a point L meters ahead along the path.
-        Copied from Nav2
+        With allow_wrap=True the index wraps modulo len(line), which is only
+        safe on closed tracks. With allow_wrap=False the scan stops at the end
+        of the line so a short open path (e.g. a Bezier rejoin) cannot snap
+        backwards to a point behind the current progress.
         """
-        line = self.racing_line
+        n = len(line)
+        if n == 0:
+            return 0
+        if start_idx < 0 or start_idx >= n:
+            start_idx = 0
+        if allow_wrap:
+            max_offset = min(window, n)
+        else:
+            max_offset = min(window, n - start_idx)
+        best_i = start_idx
+        best_d2 = float("inf")
+        cx, cy = xy
+        for offset in range(max_offset):
+            if allow_wrap:
+                i = (start_idx + offset) % n
+            else:
+                i = start_idx + offset
+            dx = line[i][1] - cx
+            dy = line[i][2] - cy
+            d2 = dx * dx + dy * dy
+            if d2 < best_d2:
+                best_d2 = d2
+                best_i = i
+        return best_i
+
+    @staticmethod
+    def _full_nearest_idx(line: list, xy: Tuple[float, float]) -> int:
+        """O(n) full-line nearest search. Used for initial sync and resync
+        when the kart has moved far from the previously tracked index."""
+        n = len(line)
+        if n == 0:
+            return 0
+        cx, cy = xy
+        best_i = 0
+        best_d2 = float("inf")
+        for i in range(n):
+            dx = line[i][1] - cx
+            dy = line[i][2] - cy
+            d2 = dx * dx + dy * dy
+            if d2 < best_d2:
+                best_d2 = d2
+                best_i = i
+        return best_i
+
+    def pick_lookahead_point(
+        self,
+        line: list,
+        closest_idx: int,
+        lookahead_m: float,
+    ) -> Tuple[Tuple[float, float], float]:
+        """Pure-function lookahead pick from a given line and closest index.
+
+        Callers are responsible for keeping closest_idx fresh via the
+        `_nearest_idx_forward` / `_full_nearest_idx` helpers. Does not read
+        or mutate self.racing_line or self.closest_idx — this decoupling lets
+        the autonomous loop run the same logic on the racing line and on a
+        dynamic (rejoin) line without a fragile swap-and-restore pattern.
+
+        Returns:
+          target_xy: (x_m, y_m) lookahead point on `line` in map frame
+          speed_ref_pct: desired speed at that point as fraction of
+            v_max_mps in [0..1]
+
+        Core idea (Pure Pursuit / Nav2 RPP): pick a point L meters ahead along
+        the path.
+        """
         n = len(line)
         if n == 0:
             return self.current_xy, 0.0
@@ -339,34 +464,18 @@ class PathfinderNode(Node):
         if lookahead_m <= 0.0:
             lookahead_m = 0.01
 
-        cx, cy = self.current_xy
-
-        # Find closest index - windowed
-        # Tune these bounds
-        best_i = self.closest_idx
-        if best_i < 0 or best_i >= n:
-            best_i = 0
-
-        best_d2 = float("inf")
-        search_start = best_i
-        for offset in range(80):  # only look forward
-            i = (search_start + offset) % n
-            dx = line[i][1] - cx
-            dy = line[i][2] - cy
-            d2 = dx * dx + dy * dy
-            if d2 < best_d2:
-                best_d2 = d2
-                best_i = i
-
-        self.closest_idx = best_i
+        if closest_idx < 0 or closest_idx >= n:
+            closest_idx = 0
 
         # Use arc-length s_m to pick the lookahead point
-        s0 = float(line[best_i][0])  # s_m at closest point
+        s0 = float(line[closest_idx][0])  # s_m at closest point
         s_target = s0 + float(lookahead_m)
 
         # Decide if this is a closed track. Most racing lines are one closed lap.
         s_end = float(line[-1][0])
-        closed = s_end > 0.0 and (math.hypot(line[0][1] - line[-1][1], line[0][2] - line[-1][2]) < 2.0)
+        closed = s_end > 0.0 and (
+            math.hypot(line[0][1] - line[-1][1], line[0][2] - line[-1][2]) <= self.max_closed_dist
+        )
 
         if closed and s_target > s_end:
             s_target -= s_end  # wrap around to start
@@ -379,7 +488,7 @@ class PathfinderNode(Node):
                 j = n - 1
         else:
             # search forward from closest index (monotonic s)
-            j = best_i
+            j = closest_idx
             while j < n and float(line[j][0]) < s_target:
                 j += 1
             if j >= n:
@@ -387,7 +496,7 @@ class PathfinderNode(Node):
 
         tx = float(line[j][1])
         ty = float(line[j][2])
-        vx_mps = float(line[j][5])  # vx_mps column
+        vx_mps = float(line[j][5]) if len(line[j]) > 5 else 0.0
         speed_ref_pct = self._clamp01(vx_mps / self.v_max_mps) if self.v_max_mps > 1e-6 else 0.0
 
         return (tx, ty), speed_ref_pct

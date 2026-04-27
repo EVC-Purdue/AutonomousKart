@@ -8,6 +8,7 @@ from rclpy.node import Node
 from std_msgs.msg import String, Float32MultiArray, Float32
 
 
+
 class STATES(Enum):
     IDLE = "IDLE"
     MANUAL = "MANUAL"
@@ -26,6 +27,7 @@ class MasterNode(Node):
         self.logger = self.get_logger()
         self.state = self.get_parameter("system_state").value
         self.system_frequency = self.get_parameter("system_frequency").value
+        self.path = self.get_parameter("line_path").value
 
         assert self.state in [s.value for s in STATES]
 
@@ -49,7 +51,15 @@ class MasterNode(Node):
         )
 
         # Odom + command state for viz
-        self.odom_data = {"x": 0.0, "y": 0.0, "yaw": 0.0, "speed": 0.0}
+        self.odom_data = {
+            "x": 0.0, "y": 0.0, "z": 0.0,
+            "yaw": 0.0,
+            "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0,
+            "vx": 0.0, "vy": 0.0, "vz": 0.0,
+            "wx": 0.0, "wy": 0.0, "wz": 0.0,
+            "speed": 0.0,
+            "stamp_ns": 0,
+        }
         self.cmd_data = {"motor": 0.0, "steer": 0.0}
 
         self.odom_subscriber = self.create_subscription(
@@ -62,7 +72,25 @@ class MasterNode(Node):
         self.create_subscription(Float32, "cmd_vel", self._velocity_callback, 5)
         self.create_subscription(Float32, "cmd_turn", self._turn_callback, 5)
 
+        # Dynamic line output
+        self.dynamic_line_data = {"active": False, "strategy": None, "merge_idx": -1, "points": []}
+        self.create_subscription(
+            String, "pathfinder/dynamic_line", self.dynamic_line_callback, 1
+        )
+
         self.logger.info("Initialize Master Node")
+
+    def dynamic_line_callback(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            return
+        with self._lock:
+            self.dynamic_line_data = data
+
+    def get_dynamic_line(self):
+        with self._lock:
+            return dict(self.dynamic_line_data)
 
     def logs_callback(self, msg):
         logs = json.loads(msg.data)
@@ -96,12 +124,23 @@ class MasterNode(Node):
     def odom_callback(self, msg: Odometry):
         p = msg.pose.pose.position
         q = msg.pose.pose.orientation
+        tl = msg.twist.twist.linear
+        ta = msg.twist.twist.angular
         import math
-        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        yaw = math.atan2(
+            2.0 * (q.w * q.z + q.x * q.y),
+            1.0 - 2.0 * (q.y * q.y + q.z * q.z),
+        )
+        stamp = msg.header.stamp
         with self._lock:
             self.odom_data = {
-                "x": p.x, "y": p.y, "yaw": yaw,
-                "speed": msg.twist.twist.linear.x,
+                "x": p.x, "y": p.y, "z": p.z,
+                "yaw": yaw,
+                "qx": q.x, "qy": q.y, "qz": q.z, "qw": q.w,
+                "vx": tl.x, "vy": tl.y, "vz": tl.z,
+                "wx": ta.x, "wy": ta.y, "wz": ta.z,
+                "speed": tl.x,
+                "stamp_ns": stamp.sec * 1_000_000_000 + stamp.nanosec,
             }
 
     def _velocity_callback(self, msg: Float32):

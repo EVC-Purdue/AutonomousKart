@@ -43,7 +43,7 @@ class IMUNode(Node):
         self.calibrationSampleNum = int(sample_time * self.poll_rate) # type: ignore
         caliList = np.zeros((3, self.calibrationSampleNum)).tolist()
         self.needsCalibration: list[list[float]] | None = caliList
-        self.gravity = {"x": 0.0, "y": 0.0, "z": 0.0}
+        self.gravity = (0.0, 0.0, 0.0)
 
     def timer_callback(self):
         if self.sim_mode:
@@ -83,9 +83,9 @@ class IMUNode(Node):
         if not self.needsCalibration:
             # Default codepath
             gyro_compensated = (
-                gyro["x"] - self.gravity["x"],
-                gyro["y"] - self.gravity["y"],
-                gyro["z"] - self.gravity["z"],
+                gyro["x"] - self.gravity[0],
+                gyro["y"] - self.gravity[1],
+                gyro["z"] - self.gravity[2],
             )
             self.imu_data_gyro = gyro_compensated
             self.imu_data_accel = (accel["x"], accel["y"], accel["z"])  # type: ignore
@@ -98,9 +98,7 @@ class IMUNode(Node):
         self.needsCalibration[2][self.calibrationSampleNum] = gyro["z"]
         if self.calibrationSampleNum == 0:
             x, y, z = self.needsCalibration
-            self.gravity["x"] = sum(x) / len(x)
-            self.gravity["y"] = sum(y) / len(y)
-            self.gravity["z"] = sum(z) / len(z)
+            self.gravity = (sum(x) / len(x), sum(y) / len(y), sum(z) / len(z))
             self.needsCalibration = None
             self.get_logger().info(
                 f"IMU Calibration complete - Gravity: {self.gravity}"

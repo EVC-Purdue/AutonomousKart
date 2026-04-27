@@ -4,6 +4,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, MultiArrayDimension
 from mpu6050 import mpu6050
 import numpy as np
+import random
 
 
 class IMUNode(Node):
@@ -15,6 +16,7 @@ class IMUNode(Node):
         )
 
         self.sim_mode = self.get_parameter("simulation_mode").value
+        self.sim_mode = False
 
         self.imu_pub = self.create_publisher(Float32MultiArray, "imu_data", 5)
 
@@ -36,6 +38,12 @@ class IMUNode(Node):
         self.sensor = None
         if not self.sim_mode:
             self.sensor = mpu6050(0x68)
+
+        sample_time = self.get_parameter("gravity_comp_time").value
+        self.calibrationSampleNum = int(sample_time * self.poll_rate) # type: ignore
+        caliList = np.zeros((3, self.calibrationSampleNum)).tolist()
+        self.needsCalibration: list[list[float]] | None = caliList
+        self.gravity = {"x": 0.0, "y": 0.0, "z": 0.0}
 
     def timer_callback(self):
         if self.sim_mode:
@@ -72,7 +80,34 @@ class IMUNode(Node):
         accel = self.sensor.get_accel_data()
         gyro = self.sensor.get_gyro_data()
 
-        self.imu_data_gyro = (gyro["x"], gyro["y"], gyro["z"])
+        if not self.needsCalibration:
+            # Default codepath
+            gyro_compensated = (
+                gyro["x"] - self.gravity["x"],
+                gyro["y"] - self.gravity["y"],
+                gyro["z"] - self.gravity["z"],
+            )
+            self.imu_data_gyro = gyro_compensated
+            self.imu_data_accel = (accel["x"], accel["y"], accel["z"])  # type: ignore
+            return
+
+        # Calibration codepath
+        self.calibrationSampleNum -= 1
+        self.needsCalibration[0][self.calibrationSampleNum] = gyro["x"]
+        self.needsCalibration[1][self.calibrationSampleNum] = gyro["y"]
+        self.needsCalibration[2][self.calibrationSampleNum] = gyro["z"]
+        if self.calibrationSampleNum == 0:
+            x, y, z = self.needsCalibration
+            self.gravity["x"] = sum(x) / len(x)
+            self.gravity["y"] = sum(y) / len(y)
+            self.gravity["z"] = sum(z) / len(z)
+            self.needsCalibration = None
+            self.get_logger().info(
+                f"IMU Calibration complete - Gravity: {self.gravity}"
+            )
+
+        # No acceleration compensation
+        self.imu_data_gyro = (0.0, 0.0, 0.0)
         self.imu_data_accel = (accel["x"], accel["y"], accel["z"])  # type: ignore
 
     def sim_poll(self):

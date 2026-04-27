@@ -9,3 +9,4 @@ python-can
 flask
 flask-cors
 mpu6050-raspberrypi
+smbus

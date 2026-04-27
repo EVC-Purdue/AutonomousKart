@@ -1,3 +1,4 @@
 imu_node:
   ros__parameters:
     poll_frequency: 60  # Hz
+    gravity_comp_time: 2  # seconds

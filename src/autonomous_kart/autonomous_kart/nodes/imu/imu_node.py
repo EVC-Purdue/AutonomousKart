@@ -1,10 +1,9 @@
 import traceback
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray, MultiArrayDimension
+from nav_msgs.msg import Odometry
 from mpu6050 import mpu6050
 import numpy as np
-import random
 
 
 class IMUNode(Node):
@@ -18,12 +17,7 @@ class IMUNode(Node):
         self.sim_mode = self.get_parameter("simulation_mode").value
         self.sim_mode = False
 
-        self.imu_pub = self.create_publisher(Float32MultiArray, "imu_data", 5)
-
-        self.imu_layout = [
-            MultiArrayDimension(label="rows", size=2, stride=6),
-            MultiArrayDimension(label="cols", size=3, stride=3),
-        ]
+        self.imu_pub = self.create_publisher(Odometry, "imu_data", 5)
 
         self.poll_rate = self.get_parameter("poll_frequency").value
         self.timer = self.create_timer(1.0 / self.poll_rate, self.timer_callback)  # type: ignore
@@ -51,23 +45,19 @@ class IMUNode(Node):
         else:
             self.real_poll()
 
-        # Format data into a 2x3 array
-        imu_msg = Float32MultiArray()
-        imu_msg.layout.dim = self.imu_layout
-        imu_msg.layout.data_offset = 0
-        imu_msg.data = [
-            self.imu_data_gyro[0],
-            self.imu_data_gyro[1],
-            self.imu_data_gyro[2],
-            ######################
-            self.imu_data_accel[0],
-            self.imu_data_accel[1],
-            self.imu_data_accel[2],
-        ]
+        imu_msg = Odometry()
+        imu_msg.header.stamp = self.get_clock().now().to_msg()
+        imu_msg.header.frame_id = "base_link" # Unknown source of this field
+        imu_msg.child_frame_id = "imu_link"
 
-        # Output as a 2x3 float array:
-        # [[accel_x, accel_y, accel_z], [gyro_x, gyro_y, gyro_z]]
-        #  [forward,  left,     up   ], [ roll ,  pitch,  yaw  ]
+        imu_msg.twist.twist.angular.x = float(self.imu_data_gyro[0])
+        imu_msg.twist.twist.angular.y = float(self.imu_data_gyro[1])
+        imu_msg.twist.twist.angular.z = float(self.imu_data_gyro[2])
+
+        imu_msg.twist.twist.linear.x = float(self.imu_data_accel[0])
+        imu_msg.twist.twist.linear.y = float(self.imu_data_accel[1])
+        imu_msg.twist.twist.linear.z = float(self.imu_data_accel[2])
+
         self.imu_pub.publish(imu_msg)
         # self.get_logger().info(f"Published IMU data: {imu_msg.data}")
 

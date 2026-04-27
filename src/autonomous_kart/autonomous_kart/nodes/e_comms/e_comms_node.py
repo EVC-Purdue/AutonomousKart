@@ -48,6 +48,7 @@ class ECommsNode(Node):
             try:
                 self.bus: Optional[can.interface.Bus] = can.interface.Bus(interface="slcan", channel=CAN_CHANNEL, bitrate=CAN_BITRATE)
                 self.can_notifier: Optional[can.Notifier] = can.Notifier(self.bus, [self._on_can_msg])
+                self.logger.info(f"Connected to CAN device on {CAN_CHANNEL} at {CAN_BITRATE} baud")
             except FileNotFoundError:
                 self.logger.error(f"Can device not connected on {CAN_CHANNEL}")
                 self.simulation_mode = True  # Running on-device, off-kart
@@ -57,6 +58,7 @@ class ECommsNode(Node):
         else:
             self.bus: Optional[can.interface.Bus] = None
             self.can_notifier: Optional[can.Notifier] = None
+            self.logger.info("Running in simulation mode, CAN bus disabled")
 
         # Logging
         self.cmd_count: int = 0

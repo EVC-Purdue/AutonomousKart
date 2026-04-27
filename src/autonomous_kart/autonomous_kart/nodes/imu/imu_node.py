@@ -2,13 +2,8 @@ import traceback
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, MultiArrayDimension
-from adafruit_bno08x import (
-    BNO_REPORT_ACCELEROMETER,
-    BNO_REPORT_GYROSCOPE,
-    # BNO_REPORT_ROTATION_VECTOR,
-)
-from adafruit_bno08x.uart import BNO08X_UART
-import serial
+from mpu6050 import mpu6050
+import numpy as np
 
 
 class IMUNode(Node):
@@ -29,7 +24,7 @@ class IMUNode(Node):
         ]
 
         self.poll_rate = self.get_parameter("poll_frequency").value
-        self.timer = self.create_timer(1.0 / self.poll_rate, self.timer_callback) # type: ignore
+        self.timer = self.create_timer(1.0 / self.poll_rate, self.timer_callback)  # type: ignore
 
         self.imu_data_gyro: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self.imu_data_accel: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -40,10 +35,7 @@ class IMUNode(Node):
 
         self.sensor = None
         if not self.sim_mode:
-            self.sensor = BNO08X_UART(serial.Serial("/dev/serial0", 115200))
-            self.sensor.enable_feature(BNO_REPORT_ACCELEROMETER)
-            self.sensor.enable_feature(BNO_REPORT_GYROSCOPE)
-            # self.sensor.enable_feature(BNO_REPORT_ROTATION_VECTOR)
+            self.sensor = mpu6050(0x68)
 
     def timer_callback(self):
         if self.sim_mode:
@@ -77,15 +69,11 @@ class IMUNode(Node):
         if self.sensor is None:
             return
 
-        # Poll the sensor for new data
-        accel_x, accel_y, accel_z = self.sensor.acceleration  # type: ignore
-        gyro_x, gyro_y, gyro_z = self.sensor.gyro  # type: ignore
+        accel = self.sensor.get_accel_data()
+        gyro = self.sensor.get_gyro_data()
 
-        # Rotation Vector Quaternion:
-        # quat_i, quat_j, quat_k, quat_real = self.sensor.quaternion
-
-        self.imu_data_gyro = (gyro_x, gyro_y, gyro_z)
-        self.imu_data_accel = (accel_x, accel_y, accel_z)
+        self.imu_data_gyro = (gyro["x"], gyro["y"], gyro["z"])
+        self.imu_data_accel = (accel["x"], accel["y"], accel["z"])  # type: ignore
 
     def sim_poll(self):
         self.imu_data_gyro = (0.0, 0.0, 0.0)

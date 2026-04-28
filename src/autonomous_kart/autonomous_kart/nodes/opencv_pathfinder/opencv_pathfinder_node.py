@@ -1,7 +1,3 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(__file__))
-
 import traceback
 
 from cv_bridge import CvBridge
@@ -14,8 +10,7 @@ from rclpy.qos import DurabilityPolicy, ReliabilityPolicy, QoSProfile
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 
-from angle import AngleFinder
-
+from autonomous_kart.nodes.opencv_pathfinder.angle import AngleFinder
 
 class OpenCVPathfinderNode(Node):
     def __init__(self):
@@ -73,7 +68,7 @@ class OpenCVPathfinderNode(Node):
             self.frames_since_last_log = 0
 
         # Publish angles
-        right_angle, left_angle = self.angle_finder.get_img_angles(frame, percent=0.0)
+        right_angle, left_angle = self.angle_finder.get_img_angles(frame, debug=False, percent=0.0, pixel_range=3, pic_offset=5)
         msg = Float32MultiArray()
         msg.data = [
             float(right_angle) if right_angle is not None else float('nan'),

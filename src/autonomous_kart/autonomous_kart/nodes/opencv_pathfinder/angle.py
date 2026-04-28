@@ -92,6 +92,9 @@ class AngleFinder:
 
         if image is None or right is None or left is None:
             return (None, None)
+        
+        if image is not None and debug is True:
+            cv.imwrite("debug_mask.png", image)
 
         w = img.shape[1]
         width = w - 1 - pic_offset

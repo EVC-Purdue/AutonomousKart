@@ -1,20 +1,17 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(__file__))
-
 import cv2 as cv
 import numpy as np
-import utils
+from rclpy.node import Node
+from autonomous_kart.nodes.opencv_pathfinder import utils
 
 KERNEL = np.ones((3,3), np.uint8)
 LOWER_RED = np.array([0,0,70])
 UPPER_RED = np.array([200,50,255])
 
 class AngleFinder:
-    def __init__(self, node):
+    def __init__(self, node: Node):
         self.prev_right = None
         self.prev_left = None
-        self.logger = node
+        self.logger = node.get_logger()
 
     # @param vid: Video
     # @param debug: Draws lines on image
@@ -116,7 +113,7 @@ class AngleFinder:
     # @ret Masked image mage or None
     def get_img_mask(self, img: np.ndarray, debug=False, percent=0.0, pixel_range=3, pic_offset=5):
         if img is None:
-            self.error.logger('Error opening image!')
+            self.logger.error('Error opening image!')
             return None, None, None
         
         # Roi mask for a portion of image

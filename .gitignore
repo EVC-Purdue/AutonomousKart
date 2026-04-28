@@ -177,7 +177,3 @@ cython_debug/
 install
 log
 build
-
-#Local testing files (Danny)
-**/profiler.py
-**/convert.sh

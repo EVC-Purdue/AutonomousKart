@@ -92,11 +92,16 @@ class GpsNode(Node):
         if not chunk:
             return
 
+        self.logger.info(f"RAW {len(chunk)}B: {chunk[:80]!r}")
+
         self.buffer += chunk.decode("ascii", errors="ignore")
 
         while "\n" in self.buffer:
             line, self.buffer = self.buffer.split("\n", 1)
-            self.parse(line.strip())
+            try:
+                self.parse(line.strip())
+            except Exception as e:
+                self.logger.error(f"parse crash on '{line}': {e}")
 
     def parse(self, msg: str):
         if not msg.startswith("$"):

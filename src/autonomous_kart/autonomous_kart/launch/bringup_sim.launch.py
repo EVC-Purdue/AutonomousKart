@@ -1,13 +1,39 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction
+from launch.actions import DeclareLaunchArgument, GroupAction, ExecuteProcess
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetParameter, SetParametersFromFile
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_share_directory, get_package_prefix
+from pathlib import Path
 import os
+
+
+def _get_camera_binary(pkg_share: str) -> str:
+    """Resolve camera binary path.
+
+    Prefer the installed prefix for `autonomous_kart_cpp` if available;
+    fall back to deriving the sibling install layout relative to `pkg_share`.
+    """
+    try:
+        prefix = get_package_prefix("autonomous_kart_cpp")
+        candidate = Path(prefix) / "lib" / "autonomous_kart_cpp" / "camera_node"
+        if candidate.exists():
+            return str(candidate)
+    except Exception:
+        pass
+
+    # fallback derived path (works in typical overlay layout)
+    return str(
+        Path(pkg_share).resolve().parents[2]
+        / "autonomous_kart_cpp"
+        / "lib"
+        / "autonomous_kart_cpp"
+        / "camera_node"
+    )
 
 
 def generate_launch_description():
     pkg_share = get_package_share_directory("autonomous_kart")
+    camera_binary = _get_camera_binary(pkg_share)
 
     motor_yaml = os.path.join(pkg_share, "params", "motor.yaml")
     steering_yaml = os.path.join(pkg_share, "params", "steering.yaml")
@@ -39,11 +65,16 @@ def generate_launch_description():
                         name="steering_node",
                         parameters=[steering_yaml],
                     ),
-                    Node(
-                        package="autonomous_kart",
-                        executable="camera_node",
-                        name="camera_node",
-                        parameters=[camera_yaml],
+                    ExecuteProcess(
+                        cmd=[
+                            str(camera_binary),
+                            "--ros-args",
+                            "-r",
+                            "__node:=camera_node",
+                            "--params-file",
+                            camera_yaml,
+                        ],
+                        output="screen",
                     ),
                     Node(
                         package="autonomous_kart",

@@ -102,13 +102,7 @@ class GpsNode(Node):
         if not msg.startswith("$"):
             return
 
-        fields_str = msg.split(",")
-        fields = []
-        for f_str in fields_str:
-            try:
-                fields.append(float(f_str))
-            except ValueError:
-                self.logger.info(f"Error converting: {f_str}")
+        fields = msg.split(",")
         gng_type = fields[0][1:]
 
         if gng_type[:3] != "GNG":
@@ -132,7 +126,8 @@ class GpsNode(Node):
         lon_direction = fields[5]
         fix_quality = int(fields[6]) if fields[6] else 0
         num_satellites = fields[7]
-        hdop = fields[8]
+        hdop = float(fields[8])
+        altitude = float(fields[9])
 
         if not lat or not lon or not lat_direction or not lon_direction:
             return

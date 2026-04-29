@@ -126,8 +126,8 @@ class GpsNode(Node):
         lon_direction = fields[5]
         fix_quality = int(fields[6]) if fields[6] else 0
         num_satellites = fields[7]
-        hdop = float(fields[8])
-        altitude = float(fields[9])
+        hdop = float(fields[8]) if fields[8] else 0.0
+        altitude = float(fields[9]) if fields[9] else 0.0
 
         if not lat or not lon or not lat_direction or not lon_direction:
             return
@@ -156,8 +156,8 @@ class GpsNode(Node):
         if not fields[16] or not fields[17]:
             return
         
-        hdop = float(fields[16]) ** 2
-        vdop = float(fields[17]) ** 2
+        hdop = float(fields[16]) ** 2 if fields[16] else 0.0
+        vdop = float(fields[17]) ** 2 if fields[17] else 0.0
 
         self.gps_data_cov[0] = hdop
         self.gps_data_cov[7] = hdop

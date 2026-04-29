@@ -78,8 +78,6 @@ class GpsNode(Node):
         msg.pose.pose.orientation = self.gps_data_quaternion
 
         msg.pose.covariance = self.gps_data_cov
-        self.logger.info(f"GPS Measurement: {msg}")
-        self.logger.info(f"GPS Cov: {msg.pose.covariance}")
         self.logger.info(f"GPS Pos: {msg.pose.pose.position}")
         self.gps_publisher.publish(msg)
 

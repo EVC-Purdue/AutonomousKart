@@ -31,12 +31,13 @@ class GpsNode(Node):
         self.gps_data_pos: list[float] = [0.0, 0.0, 0.0]
         self.gps_data_quaternion = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0) # Left as identity
         self.gps_data_cov: list[float] = [0.0] * 36
-        self.gps_data_cov[21] = -1.0
-        self.gps_data_cov[28] = -1.0
-        self.gps_data_cov[35] = -1.0
-        
+        self.gps_data_cov[21] = 1e6  # roll
+        self.gps_data_cov[28] = 1e6  # pitch
+        self.gps_data_cov[35] = 1e6  # yaw
+
         self.origin_lat = None
         self.origin_lon = None
+        self.use_gst = False
 
         self.logger.info(
             f"Gps Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}"
@@ -99,7 +100,13 @@ class GpsNode(Node):
         if not msg.startswith("$"):
             return
 
-        fields = msg.split(",")
+        fields_str = msg.split(",")
+        fields = []
+        for f_str in fields_str:
+            try:
+                fields.append(float(f_str))
+            except ValueError:
+                self.logger.info(f"Error converting: {f_str}")
         gng_type = fields[0][1:]
 
         if gng_type[:3] != "GNG":
@@ -109,26 +116,44 @@ class GpsNode(Node):
             case "GGA":
                 self.handle_gga(fields)
             case "GSA":
-                self.handle_gsa(fields)
+                # self.handle_gsa(fields)
+                pass
+            case "GST":
+                self.handle_gst(fields)
             case "RMC":
                 self.handle_rmc(fields)
-
 
     def handle_gga(self, fields):
         lat = fields[2]
         lat_direction = fields[3]
-
         lon = fields[4]
         lon_direction = fields[5]
+        fix_quality = int(fields[6]) if fields[6] else 0
+        num_satellites = fields[7]
+        hdop = fields[8]
 
         if not lat or not lon or not lat_direction or not lon_direction:
             return
 
-        num_satellites = fields[7]
-        hdop = fields[8]
-        
+
         self.gps_to_coords(lat, lat_direction, lon, lon_direction)
-        
+
+        if not self.use_gst:
+            # Numbers below come from the GEM1305 spec.
+            sigma_per_hdop = {
+                4: 0.02,  # RTK fixed: ~2cm
+                5: 0.20,  # RTK float: ~20cm
+                2: 1.0,  # DGPS: ~1m
+                1: 2.5,  # standalone: ~2.5m
+                0: 100.0,  # no fix
+            }.get(fix_quality, 5.0)
+
+            sigma = hdop * sigma_per_hdop
+
+            self.gps_data_cov[0] = sigma ** 2  # sigma_x (east)
+            self.gps_data_cov[7] = sigma ** 2  # sigma_y (north)
+            self.gps_data_cov[14] = sigma ** 2  # sigma_z (vertical)
+
 
     def handle_gsa(self, fields):
         if not fields[16] or not fields[17]:
@@ -140,10 +165,26 @@ class GpsNode(Node):
         self.gps_data_cov[0] = hdop
         self.gps_data_cov[7] = hdop
         self.gps_data_cov[14] = vdop
-        self.gps_data_cov[21] = -1.0
-        self.gps_data_cov[28] = -1.0
-        self.gps_data_cov[35] = -1.0
+        self.gps_data_cov[21] = 1e6
+        self.gps_data_cov[28] = 1e6
+        self.gps_data_cov[35] = 1e6
 
+    def handle_gst(self, fields):
+        """
+        $GNGST,utc,rms,sigma_major,sigma_minor,orient_deg,sigma_lat,sigma_lon,sigma_alt*CS
+        """
+        sigma_n = float(fields[6]) if fields[6] else 0.0
+        sigma_e = float(fields[7]) if fields[7] else 0.0
+        sigma_u = float(fields[8]) if fields[8] else 0.0
+
+        # Real GPS sigma is never >1km.
+        if sigma_n <= 0.0 or sigma_e <= 0.0 or sigma_n > 1000.0 or sigma_e > 1000.0:
+            return
+
+        self.use_gst = True
+        self.gps_data_cov[0] = sigma_e ** 2  # sigma_x (east)
+        self.gps_data_cov[7] = sigma_n ** 2  # sigma_y (north)
+        self.gps_data_cov[14] = sigma_u ** 2  # sigma_z (up)
 
     def handle_rmc(self, fields):
         lat = fields[3]

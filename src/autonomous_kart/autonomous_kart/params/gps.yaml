@@ -2,3 +2,4 @@
 gps_node:
   ros__parameters:
     gps_frequency: 10  # Hz
+    gps_device: "/dev/ttyHS1"

@@ -1,12 +1,14 @@
 from launch import LaunchDescription
-from launch.actions import GroupAction
+from launch.actions import GroupAction, ExecuteProcess
 from launch_ros.actions import Node, SetParameter, SetParametersFromFile
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_share_directory, get_package_prefix
+from pathlib import Path
 import os
 
 
 def generate_launch_description():
     pkg_share = get_package_share_directory("autonomous_kart")
+    camera_binary = str(Path(pkg_share).resolve().parents[2] / "autonomous_kart_cpp" / "lib" / "autonomous_kart_cpp" / "camera_node")
 
     motor_yaml = os.path.join(pkg_share, "params", "motor.yaml")
     steering_yaml = os.path.join(pkg_share, "params", "steering.yaml")
@@ -35,11 +37,16 @@ def generate_launch_description():
                         name="steering_node",
                         parameters=[steering_yaml],
                     ),
-                    Node(
-                        package="autonomous_kart_cpp",
-                        executable="camera_node",
-                        name="camera_node",
-                        parameters=[camera_yaml],
+                    ExecuteProcess(
+                        cmd=[
+                            str(camera_binary),
+                            "--ros-args",
+                            "-r",
+                            "__node:=camera_node",
+                            "--params-file",
+                            camera_yaml,
+                        ],
+                        output="screen",
                     ),
                     Node(
                         package="autonomous_kart",

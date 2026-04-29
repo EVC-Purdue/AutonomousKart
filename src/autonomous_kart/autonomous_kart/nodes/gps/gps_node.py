@@ -4,7 +4,7 @@ import traceback
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from sensor_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray
 
 
 class GpsNode(Node):
@@ -14,12 +14,16 @@ class GpsNode(Node):
             allow_undeclared_parameters=True,
             automatically_declare_parameters_from_overrides=True
         )
-        self.create_publisher(Float32MultiArray, 'gps', 5)
+        self.gps_publisher = self.create_publisher(Float32MultiArray, 'gps', 5)
 
         self.last_callback_time = time.time()
         self.logger = self.get_logger()
 
         self.gps_frequency = self.get_parameter("gps_frequency").value
+        if not self.gps_frequency or self.gps_frequency <= 0:
+            self.logger.warning("No GPS frequency known, default 10")
+            self.gps_frequency = 10
+
         self.sim_mode = self.get_parameter("simulation_mode").value
 
         self.logger.info(f"Gps Frequency: {self.gps_frequency}")

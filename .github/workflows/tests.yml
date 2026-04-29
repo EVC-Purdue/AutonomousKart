@@ -1,0 +1,201 @@
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  colcon-test:
+    name: colcon build + test (devcontainer image)
+    runs-on: ubuntu-24.04
+    # Run every step inside the same image the devcontainer uses so rclpy,
+    # cv_bridge, OpenCV, and every ROS dep are preinstalled.
+    container:
+      image: ghcr.io/evc-purdue/ros2-humble-dev:main
+      options: --user root
+    env:
+      WS: /ws
+      ROS_DISTRO: humble
+      ROS_DOMAIN_ID: "77"
+      ROS_LOCALHOST_ONLY: "1"
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: ws-src
+
+      - name: Stage workspace source at /ws
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /ws/src /ws/data /ws/scripts
+          # cp -a preserves symlinks/perms and works in minimal images that
+          # don't ship rsync. The trailing /. copies directory contents
+          # rather than nesting the directory under itself.
+          cp -a "${GITHUB_WORKSPACE}/ws-src/src/." /ws/src/
+          cp -a "${GITHUB_WORKSPACE}/ws-src/data/." /ws/data/
+          cp -a "${GITHUB_WORKSPACE}/ws-src/scripts/." /ws/scripts/
+          cp -a "${GITHUB_WORKSPACE}/ws-src/requirements.txt" /ws/requirements.txt || true
+          ls /ws
+
+      - name: Restore colcon build cache
+        id: colcon-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            /ws/build
+            /ws/install
+            /ws/log
+          # Source hash intentionally excludes test/** so that test-only
+          # changes reuse the previous colcon build instead of triggering
+          # a full rebuild. Package metadata + non-test sources define
+          # what needs recompiling.
+          key: colcon-${{ runner.os }}-${{ hashFiles('ws-src/src/**/package.xml', 'ws-src/src/**/setup.py', 'ws-src/requirements.txt', 'ws-src/docker/Dockerfile') }}-${{ hashFiles('ws-src/src/**/*.py', '!ws-src/src/**/test/**') }}
+          restore-keys: |
+            colcon-${{ runner.os }}-${{ hashFiles('ws-src/src/**/package.xml', 'ws-src/src/**/setup.py', 'ws-src/requirements.txt', 'ws-src/docker/Dockerfile') }}-
+            colcon-${{ runner.os }}-
+
+      - name: Build
+        shell: bash
+        run: |
+          set -exo pipefail
+          source /opt/ros/humble/setup.bash
+          cd /ws
+          colcon build --packages-select autonomous_kart --symlink-install \
+            --cmake-args -DBUILD_TESTING=ON
+
+      - name: Install coverage tooling
+        shell: bash
+        run: |
+          set -exo pipefail
+          pip install --no-cache-dir pytest-cov coverage
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -exo pipefail
+          source /opt/ros/humble/setup.bash
+          source /ws/install/setup.bash
+          cd /ws
+          colcon test \
+            --packages-select autonomous_kart \
+            --event-handlers console_direct+ \
+            --pytest-args -rfEs --color=no \
+              --cov=autonomous_kart \
+              --cov-report=term \
+              --cov-report=json:/ws/coverage.json
+          colcon test-result --verbose
+
+      - name: Coverage report by node
+        if: always()
+        shell: bash
+        run: |
+          set -eo pipefail
+          python3 - <<'PY'
+          import json, os, sys
+          from collections import defaultdict
+
+          COV_PATH = "/ws/coverage.json"
+          NODES_DIR = "/ws/src/autonomous_kart/autonomous_kart/nodes"
+
+          if not os.path.exists(COV_PATH):
+              print("no coverage.json produced — skipping report")
+              sys.exit(0)
+
+          with open(COV_PATH) as f:
+              data = json.load(f)
+
+          per_node = defaultdict(lambda: {"stmts": 0, "covered": 0, "missing": 0})
+          for path, info in data.get("files", {}).items():
+              if "/nodes/" not in path:
+                  continue
+              node = path.split("/nodes/", 1)[1].split("/", 1)[0]
+              if node.startswith("__"):
+                  continue
+              s = info["summary"]
+              per_node[node]["stmts"]  += s["num_statements"]
+              per_node[node]["covered"] += s["covered_lines"]
+              per_node[node]["missing"] += s["missing_lines"]
+
+          # Nodes that were never imported during tests won't appear in the
+          # JSON at all — list them so the report shows "no tests".
+          if os.path.isdir(NODES_DIR):
+              for d in sorted(os.listdir(NODES_DIR)):
+                  full = os.path.join(NODES_DIR, d)
+                  if os.path.isdir(full) and not d.startswith("__"):
+                      per_node.setdefault(d, {"stmts": 0, "covered": 0, "missing": 0})
+
+          rows = []
+          for node, d in sorted(per_node.items()):
+              stmts = d["stmts"]
+              covered = d["covered"]
+              pct = (100.0 * covered / stmts) if stmts else 0.0
+              if stmts == 0:
+                  status = "no tests (never imported)"
+              elif covered == 0:
+                  status = "no tests"
+              elif pct >= 70:
+                  status = "tested"
+              else:
+                  status = "partial"
+              rows.append((node, stmts, covered, pct, status))
+
+          total_s = sum(r[1] for r in rows)
+          total_c = sum(r[2] for r in rows)
+          total_p = (100.0 * total_c / total_s) if total_s else 0.0
+
+          # ---- plain-text summary for the job log ----
+          name_w = max(10, max((len(r[0]) for r in rows), default=10))
+          print()
+          print("Coverage by node")
+          print("=" * (name_w + 40))
+          print(f"{'node'.ljust(name_w)}  {'stmts':>6}  {'cov':>6}  {'pct':>6}  status")
+          print("-" * (name_w + 40))
+          for node, s, c, p, st in rows:
+              print(f"{node.ljust(name_w)}  {s:>6}  {c:>6}  {p:>5.1f}%  {st}")
+          print("-" * (name_w + 40))
+          print(f"{'total'.ljust(name_w)}  {total_s:>6}  {total_c:>6}  {total_p:>5.1f}%")
+          print()
+
+          # ---- markdown version for the GitHub step summary ----
+          gh_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if gh_summary:
+              with open(gh_summary, "a") as f:
+                  f.write("## Coverage by node\n\n")
+                  f.write("| Node | Stmts | Covered | % | Status |\n")
+                  f.write("| --- | ---: | ---: | ---: | --- |\n")
+                  for node, s, c, p, st in rows:
+                      f.write(f"| `{node}` | {s} | {c} | {p:.1f} | {st} |\n")
+                  f.write(f"| **total** | **{total_s}** | **{total_c}** | **{total_p:.1f}** | |\n")
+          PY
+
+      - name: Upload coverage JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-json
+          path: /ws/coverage.json
+          if-no-files-found: ignore
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: colcon-test-logs
+          path: |
+            /ws/log/latest_test
+            /ws/build/autonomous_kart/test_results
+          if-no-files-found: ignore

@@ -5,5 +5,7 @@ empy==3.3.4
 lark-parser>=0.11
 pyyaml>=5
 catkin_pkg==0.4.24
-spidev==3.8
+python-can
 flask
+flask-cors
+pyserial

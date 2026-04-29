@@ -1,19 +1,55 @@
 import threading
+import os, csv
 
 import rclpy
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 
 from .master_node import MasterNode, STATES
 
 app = Flask(__name__)
+CORS(app)
 master_node: MasterNode | None = None
 
+@app.after_request
+def cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
 
 @app.route("/", methods=["GET"])
 def ping():
     return jsonify({"ping": "pong"})
 
+_STATIC_LINE_CACHE = None
 
+def _load_static_line(path):
+    """
+    Load racing line once
+    returns: list of full waypoint dicts
+    """
+    global _STATIC_LINE_CACHE
+    if _STATIC_LINE_CACHE is not None:
+        return _STATIC_LINE_CACHE
+    if not os.path.exists(path):
+        return []
+    rows = []
+    with open(path, "r") as f:
+        for row in f:
+            parts = row.strip().split(",")
+            if len(parts) >= 6:
+                try:
+                    rows.append({
+                        "s": float(parts[0]),
+                        "x": float(parts[1]),
+                        "y": float(parts[2]),
+                        "psi": float(parts[3]),
+                        "kappa": float(parts[4]),
+                        "vx": float(parts[5]),
+                    })
+                except ValueError:
+                    continue
+    _STATIC_LINE_CACHE = rows
+    return rows
 @app.route("/get_logs", methods=["GET"])
 def get_logs():
     if not master_node:
@@ -49,6 +85,62 @@ def set_state():
 
     master_node.update_state(state)
     return jsonify({"success": "ok"})
+
+@app.route("/get_state", methods=["GET"])
+def get_state():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify({"state": master_node.state})
+
+@app.route("/odom", methods=["GET"])
+def odom():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify(master_node.get_odom())
+
+
+@app.route("/racing_line", methods=["GET"])
+def racing_line():
+    path = master_node.path
+    if not os.path.exists(path):
+        return jsonify({"points": []})
+    points = []
+    with open(path, "r") as f:
+        for row in f:
+            parts = row.strip().split(",")
+            if len(parts) >= 3:
+                try:
+                    points.append([float(parts[1]), float(parts[2])])
+                except ValueError:
+                    continue
+    return jsonify({"points": points})
+
+
+@app.route("/viz")
+def viz():
+    return send_from_directory("/ws/viz", "viz.html")
+
+@app.route("/map", methods=["GET"])
+def map_endpoint():
+    waypoints = _load_static_line(master_node.path)
+    if not waypoints:
+        return jsonify({"error": "racing line not found", "waypoints": []}), 404
+    return jsonify({
+        "path": master_node.path,
+        "count": len(waypoints),
+        "waypoints": waypoints,
+    })
+
+
+@app.route("/lines", methods=["GET"])
+def lines_endpoint():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    static_xy = [[w["x"], w["y"]] for w in _load_static_line(master_node.path)]
+    return jsonify({
+        "static": static_xy,
+        "dynamic": master_node.get_dynamic_line(),
+    })
 
 
 def start(node: MasterNode) -> None:

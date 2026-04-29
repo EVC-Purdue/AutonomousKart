@@ -11,11 +11,16 @@ services:
       - ROS_DISTRO=humble
       - ROS_DOMAIN_ID=42
       - ROS_LOCALHOST_ONLY=1
+    ports:
+      - "8000:8000"
 #    devices:
+#      - "/dev/ttyACM0:/dev/ttyACM0"
 #      - "/dev/ttyHS2:/dev/ttyHS2"         # GNSS
 #      - "/dev/spidev12.0:/dev/spidev12.0" # SPI bus 12, CS0
     stdin_open: true
     tty: true
+    restart: always
+    command: bash /ws/scripts/start.bash
     network_mode: host
 volumes:
   ros_cache:

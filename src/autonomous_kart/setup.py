@@ -11,7 +11,7 @@ setup(
         "autonomous_kart.nodes",
         "autonomous_kart.nodes.motor",
         "autonomous_kart.nodes.steering",
-        # "autonomous_kart.nodes.camera",
+        "autonomous_kart.nodes.camera",
         "autonomous_kart.nodes.gps",
         "autonomous_kart.nodes.pathfinder",
         "autonomous_kart.nodes.opencv_pathfinder",
@@ -19,14 +19,13 @@ setup(
         "autonomous_kart.nodes.3dgs_localization",
         "autonomous_kart.nodes.metrics",
         "autonomous_kart.nodes.master",
+        "autonomous_kart.nodes.localization",
+        "autonomous_kart.nodes.pathfinder.strategies",
     ],
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
-        (
-            "share/" + package_name + "/launch",
-            glob("autonomous_kart/launch/*.py"),
-        ),  # Fixed path
+        ("share/" + package_name + "/launch", glob("autonomous_kart/launch/*.py")),  # Fixed path
         ("share/" + package_name + "/params", glob("autonomous_kart/params/*.yaml")),
     ],
     install_requires=["setuptools"],
@@ -46,10 +45,10 @@ setup(
             "opencv_pathfinder_node = autonomous_kart.nodes.opencv_pathfinder.opencv_pathfinder_node:main",
             "e_comms_node = autonomous_kart.nodes.e_comms.e_comms_node:main",
             "steering_node = autonomous_kart.nodes.steering.steering_node:main",
-            # 'camera_node = autonomous_kart.nodes.camera.camera_node:main',
-            # 'camera_node = autonomous_kart_cpp.camera_node_cpp:main',  # C++ node, not exposed via Python console_scripts
+            "camera_node = autonomous_kart.nodes.camera.camera_node:main",
             "metrics_node = autonomous_kart.nodes.metrics.metrics_node:main",
             "master_api = autonomous_kart.nodes.master.master_api:main",
+            "localization_node = autonomous_kart.nodes.localization.localization_node:main",
         ],
     },
 )

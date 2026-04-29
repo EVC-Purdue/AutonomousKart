@@ -17,6 +17,7 @@ def generate_launch_description():
     safety_yaml = os.path.join(pkg_share, "params", "safety.yaml")
     system_yaml = os.path.join(pkg_share, "params", "system.yaml")
     planner_yaml = os.path.join(pkg_share, "params", "pathfinder.yaml")
+    localization_yaml = os.path.join(pkg_share, "params", "localization.yaml")
 
     return LaunchDescription(
         [
@@ -58,13 +59,13 @@ def generate_launch_description():
                         package="autonomous_kart",
                         executable="pathfinder_node",
                         name="pathfinder_node",
-                        parameters=[planner_yaml, safety_yaml, gps_yaml],
+                        parameters=[planner_yaml, safety_yaml],
                     ),
                     Node(
                         package="autonomous_kart",
                         executable="opencv_pathfinder_node",
                         name="opencv_pathfinder_node",
-                        parameters=[planner_yaml, safety_yaml, gps_yaml],
+                        parameters=[],
                     ),
                     Node(
                         package="autonomous_kart",
@@ -80,6 +81,12 @@ def generate_launch_description():
                         package="autonomous_kart",
                         executable="master_api",
                         name="master_api",
+                    ),
+                    Node(
+                        package="autonomous_kart",
+                        executable="localization_node",
+                        name="localization_node",
+                        parameters=[planner_yaml, localization_yaml],
                     ),
                 ]
             ),

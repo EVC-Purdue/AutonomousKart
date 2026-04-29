@@ -11,7 +11,7 @@ def get_angle(zero_coord, middle_coord, road_coord):
     numerator = a*a - c*c - b*b
     denominator = -2 * c * b
 
-    if denominator == 0:
+    if math.isclose(denominator, 0):
         return None
 
     rads = math.acos( numerator / denominator)

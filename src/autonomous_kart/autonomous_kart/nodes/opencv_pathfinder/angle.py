@@ -1,6 +1,6 @@
 import cv2 as cv
 import numpy as np
-from rclpy.node import Node
+
 from autonomous_kart.nodes.opencv_pathfinder import utils
 
 KERNEL = np.ones((3,3), np.uint8)
@@ -8,85 +8,17 @@ LOWER_RED = np.array([0,0,70])
 UPPER_RED = np.array([200,50,255])
 
 class AngleFinder:
-    def __init__(self, node: Node):
+    def __init__(self, logger):
         self.prev_right = None
         self.prev_left = None
-        self.logger = node.get_logger()
-
-    # @param vid: Video
-    # @param debug: Draws lines on image
-    # @param percent: Percent of the road (top down)
-    # @param pixel_range: Range of pixels to check around previous pixel for O(1) lookup
-    # @param pic_offset: Pixel offset from edge of image
-    # @ret video or None
-    def get_video_mask(self, vid, debug=False, percent=0.0, pixel_range=3, pic_offset=5):
-        if vid is None:
-            self.logger.error("Error opening video")
-            return None
-        
-        r, f = vid.read()
-        if not r:
-            self.logger.error("Can't get initial video frame")
-            return None
-        h, w = f.shape[:2]
-        height, width = h - 1 - pic_offset, w - 1 - pic_offset
-
-        fps = vid.get(cv.CAP_PROP_FPS)
-        if fps == 0:
-            fps = 30
-
-        video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (w, h), isColor=False) 
-        vid.set(cv.CAP_PROP_POS_FRAMES, 0)
-
-        while (True):
-            ret, frame = vid.read()
-
-            if not ret:
-                break
-                
-            result, cur_right, cur_left = self.get_img_mask(frame, debug=debug, percent=percent, pic_offset=pic_offset, pixel_range=pixel_range)
-            
-            presult = np.zeros((h, w), dtype=result.dtype)
-
-            height = h - 1 - pic_offset
-            width = w - 1 - pic_offset
-            y_index = int(height * percent)
-
-            presult[y_index:height, pic_offset:width] = result
-
-            # Write debug info on video
-            if debug:
-                right_deg = utils.get_angle((width, pic_offset), (width // 2, pic_offset), cur_right)
-                left_deg = utils.get_angle((pic_offset, pic_offset), (width // 2, pic_offset), cur_left)
-
-                if right_deg is None:
-                    right_deg = -1
-                
-                if left_deg is None:
-                    left_deg = -1
-            
-                cv.putText(presult, f"Previous left: {self.prev_left}", (300, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv.putText(presult, f"Previous right: {self.prev_right}", (900, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-                cv.putText(presult, f"Current left: {cur_left}", (300, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv.putText(presult, f"Current right: {cur_right}", (900, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                
-
-                cv.putText(presult, f"{right_deg:.1f}", (1300, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv.putText(presult, f"{left_deg:.1f}", (100, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-            video.write(presult)
-        
-        vid.release()
-        video.release()
-        cv.destroyAllWindows()
+        self.logger = logger
 
     # @param img: Normal image
     # @param debug: Draws lines on image
     # @param percent: Percent of the road to cutoff (top down)
     # @param pixel_range: Range of pixels to check around previous pixel for O(1) lookup
     # @param pic_offset: Pixel offset from edge of image
-    # @ret image angles or None
+    # @ret image angles or None when cannot find angles/coords
     def get_img_angles(self, img, debug=False, percent=0.0, pixel_range=3, pic_offset=5):
         image, right, left = self.get_img_mask(img, debug=debug, percent=percent, pixel_range=pixel_range, pic_offset=pic_offset)
 
@@ -113,7 +45,7 @@ class AngleFinder:
     # @param percent: Percent of the road to cutoff (top down)
     # @param pixel_range: Range of pixels to check around previous pixel for O(1) lookup
     # @param pic_offset: Pixel offset from edge of image
-    # @ret Masked image mage or None
+    # @ret Masked image & right/left divide between road & grass or None when image doesn't exist
     def get_img_mask(self, img: np.ndarray, debug=False, percent=0.0, pixel_range=3, pic_offset=5):
         if img is None:
             self.logger.error('Error opening image!')
@@ -232,3 +164,71 @@ class AngleFinder:
                         return (i, height)
 
         return None
+    
+    # @param vid: Video
+    # @param debug: Draws lines on image
+    # @param percent: Percent of the road (top down)
+    # @param pixel_range: Range of pixels to check around previous pixel for O(1) lookup
+    # @param pic_offset: Pixel offset from edge of image
+    # @ret video or None
+    def get_video_mask(self, vid, debug=False, percent=0.0, pixel_range=3, pic_offset=5):
+        if vid is None:
+            self.logger.error("Error opening video")
+            return None
+        
+        r, f = vid.read()
+        if not r:
+            self.logger.error("Can't get initial video frame")
+            return None
+        h, w = f.shape[:2]
+        height, width = h - 1 - pic_offset, w - 1 - pic_offset
+
+        fps = vid.get(cv.CAP_PROP_FPS)
+        if fps == 0:
+            fps = 30
+
+        video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (w, h), isColor=False) 
+        vid.set(cv.CAP_PROP_POS_FRAMES, 0)
+
+        while (True):
+            ret, frame = vid.read()
+
+            if not ret:
+                break
+                
+            result, cur_right, cur_left = self.get_img_mask(frame, debug=debug, percent=percent, pic_offset=pic_offset, pixel_range=pixel_range)
+            
+            presult = np.zeros((h, w), dtype=result.dtype)
+
+            height = h - 1 - pic_offset
+            width = w - 1 - pic_offset
+            y_index = int(height * percent)
+
+            presult[y_index:height, pic_offset:width] = result
+
+            # Write debug info on video
+            if debug:
+                right_deg = utils.get_angle((width, pic_offset), (width // 2, pic_offset), cur_right)
+                left_deg = utils.get_angle((pic_offset, pic_offset), (width // 2, pic_offset), cur_left)
+
+                if right_deg is None:
+                    right_deg = -1
+                
+                if left_deg is None:
+                    left_deg = -1
+            
+                cv.putText(presult, f"Previous left: {self.prev_left}", (300, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                cv.putText(presult, f"Previous right: {self.prev_right}", (900, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+                cv.putText(presult, f"Current left: {cur_left}", (300, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                cv.putText(presult, f"Current right: {cur_right}", (900, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                
+
+                cv.putText(presult, f"{right_deg:.1f}", (1300, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                cv.putText(presult, f"{left_deg:.1f}", (100, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+            video.write(presult)
+        
+        vid.release()
+        video.release()
+        cv.destroyAllWindows()

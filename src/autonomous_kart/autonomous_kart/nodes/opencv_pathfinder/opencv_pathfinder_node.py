@@ -25,6 +25,7 @@ class OpenCVPathfinderNode(Node):
         self.bridge = CvBridge()
         self.frame_count = 0
         self.angle_msg = None
+        self.angle_finder = AngleFinder(self.logger)
 
         self.system_frequency = self.get_parameter("system_frequency").value
 
@@ -48,7 +49,6 @@ class OpenCVPathfinderNode(Node):
         )
 
         self.logger.info("Pathfinder Node started - subscribed to /camera/image_raw")
-        self.angle_finder = AngleFinder(self)
 
     def image_callback(self, msg):
         frame = self.bridge.imgmsg_to_cv2(msg, "passthrough")
@@ -69,6 +69,8 @@ class OpenCVPathfinderNode(Node):
 
         # Publish angles
         right_angle, left_angle = self.angle_finder.get_img_angles(frame, debug=False, percent=0.0, pixel_range=3, pic_offset=5)
+        if right_angle is None or left_angle is None:
+            self.logger.warn("Right or Left angle returned None")
         msg = Float32MultiArray()
         msg.data = [
             float(right_angle) if right_angle is not None else float('nan'),

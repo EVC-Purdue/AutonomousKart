@@ -15,7 +15,7 @@ services:
       - "8000:8000"
     devices:
 #      - "/dev/ttyACM0:/dev/ttyACM0"
-      - "/dev/ttyHS2:/dev/ttyHS1"         # GPS
+      - "/dev/ttyHS2:/dev/ttyTHS1"         # GPS
 #      - "/dev/spidev12.0:/dev/spidev12.0" # SPI bus 12, CS0
     stdin_open: true
     tty: true

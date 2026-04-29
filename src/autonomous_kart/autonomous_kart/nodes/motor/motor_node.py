@@ -42,7 +42,7 @@ class MotorNode(Node):
 
         if elapsed > 0:
             avg_rate = self.cmd_count / elapsed
-            self.get_logger().info(
+            self.get_logger().debug(
                 f"Average command rate: {avg_rate:.2f} commands/sec "
                 f"(Total: {self.cmd_count} in {elapsed:.1f}s)"
             )

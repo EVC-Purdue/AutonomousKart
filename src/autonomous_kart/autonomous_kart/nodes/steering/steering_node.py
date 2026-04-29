@@ -72,7 +72,7 @@ class SteeringNode(Node):
 
         if elapsed > 0:
             avg_rate = self.cmd_count / elapsed
-            self.logger.info(
+            self.logger.debug(
                 f"Average command rate: {avg_rate:.2f} commands/sec "
                 f"(Total: {self.cmd_count} in {elapsed:.1f}s)"
             )

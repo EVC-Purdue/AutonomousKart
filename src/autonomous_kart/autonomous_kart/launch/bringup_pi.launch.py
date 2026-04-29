@@ -78,6 +78,11 @@ def generate_launch_description():
                         executable="e_comms_node",
                         name="e_comms_node",
                     ),
+                    Node(
+                        package="autonomous_kart",
+                        executable="gps_node",
+                        name="gps_node",
+                    ),
                 ]
             ),
         ]

@@ -22,7 +22,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("simulation_mode", default_value="true"),
+            DeclareLaunchArgument("simulation_mode", default_value="false"),
             GroupAction(
                 [
                     SetParametersFromFile(system_yaml),

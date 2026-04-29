@@ -85,11 +85,13 @@ class GpsNode(Node):
 
     def read_gps(self):
         if self.ser is None or not self.ser.is_open:
+            self.logger.info("Serial closed")
             return
 
         # read right now
         chunk = self.ser.read(self.ser.in_waiting or 1)
         if not chunk:
+            self.logger.info("No chunk")
             return
 
         self.logger.info(f"RAW {len(chunk)}B: {chunk[:80]!r}")

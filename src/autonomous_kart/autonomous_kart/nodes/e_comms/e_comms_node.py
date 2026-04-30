@@ -46,13 +46,14 @@ class ECommsNode(Node):
         # CAN bus
         if not self.simulation_mode:
             try:
-                self.bus: Optional[can.interface.Bus] = can.interface.Bus(interface="slcan", channel=CAN_CHANNEL, bitrate=CAN_BITRATE)
+                self.bus: Optional[can.interface.Bus] = can.interface.Bus(interface="slcan", channel=CAN_CHANNEL,
+                                                                          bitrate=CAN_BITRATE)
                 self.can_notifier: Optional[can.Notifier] = can.Notifier(self.bus, [self._on_can_msg])
                 self.logger.info(f"Connected to CAN device on {CAN_CHANNEL} at {CAN_BITRATE} baud")
             except FileNotFoundError:
                 self.logger.error(f"Can device not connected on {CAN_CHANNEL}")
                 self.simulation_mode = True  # Running on-device, off-kart
-                
+
                 self.bus: Optional[can.interface.Bus] = None
                 self.can_notifier: Optional[can.Notifier] = None
         else:
@@ -108,7 +109,7 @@ class ECommsNode(Node):
 
         # Ensure values are within expected ranges
         if not (0.0 <= throttle_msg.data <= 100.0) or not (
-            -100.0 <= steering_msg.data <= 100.0
+                -100.0 <= steering_msg.data <= 100.0
         ):
             self.logger.error(
                 f"Received out-of-bounds command values: "
@@ -134,24 +135,24 @@ class ECommsNode(Node):
     def _on_can_msg(self, msg: can.Message):
         """Called by can.Notifier in a background thread for each received message."""
         if msg.arbitration_id == STATUS_ID:
-            data = bytes(msg.data) # copy, don't hold a reference
+            data = bytes(msg.data)  # copy, don't hold a reference
             # Add to executor to handle in main thread because ros publishers are not thread safe
-            if executor is not None:
-                executor.create_task(lambda: self.handle_status_msg(data))
+            if self.executor is not None:
+                self.executor.create_task(lambda: self.handle_status_msg(data))
             else:
                 self.logger.warning("CAN message received before executor ready, dropping frame")
 
     def handle_status_msg(self, msg_data: bytes):
         try:
             self.adcb_status = e_comms.unpack_status_message(msg_data, self.logger)
-            
+
             self.adcb_state_pub.publish(String(data=self.adcb_status.logic_mode))
             self.rc_mode_pub.publish(Bool(data=self.adcb_status.rc_mode))
             self.throttle_pwm_pub.publish(UInt16(data=self.adcb_status.throttle_pwm))
             self.steering_pwm_pub.publish(UInt16(data=self.adcb_status.steering_pwm))
         except Exception as e:
             self.logger.error(f"Failed to parse CAN message: {e}")
-    
+
     def destroy_node(self):
         # Close CAN
         if self.can_notifier is not None:

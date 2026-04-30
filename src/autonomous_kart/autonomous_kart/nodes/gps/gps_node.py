@@ -79,6 +79,7 @@ class GpsNode(Node):
 
         msg.pose.covariance = self.gps_data_cov
         self.logger.info(f"GPS Pos: {msg.pose.pose.position}")
+        self.logger.info(f"GPS Cov: {msg.pose.covariance}")
         self.gps_publisher.publish(msg)
 
     def read_gps(self):
@@ -91,8 +92,6 @@ class GpsNode(Node):
         if not chunk:
             self.logger.info("No chunk")
             return
-
-        self.logger.info(f"RAW {len(chunk)}B: {chunk[:200]!r}")
 
         self.buffer += chunk.decode("ascii", errors="ignore")
 

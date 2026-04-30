@@ -82,6 +82,7 @@ def generate_launch_description():
                         package="autonomous_kart",
                         executable="gps_node",
                         name="gps_node",
+                        parameters=[gps_yaml],
                     ),
                 ]
             ),

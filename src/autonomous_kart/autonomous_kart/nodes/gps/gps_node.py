@@ -37,8 +37,8 @@ class GpsNode(Node):
         self.gps_data_cov[28] = 1e6  # pitch
         self.gps_data_cov[35] = 1e6  # yaw
 
-        self.origin_lat = None
-        self.origin_lon = None
+        self.origin_lat = float(self.get_parameter("lat0").value)
+        self.origin_lon = float(self.get_parameter("lon0").value)
         self.use_gst = False
 
         self.logger.info(
@@ -53,8 +53,9 @@ class GpsNode(Node):
         self.device = self.get_parameter("serial_device").value or "/dev/ttyTHS1"
         self.baud = self.get_parameter("baud_rate").value or 9600
 
-        self.ser = serial.Serial(self.device, baudrate=self.baud, timeout=0)
-        threading.Thread(target=self._rtcm_loop, daemon=True).start()
+        if not self.sim_mode:
+            self.ser = serial.Serial(self.device, baudrate=self.baud, timeout=0)
+            threading.Thread(target=self._rtcm_loop, daemon=True).start()
 
         self.buffer = ""
 
@@ -211,19 +212,11 @@ class GpsNode(Node):
     def gps_to_coords(self, lat, lat_direction, lon, lon_direction):
         lon = self.nmea_to_decimal(lon, lon_direction)
         lat = self.nmea_to_decimal(lat, lat_direction)
-
-        if not self.origin_lon:
-            self.origin_lon = lon
-            
-        if not self.origin_lat:
-            self.origin_lat = lat
            
-        #An approx from earth global circ. to x, y
+        #  An approx from earth global circ. to x, y
         R = 6_371_000
-        # self.gps_data_pos[0] = R * math.radians(lon - self.origin_lon) * math.cos(math.radians(self.origin_lat))
-        # self.gps_data_pos[1] = R * math.radians(lat - self.origin_lat)
-        self.gps_data_pos[0] = lon
-        self.gps_data_pos[1] = lat
+        self.gps_data_pos[0] = R * math.radians(lon - self.origin_lon) * math.cos(math.radians(self.origin_lat))
+        self.gps_data_pos[1] = R * math.radians(lat - self.origin_lat)
 
     def nmea_to_decimal(self, value: str, direction: str) -> float:
         d = float(value)

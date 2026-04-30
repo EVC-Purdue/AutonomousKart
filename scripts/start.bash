@@ -6,4 +6,6 @@ source /opt/ros/humble/setup.bash
 
 colcon build
 pkill -f master_api || true
+
+str2str -in ntrip://shayman1:shayman1@108.59.49.226:9000/MSM4_VRS -out tcpsvr://:9195 -b 1 &
 sleep 0.5

@@ -129,6 +129,7 @@ class ECommsNode(Node):
             )
             try:
                 self.bus.send(msg)
+                self.logger.info(msg.data)
             except can.CanError as e:
                 self.logger.error(f"Failed to send CAN message: {e}")
 
@@ -170,7 +171,7 @@ class ECommsNode(Node):
 
         if elapsed > 0:
             avg_rate = self.cmd_count / elapsed
-            self.logger.debug(
+            self.logger.info(
                 f"Average command rate: {avg_rate:.2f} commands/sec "
                 f"(Total: {self.cmd_count} in {elapsed:.1f}s)"
             )

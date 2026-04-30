@@ -26,6 +26,7 @@ class LocalizationNode(Node):
         )
         self.logger = self.get_logger()
         self.sim_mode = self.get_parameter("simulation_mode").value
+        self.logger.info(f"E_COMMS mode: {self.sim_mode}")
 
         # Output
         self.odom_pub = self.create_publisher(Odometry, "odom", 10)
@@ -91,6 +92,7 @@ class LocalizationNode(Node):
                         f"Spawned at ({x0:.1f}, {y0:.1f}, {math.degrees(yaw0):.0f}°)"
                     )
         except Exception:
+            self.logger.warning("line_path missing")
             pass  # No line_path or file missing — start at origin
 
     def _cb_vel(self, msg: Float32):

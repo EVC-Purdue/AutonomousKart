@@ -213,9 +213,10 @@ class GpsNode(Node):
            
         #An approx from earth global circ. to x, y
         R = 6_371_000
-        self.gps_data_pos[0] = R * math.radians(lon - self.origin_lon) * math.cos(math.radians(self.origin_lat))
-        self.gps_data_pos[1] = R * math.radians(lat - self.origin_lat)
-    
+        # self.gps_data_pos[0] = R * math.radians(lon - self.origin_lon) * math.cos(math.radians(self.origin_lat))
+        # self.gps_data_pos[1] = R * math.radians(lat - self.origin_lat)
+        self.gps_data_pos[0] = lon
+        self.gps_data_pos[1] = lat
 
     def nmea_to_decimal(self, value: str, direction: str) -> float:
         d = float(value)

@@ -78,8 +78,8 @@ class ECommsNode(Node):
         #     allow_headerless=True,  # Float32 has no header
         # )
         # self.ts.registerCallback(self.cmd_callback)
-        self.steering_sub = self.create_subscription(Float32, "cmd_turn", self.cmd_steer, 5)
-        self.throttle_sub = self.create_subscription(Float32, "cmd_vel", self.cmd_thr, 5)
+        self.steering_sub = self.create_subscription(Float32, "cmd_turn", self.cmd_callback, 5)
+        self.throttle_sub = self.create_subscription(Float32, "cmd_vel", self.cmd_callback, 5)
 
         # Publishers
         self.adcb_state_pub = self.create_publisher(
@@ -98,7 +98,7 @@ class ECommsNode(Node):
         # Init finished
         self.logger.info("Initialize EComms Node")
 
-    def cmd_thr(self, throttle_msg: Float32):
+    def cmd_callback(self, throttle_msg: Float32, steering_msg: Float32):
         """
         Send the throttle and steering command to the Electrical Stack via CAN.
         Part of hot loop so must be efficient
@@ -110,50 +110,16 @@ class ECommsNode(Node):
         self.cmd_count += 1
 
         # Ensure values are within expected ranges
-        if not (0.0 <= throttle_msg.data <= 100.0):
-            self.logger.error(
-                f"Received out-of-bounds command values: "
-                f"throttle_percent={throttle_msg.data}, steering_angle={self.steering_angle}"
-            )
-            raise ValueError("Command values out of bounds")
-
-        self.throttle_percent = throttle_msg.data
-        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
-
-        if self.bus is not None:
-            msg = can.Message(
-                arbitration_id=CONTROL_ID,
-                data=tx_data,
-                is_extended_id=False,
-            )
-            try:
-                self.bus.send(msg)
-                self.logger.info(f"Sent CAN: {msg.data.hex()}")
-            except can.CanError as e:
-                self.logger.error(f"Failed to send CAN message: {e}")
-
-
-    def cmd_steer(self, steering_msg: Float32):
-        """
-        Send the throttle and steering command to the Electrical Stack via CAN.
-        Part of hot loop so must be efficient
-
-        :param throttle_msg: Float32 message for throttle command (percent throttle)
-        :param steering_msg: Float32 message for steering command (percent steering, -100 to 100)
-        :return: None
-        """
-        self.cmd_count += 1
-
-        # Ensure values are within expected ranges
-        if not (
+        if not (0.0 <= throttle_msg.data <= 100.0) or not (
                 -100.0 <= steering_msg.data <= 100.0
         ):
             self.logger.error(
                 f"Received out-of-bounds command values: "
-                f"throttle_percent={self.throttle_percent}, steering_angle={steering_msg.data}"
+                f"throttle_percent={throttle_msg.data}, steering_angle={steering_msg.data}"
             )
             raise ValueError("Command values out of bounds")
 
+        self.throttle_percent = throttle_msg.data
         self.steering_angle = steering_msg.data
         tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
 

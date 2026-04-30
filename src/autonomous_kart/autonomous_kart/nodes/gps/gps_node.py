@@ -243,19 +243,19 @@ class GpsNode(Node):
         
         return decimal
 
-def _rtcm_loop(self):
-    while rclpy.ok():
-        try:
-            s = socket.create_connection(("localhost", 9999), timeout=5)
-            self.logger.info("RTCM connected")
-            while rclpy.ok():
-                data = s.recv(4096)
-                if not data:
-                    break
-                self.ser.write(data)
-        except Exception as e:
-            self.logger.warning(f"RTCM: {e}, retry 2s")
-            time.sleep(2)
+    def _rtcm_loop(self):
+        while rclpy.ok():
+            try:
+                s = socket.create_connection(("localhost", 9999), timeout=5)
+                self.logger.info("RTCM connected")
+                while rclpy.ok():
+                    data = s.recv(4096)
+                    if not data:
+                        break
+                    self.ser.write(data)
+            except Exception as e:
+                self.logger.warning(f"RTCM: {e}, retry 2s")
+                time.sleep(2)
 
 
 def main(args=None):

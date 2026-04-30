@@ -20,7 +20,7 @@ class ImuNode(Node):
 
         self.sim_mode = self.get_parameter("simulation_mode").value
 
-        self.imu_publisher = self.create_publisher(Odometry, "gps", 5)
+        self.imu_publisher = self.create_publisher(Odometry, "imu", 10)
 
         self.last_callback_time = time.time()
 

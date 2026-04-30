@@ -1,3 +1,5 @@
+import threading
+import socket
 import time
 import traceback
 import serial
@@ -54,6 +56,8 @@ class GpsNode(Node):
         self.baud = self.get_parameter("baud_rate").value or 9600
 
         self.ser = serial.Serial(self.device, baudrate=self.baud, timeout=0)
+        threading.Thread(target=self._rtcm_loop, daemon=True).start()
+
         self.buffer = ""
 
         self.timer = self.create_timer(1.0 / self.gps_frequency, self.publish_gps)
@@ -106,7 +110,7 @@ class GpsNode(Node):
         if not msg.startswith("$"):
             return
         if "*" in msg:
-            msg = msg.rsplit("*", 1)[0] # Remove checksum
+            msg = msg.rsplit("*", 1)[0]  # Remove checksum
 
         fields = msg.split(",")
         gng_type = fields[0][1:]
@@ -126,6 +130,9 @@ class GpsNode(Node):
                 self.handle_rmc(fields)
 
     def handle_gga(self, fields):
+        if len(fields) < 10:
+            return
+
         self.logger.info(f"GGA entered, len={len(fields)}, fix={fields[6] if len(fields) > 6 else '?'}")
         lat = fields[2]
         lat_direction = fields[3]
@@ -235,6 +242,20 @@ class GpsNode(Node):
             decimal *= -1
         
         return decimal
+
+def _rtcm_loop(self):
+    while rclpy.ok():
+        try:
+            s = socket.create_connection(("localhost", 9999), timeout=5)
+            self.logger.info("RTCM connected")
+            while rclpy.ok():
+                data = s.recv(4096)
+                if not data:
+                    break
+                self.ser.write(data)
+        except Exception as e:
+            self.logger.warning(f"RTCM: {e}, retry 2s")
+            time.sleep(2)
 
 
 def main(args=None):

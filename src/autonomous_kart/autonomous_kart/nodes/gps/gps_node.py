@@ -125,6 +125,7 @@ class GpsNode(Node):
                 self.handle_rmc(fields)
 
     def handle_gga(self, fields):
+        self.logger.info(f"GGA entered, len={len(fields)}, fix={fields[6] if len(fields) > 6 else '?'}")
         lat = fields[2]
         lat_direction = fields[3]
         lon = fields[4]

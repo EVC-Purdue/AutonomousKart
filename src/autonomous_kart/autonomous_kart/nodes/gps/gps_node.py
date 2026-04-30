@@ -110,7 +110,7 @@ class GpsNode(Node):
         fields = msg.split(",")
         gng_type = fields[0][1:]
 
-        if gng_type[:3] != "GNG":
+        if len(gng_type) < 5 or gng_type[:2] not in ("GN", "GP"):
             return
 
         match gng_type[3:]:

@@ -52,12 +52,6 @@ Note: Ensure this code is efficient as it is in the hot loop
 
 Note: Ensure this is efficient as it is in the hot loop
 
-### 3DGS Team:
-1) Fix library :(
-2) Think about optimizations to localization
-
-Note: Not critical, put off
-
 
 ## Info
 

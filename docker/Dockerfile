@@ -20,6 +20,7 @@ RUN apt-get -o Acquire::http::Pipeline-Depth="0" \
       ros-${ROS_DISTRO}-tf2-tools ros-${ROS_DISTRO}-image-transport \
       ros-${ROS_DISTRO}-cv-bridge \
       git curl nano && \
+      socat rtklib \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements.txt

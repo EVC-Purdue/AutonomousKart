@@ -49,8 +49,6 @@ class GpsNode(Node):
             self.logger.warning("No GPS frequency known, setting to default")
             self.gps_frequency = 10
 
-        self.logger.info(f"Gps Frequency: {self.gps_frequency}")
-
         # Note, need to add serial_device & baud_rate parameter
         self.device = self.get_parameter("serial_device").value or "/dev/ttyTHS1"
         self.baud = self.get_parameter("baud_rate").value or 9600
@@ -82,8 +80,8 @@ class GpsNode(Node):
         msg.pose.pose.orientation = self.gps_data_quaternion
 
         msg.pose.covariance = self.gps_data_cov
-        self.logger.info(f"GPS Pos: {msg.pose.pose.position}")
-        self.logger.info(f"GPS Cov: {msg.pose.covariance}")
+        self.logger.debug(f"GPS Pos: {msg.pose.pose.position}")
+        self.logger.debug(f"GPS Cov: {msg.pose.covariance}")
         self.gps_publisher.publish(msg)
 
     def read_gps(self):
@@ -94,7 +92,7 @@ class GpsNode(Node):
         # read right now
         chunk = self.ser.read(self.ser.in_waiting or 1)
         if not chunk:
-            self.logger.info("No chunk")
+            self.logger.debug("No chunk")
             return
 
         self.buffer += chunk.decode("ascii", errors="ignore")
@@ -133,7 +131,7 @@ class GpsNode(Node):
         if len(fields) < 10:
             return
 
-        self.logger.info(f"GGA entered, len={len(fields)}, fix={fields[6] if len(fields) > 6 else '?'}")
+        self.logger.debug(f"GGA entered, len={len(fields)}, fix={fields[6] if len(fields) > 6 else '?'}")
         lat = fields[2]
         lat_direction = fields[3]
         lon = fields[4]

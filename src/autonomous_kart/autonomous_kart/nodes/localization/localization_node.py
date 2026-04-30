@@ -110,7 +110,7 @@ class LocalizationNode(Node):
         # Passes GPS data
         # TODO: EKF with updates
         self.gps_subscriber = self.create_subscription(
-            Float32, "gps", self.gps_callback, 10
+            Odometry, "gps", self.gps_callback, 10
         )
         self._last_gps_xy = None
         self._last_gps_t = None

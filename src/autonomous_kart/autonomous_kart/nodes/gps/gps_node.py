@@ -113,7 +113,7 @@ class GpsNode(Node):
         if len(gng_type) < 5 or gng_type[:2] not in ("GN", "GP"):
             return
 
-        match gng_type[3:]:
+        match gng_type[2:]:
             case "GGA":
                 self.handle_gga(fields)
             case "GSA":

@@ -9,3 +9,4 @@ python-can
 flask
 flask-cors
 pyserial
+smbus2

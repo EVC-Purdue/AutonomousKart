@@ -1,4 +1,8 @@
 # Params and toggles for gps node
 gps_node:
   ros__parameters:
-    gps_frequency: 10  # Hz
+    gps_frequency: 10 # Hz
+    serial_device: "/dev/ttyTHS1"
+    baud_rate: 230400
+    lat0: 40.4376975222 # In west lafayette
+    lon0: -86.9444409756

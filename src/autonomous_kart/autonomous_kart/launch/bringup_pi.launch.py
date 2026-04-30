@@ -1,5 +1,6 @@
 from launch import LaunchDescription
-from launch.actions import GroupAction
+from launch.actions import DeclareLaunchArgument, GroupAction
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetParameter, SetParametersFromFile
 from ament_index_python.packages import get_package_share_directory
 import os
@@ -14,16 +15,18 @@ def generate_launch_description():
     gps_yaml = os.path.join(pkg_share, "params", "gps.yaml")
     safety_yaml = os.path.join(pkg_share, "params", "safety.yaml")
     system_yaml = os.path.join(pkg_share, "params", "system.yaml")
-    planner_yaml = os.path.join(pkg_share, "params", "pathfinder.yaml")
+    pathfinder_yaml = os.path.join(pkg_share, "params", "pathfinder.yaml")
     localization_yaml = os.path.join(pkg_share, "params", "localization.yaml")
+
+    sim_mode = LaunchConfiguration("simulation_mode")
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument("simulation_mode", default_value="false"),
             GroupAction(
                 [
                     SetParametersFromFile(system_yaml),
-                    # Force simulator mode OFF for the real kart.
-                    SetParameter(name="simulation_mode", value=False),
+                    SetParameter(name="simulation_mode", value=sim_mode),
                     Node(
                         package="autonomous_kart",
                         executable="motor_node",
@@ -44,26 +47,15 @@ def generate_launch_description():
                     ),
                     Node(
                         package="autonomous_kart",
-                        executable="gps_node",
-                        name="gps_node",
-                        parameters=[gps_yaml],
-                    ),
-                    Node(
-                        package="autonomous_kart",
                         executable="pathfinder_node",
                         name="pathfinder_node",
-                        parameters=[planner_yaml, safety_yaml],
+                        parameters=[pathfinder_yaml, safety_yaml],
                     ),
                     Node(
                         package="autonomous_kart",
                         executable="opencv_pathfinder_node",
                         name="opencv_pathfinder_node",
-                        parameters=[],
-                    ),
-                    Node(
-                        package="autonomous_kart",
-                        executable="e_comms_node",
-                        name="e_comms_node",
+                        parameters=[gps_yaml],
                     ),
                     Node(
                         package="autonomous_kart",
@@ -79,7 +71,18 @@ def generate_launch_description():
                         package="autonomous_kart",
                         executable="localization_node",
                         name="localization_node",
-                        parameters=[planner_yaml, localization_yaml],
+                        parameters=[pathfinder_yaml, localization_yaml],
+                    ),
+                    Node(
+                        package="autonomous_kart",
+                        executable="e_comms_node",
+                        name="e_comms_node",
+                    ),
+                    Node(
+                        package="autonomous_kart",
+                        executable="gps_node",
+                        name="gps_node",
+                        parameters=[gps_yaml],
                     ),
                 ]
             ),

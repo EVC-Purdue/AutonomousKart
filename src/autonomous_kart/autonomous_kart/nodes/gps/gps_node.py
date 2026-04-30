@@ -105,6 +105,8 @@ class GpsNode(Node):
     def parse(self, msg: str):
         if not msg.startswith("$"):
             return
+        if "*" in msg:
+            msg = msg.rsplit("*", 1)[0] # Remove checksum
 
         fields = msg.split(",")
         gng_type = fields[0][1:]

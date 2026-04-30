@@ -246,7 +246,7 @@ class GpsNode(Node):
     def _rtcm_loop(self):
         while rclpy.ok():
             try:
-                s = socket.create_connection(("localhost", 9999), timeout=5)
+                s = socket.create_connection(("localhost", 9195), timeout=5)
                 self.logger.info("RTCM connected")
                 while rclpy.ok():
                     data = s.recv(4096)

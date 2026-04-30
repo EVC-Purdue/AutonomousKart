@@ -22,7 +22,7 @@ STATUS_ID = 0x101
 class ECommsNode(Node):
     def __init__(self):
         super().__init__(
-            "ECommsNode",
+            "e_comms_node",
             allow_undeclared_parameters=True,
             automatically_declare_parameters_from_overrides=True,
         )

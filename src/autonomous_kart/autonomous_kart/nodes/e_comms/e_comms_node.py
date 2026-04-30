@@ -69,17 +69,17 @@ class ECommsNode(Node):
         self.create_timer(5.0, self.log_command_rate)
 
         # Subscribe to pathfinder node for throttle and steering commands
-        self.throttle_sub: Subscriber = Subscriber(self, Float32, "cmd_vel")
-        self.steering_sub: Subscriber = Subscriber(self, Float32, "cmd_turn")
-        self.ts: ApproximateTimeSynchronizer = ApproximateTimeSynchronizer(
-            [self.throttle_sub, self.steering_sub],
-            queue_size=3,
-            slop=0.01,  # Time tolerance in seconds
-            allow_headerless=True,  # Float32 has no header
-        )
-        self.ts.registerCallback(self.cmd_callback)
-        # self.steering_sub = self.create_subscription(Float32, "cmd_turn", self.cmd_callback, 5)
-        # self.throttle_sub = self.create_subscription(Float32, "cmd_vel", self.cmd_callback, 5)
+        # self.throttle_sub: Subscriber = Subscriber(self, Float32, "cmd_vel")
+        # self.steering_sub: Subscriber = Subscriber(self, Float32, "cmd_turn")
+        # self.ts: ApproximateTimeSynchronizer = ApproximateTimeSynchronizer(
+        #     [self.throttle_sub, self.steering_sub],
+        #     queue_size=3,
+        #     slop=0.01,  # Time tolerance in seconds
+        #     allow_headerless=True,  # Float32 has no header
+        # )
+        # self.ts.registerCallback(self.cmd_callback)
+        self.steering_sub = self.create_subscription(Float32, "cmd_turn", self.cmd_callback, 5)
+        self.throttle_sub = self.create_subscription(Float32, "cmd_vel", self.cmd_callback, 5)
 
         # Publishers
         self.adcb_state_pub = self.create_publisher(

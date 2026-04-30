@@ -92,7 +92,7 @@ class GpsNode(Node):
             self.logger.info("No chunk")
             return
 
-        self.logger.info(f"RAW {len(chunk)}B: {chunk[:80]!r}")
+        self.logger.info(f"RAW {len(chunk)}B: {chunk[:200]!r}")
 
         self.buffer += chunk.decode("ascii", errors="ignore")
 

@@ -20,6 +20,7 @@ setup(
         'autonomous_kart.nodes.master',
         'autonomous_kart.nodes.localization',
         'autonomous_kart.nodes.pathfinder.strategies',
+        'autonomous_kart.nodes.imu',
     ],
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
@@ -47,6 +48,7 @@ setup(
             'metrics_node = autonomous_kart.nodes.metrics.metrics_node:main',
             'master_api = autonomous_kart.nodes.master.master_api:main',
             'localization_node = autonomous_kart.nodes.localization.localization_node:main',
+            'imu_node = autonomous_kart.nodes.localization.imu_node:main',
         ],
     },
 )

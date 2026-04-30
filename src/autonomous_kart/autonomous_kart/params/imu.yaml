@@ -1,0 +1,13 @@
+# Params and toggles for IMU
+gps_node:
+  ros__parameters:
+    imu_frequency: 10  # Hz
+    default_g: -9.80665  # m/s^2
+    i2c_bus: 7
+    i2c_address: 0x68
+    calibration_samples: 200   # ~2s
+    accel_variance: 0.01  # m²/s⁴   (~0.1 m/s^2 stddev)
+    gyro_variance: 0.001  # rad^2/s^2 (~0.03 rad/s stddev)
+    accel_per_g: 16384.0
+    gyro_lsb_per_dps: 131.0
+    

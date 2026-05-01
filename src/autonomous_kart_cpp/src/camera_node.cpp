@@ -12,14 +12,14 @@ public:
       : Node("camera_node"), frame_counter_(0), running_(true)
   {
     // --- Parameters ---
-    this->declare_parameter<bool>("simulation_mode", true);
-    this->declare_parameter<double>("fps", 60.0);
+    this->declare_parameter<bool>("simulation_mode", false);
+    this->declare_parameter<int>("fps", 0);
+    this->declare_parameter<int>("system_frequency", 10);
 
     sim_mode_ = this->get_parameter("simulation_mode").as_bool();
-    fps_ = this->get_parameter("fps").as_double();
-    if (fps_ <= 0.0)
-      fps_ = 60.0;
-
+    fps_ = this->get_parameter("fps").as_int();
+    if (fps_ <= 0)
+      fps_ = this->get_parameter("system_frequency").as_int();
     // --- QoS Profile ---
     rclcpp::QoS qos(1);
     qos.best_effort();
@@ -38,9 +38,9 @@ public:
         RCLCPP_ERROR(this->get_logger(), "Failed to open video: %s", video_path.c_str());
       }
       video_fps_ = cap_.get(cv::CAP_PROP_FPS);
-      if (video_fps_ <= 0.0) {
-        video_fps_ = fps_;
-        RCLCPP_WARN(this->get_logger(), "Failed to get video FPS, defaulting to configured FPS: %.2f", fps_);
+      if (video_fps_ <= 0.0)
+      {
+        video_fps_ = 60.0;
       }
       reader_thread_ = std::thread(&CameraNode::read_frames, this);
     }
@@ -136,7 +136,7 @@ private:
       else
       {
         // Frame time logging every 1000 frames or if we're slower than real-time
-        RCLCPP_WARN(this->get_logger(), "Processing is slower than frame time at %.2f / 16.6 ms", elapsed.count() / 1e6);
+        RCLCPP_WARN(this->get_logger(), "Processing is slower than frame time at %.2f / %.2f ms", elapsed.count() / 1e6, frame_time * 1000);
         float avg_frame_time = 0.0;
         for (const auto &t : frame_times_)
         {

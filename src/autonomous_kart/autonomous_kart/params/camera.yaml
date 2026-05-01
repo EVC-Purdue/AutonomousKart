@@ -1,4 +1,4 @@
 # Camera config settings
 camera_node:
   ros__parameters:
-    fps: 60.0  # float
+    fps: 0  # 0 == use system frequency

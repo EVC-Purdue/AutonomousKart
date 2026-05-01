@@ -46,6 +46,8 @@ def generate_launch_description():
                             "__node:=camera_node",
                             "--params-file",
                             camera_yaml,
+                            "--params-file",
+                            system_yaml,
                         ],
                         output="screen",
                     ),

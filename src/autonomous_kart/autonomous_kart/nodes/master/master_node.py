@@ -5,7 +5,7 @@ from enum import Enum
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from std_msgs.msg import String, Float32MultiArray, Float32
+from std_msgs.msg import String, Float32MultiArray, Float32, Empty
 
 
 
@@ -76,6 +76,13 @@ class MasterNode(Node):
         self.dynamic_line_data = {"active": False, "strategy": None, "merge_idx": -1, "points": []}
         self.create_subscription(
             String, "pathfinder/dynamic_line", self.dynamic_line_callback, 1
+        )
+
+        # IMU calibration plumbing
+        self.imu_calibrate_publisher = self.create_publisher(Empty, "imu/calibrate", 1)
+        self.imu_status_data = {"state": "unknown"}
+        self.create_subscription(
+            String, "imu/calibration_status", self._imu_status_callback, 1
         )
 
         self.logger.info("Initialize Master Node")
@@ -154,6 +161,21 @@ class MasterNode(Node):
     def get_odom(self):
         with self._lock:
             return {**self.odom_data, **self.cmd_data, "state": self.state}
+
+    def _imu_status_callback(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        with self._lock:
+            self.imu_status_data = data
+
+    def get_imu_status(self):
+        with self._lock:
+            return dict(self.imu_status_data)
+
+    def trigger_imu_calibration(self):
+        self.imu_calibrate_publisher.publish(Empty())
 
 
 def main(args=None):

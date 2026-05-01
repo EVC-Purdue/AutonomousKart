@@ -99,6 +99,21 @@ def odom():
     return jsonify(master_node.get_odom())
 
 
+@app.route("/imu/calibrate", methods=["POST"])
+def imu_calibrate():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    master_node.trigger_imu_calibration()
+    return jsonify({"success": "ok"})
+
+
+@app.route("/imu/status", methods=["GET"])
+def imu_status():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify(master_node.get_imu_status())
+
+
 @app.route("/racing_line", methods=["GET"])
 def racing_line():
     path = master_node.path

@@ -48,7 +48,7 @@ setup(
             'metrics_node = autonomous_kart.nodes.metrics.metrics_node:main',
             'master_api = autonomous_kart.nodes.master.master_api:main',
             'localization_node = autonomous_kart.nodes.localization.localization_node:main',
-            'imu_node = autonomous_kart.nodes.localization.imu_node:main',
+            'imu_node = autonomous_kart.nodes.imu.imu_node:main',
         ],
     },
 )

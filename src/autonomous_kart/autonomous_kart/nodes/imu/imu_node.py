@@ -1,14 +1,23 @@
+import json
+import math
+import os
 import time
 import traceback
 
 import rclpy
-import math
-
-from sensor_msgs.msg import Imu
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
+from sensor_msgs.msg import Imu
+from std_msgs.msg import Empty, Float32, String
+
 from smbus2 import SMBus
+
+
+WAITING = "WAITING"
+CALIBRATING = "CALIBRATING"
+CALIBRATED = "CALIBRATED"
+
 
 class ImuNode(Node):
     def __init__(self):
@@ -19,11 +28,6 @@ class ImuNode(Node):
         )
 
         self.sim_mode = self.get_parameter("simulation_mode").value
-
-        self.imu_publisher = self.create_publisher(Imu, "imu", 10)
-
-        self.last_callback_time = time.time()
-
         self.logger = self.get_logger()
 
         self.bus_num = int(self.get_parameter("i2c_bus").value)
@@ -33,30 +37,50 @@ class ImuNode(Node):
         self.accel_var = float(self.get_parameter("accel_variance").value)
         self.gyro_var = float(self.get_parameter("gyro_variance").value)
         self.calib_samples = int(self.get_parameter("calibration_samples").value)
-        self.accel_per_g = int(self.get_parameter("accel_per_g").value)
-        self.gyro_lsb_per_dps = int(self.get_parameter("gyro_lsb_per_dps").value)
+        self.accel_per_g = float(self.get_parameter("accel_per_g").value)
+        self.gyro_lsb_per_dps = float(self.get_parameter("gyro_lsb_per_dps").value)
+
+        self.gyro_motion_thresh = float(self.get_parameter("gyro_motion_thresh").value)
+        self.accel_motion_thresh = float(self.get_parameter("accel_motion_thresh").value)
+        self.cmd_vel_zero_eps = float(self.get_parameter("cmd_vel_zero_eps").value)
+        self.cmd_vel_max_age_s = float(self.get_parameter("cmd_vel_max_age_s").value)
+        self.cache_path = str(self.get_parameter("calibration_cache_path").value)
+        self.status_frequency = float(self.get_parameter("status_frequency").value)
+
+        if not self.imu_frequency or self.imu_frequency <= 0:
+            self.imu_frequency = 100.0
+            self.logger.warning(f"No IMU frequency known, defaulting to {self.imu_frequency}")
 
         self.gyro_bias = [0.0, 0.0, 0.0]
         self._calib_sum = [0.0, 0.0, 0.0]
         self._calib_count = 0
-        self._calibrated = False
+        self.state = WAITING
+        self.last_error = ""
 
-        self.logger.info(
-            f"IMU Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}"
-        )
+        # cmd_vel tracking; None = never received one
+        self._last_cmd_vel = None
+        self._last_cmd_vel_t = 0.0
 
-        if not self.imu_frequency or self.imu_frequency <= 0:
-            self.imu_frequency = 100
-            self.logger.warning(f"No IMU frequency known, setting to default={self.imu_frequency}")
+        self.imu_publisher = self.create_publisher(Imu, "imu", 10)
+        self.status_publisher = self.create_publisher(String, "imu/calibration_status", 1)
+
+        self.create_subscription(Float32, "cmd_vel", self._cmd_vel_callback, 5)
+        self.create_subscription(Empty, "imu/calibrate", self._calibrate_trigger, 1)
+
+        self.logger.info(f"IMU Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}")
 
         if self.sim_mode:
-            # Shouldn't run
-            pass
+            self.logger.error("IMU should not run on SIM")
+            return
 
         self.bus = SMBus(self.bus_num)
         self.bus.write_byte_data(self.i2c_address, 0x6B, 0x00)  # wake
 
-        self.timer = self.create_timer(1.0 / self.imu_frequency, self.publish_imu)
+        self._try_load_cache()
+
+        self.create_timer(1.0 / self.imu_frequency, self.publish_imu)
+        self.create_timer(1.0 / self.status_frequency, self._publish_status)
+        self._publish_status()
 
     def read_imu(self):
         """Burst-read 14 bytes: accel(6) + temp(2) + gyro(6). Returns accel in m/s^2 and gyro in rad/s."""
@@ -79,18 +103,91 @@ class ImuNode(Node):
         )
         return accel, gyro
 
-    def calibrate(self, gyro):
-        """Average the first calib_samples gyro readings as bias. Kart
-        must be still during this. Returns True when done."""
+    def _cmd_vel_callback(self, msg: Float32):
+        self._last_cmd_vel = float(msg.data)
+        self._last_cmd_vel_t = time.time()
+
+    def _calibrate_trigger(self, _msg: Empty):
+        self.logger.info("Calibration trigger received - resetting calibration state")
+        self._reset_calibration("triggered")
+
+    def _reset_calibration(self, reason: str):
+        self.state = WAITING
+        self._calib_sum = [0.0, 0.0, 0.0]
+        self._calib_count = 0
+        self.last_error = reason
+        self._publish_status()
+
+    def _cmd_vel_is_zero(self) -> bool:
+        # First-boot if we never recieved cmd_vel, assume idle.
+        if self._last_cmd_vel is None:
+            return True
+        if (time.time() - self._last_cmd_vel_t) > self.cmd_vel_max_age_s:
+            self.last_error = "cmd_vel stale"
+            return False
+        if abs(self._last_cmd_vel) > self.cmd_vel_zero_eps:
+            self.last_error = f"cmd_vel non-zero ({self._last_cmd_vel:.3f})"
+            return False
+        return True
+
+    def _sample_indicates_motion(self, accel, gyro):
+        for axis, val in zip(("x", "y", "z"), gyro):
+            if abs(val) > self.gyro_motion_thresh:
+                return f"gyro {axis}={val:.3f} rad/s exceeds {self.gyro_motion_thresh}"
+        accel_mag = math.sqrt(sum(a * a for a in accel))
+        if abs(accel_mag - abs(self.default_g)) > self.accel_motion_thresh:
+            return f"|accel|={accel_mag:.3f} m/s^2 deviates from g by > {self.accel_motion_thresh}"
+        return None
+
+    def _accumulate(self, gyro):
         for i in range(3):
             self._calib_sum[i] += gyro[i]
         self._calib_count += 1
 
-        if self._calib_count >= self.calib_samples:
-            self.gyro_bias = [s / self._calib_count for s in self._calib_sum]
-            self._calibrated = True
-            self.logger.info(f"Gyro bias: {self.gyro_bias}")
-        return self._calibrated
+    def _finish_calibration(self):
+        self.gyro_bias = [s / self._calib_count for s in self._calib_sum]
+        self.state = CALIBRATED
+        self.last_error = ""
+        self.logger.info(
+            f"Calibration complete after {self._calib_count} samples. gyro_bias={self.gyro_bias}"
+        )
+        self._save_cache()
+        self._publish_status()
+
+    def _try_load_cache(self):
+        if not os.path.exists(self.cache_path):
+            self.logger.info(f"No calibration cache at {self.cache_path}; will calibrate fresh")
+            return
+        try:
+            with open(self.cache_path, "r") as f:
+                data = json.load(f)
+            bias = data["gyro_bias"]
+            if not (isinstance(bias, list) and len(bias) == 3):
+                raise ValueError("gyro_bias must be a length-3 list")
+            self.gyro_bias = [float(b) for b in bias]
+            self.state = CALIBRATED
+            self.logger.info(
+                f"Loaded calibration from {self.cache_path}: gyro_bias={self.gyro_bias}"
+            )
+        except (OSError, ValueError, KeyError, json.JSONDecodeError) as e:
+            self.logger.warning(
+                f"Cache file at {self.cache_path} unreadable ({e}); will calibrate fresh"
+            )
+
+    def _save_cache(self):
+        payload = {
+            "gyro_bias": self.gyro_bias,
+            "samples": self._calib_count,
+            "timestamp": time.time(),
+        }
+        tmp = self.cache_path + ".tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump(payload, f)
+            os.replace(tmp, self.cache_path)
+            self.logger.debug(f"Saved calibration to {self.cache_path}")
+        except OSError as e:
+            self.logger.warning(f"Failed to save calibration cache: {e}")
 
     def publish_imu(self):
         try:
@@ -99,16 +196,33 @@ class ImuNode(Node):
             self.logger.warning(f"IMU read failed: {e}")
             return
 
-        if not self._calibrated:
-            self.calibrate(gyro)
+        if self.state == CALIBRATED:
+            self._publish_imu_msg(accel, gyro)
             return
 
+        if self.state == WAITING:
+            if not self._cmd_vel_is_zero():
+                return
+            self.state = CALIBRATING
+            self.logger.info("Starting calibration")
+
+        # CALIBRATING
+        motion_reason = self._sample_indicates_motion(accel, gyro)
+        if motion_reason is not None:
+            self.logger.warning(f"Calibration aborted: {motion_reason}")
+            self._reset_calibration(motion_reason)
+            return
+
+        self._accumulate(gyro)
+        if self._calib_count >= self.calib_samples:
+            self._finish_calibration()
+
+    def _publish_imu_msg(self, accel, gyro):
         msg = Imu()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "imu_link"
 
-        # No orientation knowledge
-        msg.orientation_covariance[0] = 1e6
+        msg.orientation_covariance[0] = 1e6  # no orientation knowledge
 
         msg.linear_acceleration.x = accel[0]
         msg.linear_acceleration.y = accel[1]
@@ -125,6 +239,17 @@ class ImuNode(Node):
         msg.angular_velocity_covariance[8] = self.gyro_var
 
         self.imu_publisher.publish(msg)
+
+    def _publish_status(self):
+        payload = {
+            "state": self.state,
+            "samples": self._calib_count,
+            "target_samples": self.calib_samples,
+            "gyro_bias": self.gyro_bias,
+            "last_error": self.last_error,
+            "cache_path": self.cache_path,
+        }
+        self.status_publisher.publish(String(data=json.dumps(payload)))
 
 
 def main(args=None):

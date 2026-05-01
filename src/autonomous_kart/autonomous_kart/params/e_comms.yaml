@@ -1,0 +1,4 @@
+steering_node:
+  ros__parameters:
+    can_tx_hz: 100.0
+    can_timeout: 1.0

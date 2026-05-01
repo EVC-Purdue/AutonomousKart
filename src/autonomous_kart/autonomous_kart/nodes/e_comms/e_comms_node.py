@@ -156,7 +156,7 @@ class ECommsNode(Node):
 
         self.steering_angle = steering_msg.data
         tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
-
+        self.logger.info(f"tx_data: {tx_data.hex()}")
         if self.bus is not None:
             msg = can.Message(
                 arbitration_id=CONTROL_ID,

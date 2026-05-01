@@ -74,8 +74,9 @@ class ECommsNode(Node):
         self.steering_sub = self.create_subscription(Float32, "cmd_turn", self.cmd_steer, 5)
         self.throttle_sub = self.create_subscription(Float32, "cmd_vel", self.cmd_thr, 5)
 
-        # CAN TX timer at 20Hz to send latest command values
-        self.timer = self.create_timer(1.0 / 20.0, self.can_tx)
+        # CAN TX timer at 50Hz to send latest command values
+        # TODO: make a parameter
+        self.timer = self.create_timer(1.0 / 50.0, self.can_tx)
 
         # Publishers
         self.adcb_state_pub = self.create_publisher(

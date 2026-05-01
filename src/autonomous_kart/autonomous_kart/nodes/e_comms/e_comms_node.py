@@ -69,13 +69,13 @@ class ECommsNode(Node):
         self.create_timer(5.0, self.log_command_rate)
 
         # Subscribe for throttle and steering commands
-        # Each command updates the internal state, and the latest values are sent out on the CAN bus at a fixed rate in on_timer()
+        # Each command updates the internal state, and the latest values are sent
+        # out on the CAN bus at a fixed rate in can_tx()
         self.steering_sub = self.create_subscription(Float32, "cmd_turn", self.cmd_steer, 5)
         self.throttle_sub = self.create_subscription(Float32, "cmd_vel", self.cmd_thr, 5)
 
         # CAN TX timer at 20Hz to send latest command values
-        self.timer = self.create_timer(1.0 / 10.0, self.on_timer)
-
+        self.timer = self.create_timer(1.0 / 20.0, self.can_tx)
 
         # Publishers
         self.adcb_state_pub = self.create_publisher(
@@ -136,12 +136,8 @@ class ECommsNode(Node):
     #--------------------------------------------------------------------------#
     
     # CAN TX ------------------------------------------------------------------#
-    def on_timer(self):
-        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle, self.logger)
-        # self.logger.info(f"Steering: {steering_msg.data}")
-        for i, hx in enumerate(list(tx_data)):
-            self.logger.info(f"{i}: {hx}")
-        self.logger.info(f"tx_data: {tx_data}")
+    def can_tx(self):
+        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
         if self.bus is not None:
             msg = can.Message(
                 arbitration_id=CONTROL_ID,

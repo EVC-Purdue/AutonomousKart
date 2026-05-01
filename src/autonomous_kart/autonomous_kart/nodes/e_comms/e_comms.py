@@ -31,7 +31,7 @@ class AdcbStatus:
     steering_pwm: int # Integer value of the steering PWM (1000-2000)
 
 
-def pack_control_message(throttle_percent: float, steering_angle: float, logger) -> bytes:
+def pack_control_message(throttle_percent: float, steering_angle: float) -> bytes:
     """
     Pack the throttle and steering commands into a bytearray buffer for CAN
     Caller is responsible for ensuring values are within expected ranges.
@@ -47,7 +47,6 @@ def pack_control_message(throttle_percent: float, steering_angle: float, logger)
     """
     throttle = int(1000 * (throttle_percent / 100.0))  # 0-1000
     steering = int(500 + 500 * (steering_angle / 100.0))  # -100..100 -> 0..1000
-    logger.info(f"Steering in ecomms: {steering}, {throttle}")
 
     data = bytearray(8)
     data[0] = throttle & 0xFF

@@ -14,6 +14,7 @@ RUN apt-get -o Acquire::http::Pipeline-Depth="0" \
     install -y --no-install-recommends \
       python3-pip python3-colcon-common-extensions \
       python3.10-venv \
+      ros-${ROS_DISTRO}-rosbag2-storage-mcap \
       ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
       ros-${ROS_DISTRO}-ackermann-msgs \
       ros-${ROS_DISTRO}-rclpy ros-${ROS_DISTRO}-ros2bag \

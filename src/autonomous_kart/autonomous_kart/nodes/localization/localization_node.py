@@ -135,10 +135,10 @@ class LocalizationNode(Node):
 
         self._last_gps_xy = (x, y)
         self._last_gps_t = t
-        self._publish_odom(x, y, self._yaw_est, self._speed_est)
+        self._publish_odom(x, y, self._yaw_est, self._speed_est, cov=msg.pose.covariance)
 
 
-    def _publish_odom(self, x: float, y: float, yaw: float, speed: float):
+    def _publish_odom(self, x: float, y: float, yaw: float, speed: float, cov=None):
         now = self.get_clock().now().to_msg()
         q = Quaternion(z=math.sin(yaw / 2.0), w=math.cos(yaw / 2.0))
 
@@ -150,6 +150,8 @@ class LocalizationNode(Node):
         odom.pose.pose.position.y = y
         odom.pose.pose.orientation = q
         odom.twist.twist.linear.x = speed
+        if cov is not None:
+            odom.pose.covariance = cov
         self.odom_pub.publish(odom)
 
         tf = TransformStamped()

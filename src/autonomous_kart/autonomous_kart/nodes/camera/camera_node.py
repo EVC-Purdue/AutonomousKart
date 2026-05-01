@@ -3,6 +3,7 @@ import time
 import traceback
 
 import cv2
+import numpy as np
 import rclpy
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
@@ -55,7 +56,8 @@ class CameraNode(Node):
             self.reader_thread.start()
 
         else:
-            self.cap = cv2.VideoCapture(0)  # Real camera
+            # self.cap = cv2.VideoCapture(0)  # Real camera not plugged in yet
+            self.dummy_frame = np.zeros((202, 360, 3), dtype=np.uint8)
             self.video_fps = self.fps
 
         self.logger.info(f"Video FPS: {self.video_fps}, Given FPS: {self.fps}")
@@ -88,10 +90,14 @@ class CameraNode(Node):
                     )
                     self.last_callback_time = now
         else:
-            # TODO: Implement real mode
-            pass
+            # TODO: Send real frame
+            msg = self.bridge.cv2_to_imgmsg(self.dummy_frame, "bgr8")
+            msg.header.stamp = self.get_clock().now().to_msg()
+            msg.header.frame_id = "camera"
+            self.image_pub.publish(msg)
+            self.frame_counter += 1
 
-    def read_frames(self):
+def read_frames(self):
         """
         Background thread to read frames for efficiency
         """

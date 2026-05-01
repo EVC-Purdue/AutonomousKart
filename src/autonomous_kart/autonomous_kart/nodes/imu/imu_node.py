@@ -51,6 +51,10 @@ class ImuNode(Node):
             self.imu_frequency = 100.0
             self.logger.warning(f"No IMU frequency known, defaulting to {self.imu_frequency}")
 
+        if not self.status_frequency or self.status_frequency <= 0:
+            self.status_frequency = 1.0
+            self.logger.warning(f"No IMU status frequency known, defualt = {self.status_frequency}")
+
         self.gyro_bias = [0.0, 0.0, 0.0]
         self._calib_sum = [0.0, 0.0, 0.0]
         self._calib_count = 0
@@ -119,7 +123,7 @@ class ImuNode(Node):
         self._publish_status()
 
     def _cmd_vel_is_zero(self) -> bool:
-        # First-boot if we never recieved cmd_vel, assume idle.
+        # First-boot if we never received cmd_vel, assume idle.
         if self._last_cmd_vel is None:
             return True
         if (time.time() - self._last_cmd_vel_t) > self.cmd_vel_max_age_s:

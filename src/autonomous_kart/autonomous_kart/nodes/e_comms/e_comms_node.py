@@ -22,7 +22,7 @@ STATUS_ID = 0x101
 class ECommsNode(Node):
     def __init__(self):
         super().__init__(
-            "ECommsNode",
+            "e_comms_node",
             allow_undeclared_parameters=True,
             automatically_declare_parameters_from_overrides=True,
         )
@@ -46,13 +46,14 @@ class ECommsNode(Node):
         # CAN bus
         if not self.simulation_mode:
             try:
-                self.bus: Optional[can.interface.Bus] = can.interface.Bus(interface="slcan", channel=CAN_CHANNEL, bitrate=CAN_BITRATE)
+                self.bus: Optional[can.interface.Bus] = can.interface.Bus(interface="slcan", channel=CAN_CHANNEL,
+                                                                          bitrate=CAN_BITRATE)
                 self.can_notifier: Optional[can.Notifier] = can.Notifier(self.bus, [self._on_can_msg])
                 self.logger.info(f"Connected to CAN device on {CAN_CHANNEL} at {CAN_BITRATE} baud")
             except FileNotFoundError:
                 self.logger.error(f"Can device not connected on {CAN_CHANNEL}")
                 self.simulation_mode = True  # Running on-device, off-kart
-                
+
                 self.bus: Optional[can.interface.Bus] = None
                 self.can_notifier: Optional[can.Notifier] = None
         else:
@@ -68,15 +69,17 @@ class ECommsNode(Node):
         self.create_timer(5.0, self.log_command_rate)
 
         # Subscribe to pathfinder node for throttle and steering commands
-        self.throttle_sub: Subscriber = Subscriber(self, Float32, "cmd_vel")
-        self.steering_sub: Subscriber = Subscriber(self, Float32, "cmd_turn")
-        self.ts: ApproximateTimeSynchronizer = ApproximateTimeSynchronizer(
-            [self.throttle_sub, self.steering_sub],
-            queue_size=3,
-            slop=0.01,  # Time tolerance in seconds
-            allow_headerless=True,  # Float32 has no header
-        )
-        self.ts.registerCallback(self.cmd_callback)
+        # self.throttle_sub: Subscriber = Subscriber(self, Float32, "cmd_vel")
+        # self.steering_sub: Subscriber = Subscriber(self, Float32, "cmd_turn")
+        # self.ts: ApproximateTimeSynchronizer = ApproximateTimeSynchronizer(
+        #     [self.throttle_sub, self.steering_sub],
+        #     queue_size=3,
+        #     slop=0.01,  # Time tolerance in seconds
+        #     allow_headerless=True,  # Float32 has no header
+        # )
+        # self.ts.registerCallback(self.cmd_callback)
+        self.steering_sub = self.create_subscription(Float32, "cmd_turn", self.cmd_steer, 5)
+        self.throttle_sub = self.create_subscription(Float32, "cmd_vel", self.cmd_thr, 5)
 
         # Publishers
         self.adcb_state_pub = self.create_publisher(
@@ -92,10 +95,12 @@ class ECommsNode(Node):
             UInt16, "e_comms/steering_pwm", 1
         )
 
+        self.timer = self.create_timer(1.0 / 10.0, self.on_timer)
+
         # Init finished
         self.logger.info("Initialize EComms Node")
 
-    def cmd_callback(self, throttle_msg: Float32, steering_msg: Float32):
+    def cmd_thr(self, throttle_msg: Float32):
         """
         Send the throttle and steering command to the Electrical Stack via CAN.
         Part of hot loop so must be efficient
@@ -107,19 +112,56 @@ class ECommsNode(Node):
         self.cmd_count += 1
 
         # Ensure values are within expected ranges
-        if not (0.0 <= throttle_msg.data <= 100.0) or not (
-            -100.0 <= steering_msg.data <= 100.0
-        ):
+        if not (0.0 <= throttle_msg.data <= 100.0):
             self.logger.error(
                 f"Received out-of-bounds command values: "
-                f"throttle_percent={throttle_msg.data}, steering_angle={steering_msg.data}"
+                f"throttle_percent={throttle_msg.data}, steering_angle={self.steering_angle}"
             )
             raise ValueError("Command values out of bounds")
 
         self.throttle_percent = throttle_msg.data
-        self.steering_angle = steering_msg.data
-        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
+        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle, self.logger)
 
+        if self.bus is not None:
+            msg = can.Message(
+                arbitration_id=CONTROL_ID,
+                data=tx_data,
+                is_extended_id=False,
+            )
+            try:
+                self.bus.send(msg)
+                self.logger.info(f"Sent CAN: {msg.data.hex()}")
+            except can.CanError as e:
+                self.logger.error(f"Failed to send CAN message: {e}")
+
+
+    def cmd_steer(self, steering_msg: Float32):
+        """
+        Send the throttle and steering command to the Electrical Stack via CAN.
+        Part of hot loop so must be efficient
+
+        :param throttle_msg: Float32 message for throttle command (percent throttle)
+        :param steering_msg: Float32 message for steering command (percent steering, -100 to 100)
+        :return: None
+        """
+        self.cmd_count += 1
+
+        # Ensure values are within expected ranges
+        if not (
+                -100.0 <= steering_msg.data <= 100.0
+        ):
+            self.logger.error(
+                f"Received out-of-bounds command values: "
+                f"throttle_percent={self.throttle_percent}, steering_angle={steering_msg.data}"
+            )
+            raise ValueError("Command values out of bounds")
+
+        self.steering_angle = steering_msg.data
+        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle, self.logger)
+        self.logger.info(f"Steering: {steering_msg.data}")
+        for i, hx in enumerate(list(tx_data)):
+            self.logger.info(f"{i}: {hx}")
+        self.logger.info(f"tx_data: {tx_data}")
         if self.bus is not None:
             msg = can.Message(
                 arbitration_id=CONTROL_ID,
@@ -134,24 +176,41 @@ class ECommsNode(Node):
     def _on_can_msg(self, msg: can.Message):
         """Called by can.Notifier in a background thread for each received message."""
         if msg.arbitration_id == STATUS_ID:
-            data = bytes(msg.data) # copy, don't hold a reference
+            data = bytes(msg.data)  # copy, don't hold a reference
             # Add to executor to handle in main thread because ros publishers are not thread safe
-            if executor is not None:
-                executor.create_task(lambda: self.handle_status_msg(data))
+            if self.executor is not None:
+                self.executor.create_task(lambda: self.handle_status_msg(data))
             else:
                 self.logger.warning("CAN message received before executor ready, dropping frame")
+
+    def on_timer(self):
+        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle, self.logger)
+        # self.logger.info(f"Steering: {steering_msg.data}")
+        for i, hx in enumerate(list(tx_data)):
+            self.logger.info(f"{i}: {hx}")
+        self.logger.info(f"tx_data: {tx_data}")
+        if self.bus is not None:
+            msg = can.Message(
+                arbitration_id=CONTROL_ID,
+                data=tx_data,
+                is_extended_id=False,
+            )
+            try:
+                self.bus.send(msg)
+            except can.CanError as e:
+                self.logger.error(f"Failed to send CAN message: {e}")
 
     def handle_status_msg(self, msg_data: bytes):
         try:
             self.adcb_status = e_comms.unpack_status_message(msg_data, self.logger)
-            
+
             self.adcb_state_pub.publish(String(data=self.adcb_status.logic_mode))
             self.rc_mode_pub.publish(Bool(data=self.adcb_status.rc_mode))
             self.throttle_pwm_pub.publish(UInt16(data=self.adcb_status.throttle_pwm))
             self.steering_pwm_pub.publish(UInt16(data=self.adcb_status.steering_pwm))
         except Exception as e:
             self.logger.error(f"Failed to parse CAN message: {e}")
-    
+
     def destroy_node(self):
         # Close CAN
         if self.can_notifier is not None:
@@ -169,7 +228,7 @@ class ECommsNode(Node):
 
         if elapsed > 0:
             avg_rate = self.cmd_count / elapsed
-            self.logger.debug(
+            self.logger.info(
                 f"Average command rate: {avg_rate:.2f} commands/sec "
                 f"(Total: {self.cmd_count} in {elapsed:.1f}s)"
             )

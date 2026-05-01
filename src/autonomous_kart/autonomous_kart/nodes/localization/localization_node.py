@@ -2,7 +2,7 @@
 Localization node — publishes Odometry on /odom.
 
 Sim mode:  Integrates bicycle kinematics from cmd_vel + cmd_turn.
-Real mode: TODO — fuse GPS RTK + IMU via Kalman filter / factor graph.
+Real mode: TODO: fuse GPS RTK + IMU via Kalman filter / factor graph.
 """
 import math
 import traceback
@@ -26,6 +26,7 @@ class LocalizationNode(Node):
         )
         self.logger = self.get_logger()
         self.sim_mode = self.get_parameter("simulation_mode").value
+        self.logger.info(f"E_COMMS mode: {self.sim_mode}")
 
         # Output
         self.odom_pub = self.create_publisher(Odometry, "odom", 10)
@@ -39,6 +40,15 @@ class LocalizationNode(Node):
         self.logger.info(
             f"Localization Node started — Mode: {'SIM' if self.sim_mode else 'REAL'}"
         )
+
+        self.gps_subscriber = None
+        self.imu_subscriber = None
+
+        self._last_gps_xy = None
+        self._last_gps_t = None
+        self._yaw_est = 0.0
+        self._speed_est = 0.0
+        self._yaw_min_dist = 0.0
 
     def _init_sim(self):
         wheelbase = float(self.get_parameter("wheelbase_m").value)
@@ -82,6 +92,7 @@ class LocalizationNode(Node):
                         f"Spawned at ({x0:.1f}, {y0:.1f}, {math.degrees(yaw0):.0f}°)"
                     )
         except Exception:
+            self.logger.warning("line_path missing")
             pass  # No line_path or file missing — start at origin
 
     def _cb_vel(self, msg: Float32):
@@ -96,9 +107,35 @@ class LocalizationNode(Node):
 
 
     def _init_real(self):
-        # TODO: subscribe to GPS, IMU, wheel encoders
-        # TODO: initialize Kalman filter / factor graph
-        pass
+        # Passes GPS data
+        # TODO: EKF with updates
+        self.gps_subscriber = self.create_subscription(
+            Odometry, "gps", self.gps_callback, 10
+        )
+        self._last_gps_xy = None
+        self._last_gps_t = None
+        self._yaw_est = 0.0
+        self._speed_est = 0.0
+        self._yaw_min_dist = 0.3  # Hotfix, TODO: Update
+
+    def gps_callback(self, msg: Odometry):
+        p = msg.pose.pose.position
+        x, y = float(p.x), float(p.y)
+        t = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+
+        if self._last_gps_xy is not None:
+            dx = x - self._last_gps_xy[0]
+            dy = y - self._last_gps_xy[1]
+            dist = math.hypot(dx, dy)
+            dt = max(t - self._last_gps_t, 1e-3)
+            if dist > self._yaw_min_dist:
+                self._yaw_est = math.atan2(dy, dx)
+            # Low-pass speed so the HUD doesn't twitch
+            self._speed_est = 0.7 * self._speed_est + 0.3 * (dist / dt)
+
+        self._last_gps_xy = (x, y)
+        self._last_gps_t = t
+        self._publish_odom(x, y, self._yaw_est, self._speed_est)
 
 
     def _publish_odom(self, x: float, y: float, yaw: float, speed: float):

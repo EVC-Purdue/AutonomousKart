@@ -4,8 +4,8 @@ pathfinder_node:
     # Manual mode
     max_speed: 50
     acceleration: 0.2
-    max_steering: 10
-    steering_accel: 0.05
+    max_steering: 100
+    steering_accel: 5.0
     line_path: /ws/data/racing_line/line.csv
     
     # Auto mode (Nav2 params)

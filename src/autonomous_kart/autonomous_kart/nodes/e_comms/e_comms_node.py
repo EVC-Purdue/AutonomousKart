@@ -95,6 +95,8 @@ class ECommsNode(Node):
             UInt16, "e_comms/steering_pwm", 1
         )
 
+        self.timer = self.create_timer(1.0 / self.gps_frequency, self.handle_status_msg)
+
         # Init finished
         self.logger.info("Initialize EComms Node")
 
@@ -180,6 +182,23 @@ class ECommsNode(Node):
                 self.executor.create_task(lambda: self.handle_status_msg(data))
             else:
                 self.logger.warning("CAN message received before executor ready, dropping frame")
+
+    def on_timer(self):
+        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle, self.logger)
+        # self.logger.info(f"Steering: {steering_msg.data}")
+        for i, hx in enumerate(list(tx_data)):
+            self.logger.info(f"{i}: {hx}")
+        self.logger.info(f"tx_data: {tx_data}")
+        if self.bus is not None:
+            msg = can.Message(
+                arbitration_id=CONTROL_ID,
+                data=tx_data,
+                is_extended_id=False,
+            )
+            try:
+                self.bus.send(msg)
+            except can.CanError as e:
+                self.logger.error(f"Failed to send CAN message: {e}")
 
     def handle_status_msg(self, msg_data: bytes):
         try:

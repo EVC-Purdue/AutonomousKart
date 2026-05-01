@@ -95,7 +95,7 @@ class ECommsNode(Node):
             UInt16, "e_comms/steering_pwm", 1
         )
 
-        self.timer = self.create_timer(1.0 / self.gps_frequency, self.handle_status_msg)
+        self.timer = self.create_timer(1.0 / 10.0, self.on_timer)
 
         # Init finished
         self.logger.info("Initialize EComms Node")

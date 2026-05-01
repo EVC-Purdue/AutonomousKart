@@ -94,6 +94,16 @@ class ECommsNode(Node):
         # Init finished
         self.logger.info("Initialize EComms Node")
 
+    def _on_can_msg(self, msg: can.Message):
+        """Called by can.Notifier in a background thread for each received message."""
+        if msg.arbitration_id == STATUS_ID:
+            data = bytes(msg.data)  # copy, don't hold a reference
+            # Add to executor to handle in main thread because ros publishers are not thread safe
+            if self.executor is not None:
+                self.executor.create_task(lambda: self.handle_status_msg(data))
+            else:
+                self.logger.warning("CAN message received before executor ready, dropping frame")
+
     def cmd_thr(self, throttle_msg: Float32):
         self.cmd_count += 1
         if not (0.0 <= throttle_msg.data <= 100.0):
@@ -109,16 +119,6 @@ class ECommsNode(Node):
             self.steering_angle = 0.0  # Default to straight if invalid command
             return
         self.steering_angle = steering_msg.data
-
-    def _on_can_msg(self, msg: can.Message):
-        """Called by can.Notifier in a background thread for each received message."""
-        if msg.arbitration_id == STATUS_ID:
-            data = bytes(msg.data)  # copy, don't hold a reference
-            # Add to executor to handle in main thread because ros publishers are not thread safe
-            if self.executor is not None:
-                self.executor.create_task(lambda: self.handle_status_msg(data))
-            else:
-                self.logger.warning("CAN message received before executor ready, dropping frame")
 
     def on_timer(self):
         tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle, self.logger)

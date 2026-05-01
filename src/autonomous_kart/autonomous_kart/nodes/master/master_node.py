@@ -58,6 +58,8 @@ class MasterNode(Node):
             "vx": 0.0, "vy": 0.0, "vz": 0.0,
             "wx": 0.0, "wy": 0.0, "wz": 0.0,
             "speed": 0.0,
+            "pose_cov": [0.0] * 36,
+            "twist_cov": [0.0] * 36,
             "stamp_ns": 0,
         }
         self.cmd_data = {"motor": 0.0, "steer": 0.0}
@@ -154,6 +156,8 @@ class MasterNode(Node):
                 "vx": tl.x, "vy": tl.y, "vz": tl.z,
                 "wx": ta.x, "wy": ta.y, "wz": ta.z,
                 "speed": tl.x,
+                "pose_cov": list(msg.pose.covariance),
+                "twist_cov": list(msg.twist.covariance),
                 "stamp_ns": stamp.sec * 1_000_000_000 + stamp.nanosec,
             }
 

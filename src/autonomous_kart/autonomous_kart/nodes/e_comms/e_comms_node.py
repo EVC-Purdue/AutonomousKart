@@ -94,6 +94,7 @@ class ECommsNode(Node):
         # Init finished
         self.logger.info("Initialize EComms Node")
 
+    # CAN RX ------------------------------------------------------------------#
     def _on_can_msg(self, msg: can.Message):
         """Called by can.Notifier in a background thread for each received message."""
         if msg.arbitration_id == STATUS_ID:
@@ -104,6 +105,19 @@ class ECommsNode(Node):
             else:
                 self.logger.warning("CAN message received before executor ready, dropping frame")
 
+    def handle_status_msg(self, msg_data: bytes):
+        try:
+            self.adcb_status = e_comms.unpack_status_message(msg_data, self.logger)
+
+            self.adcb_state_pub.publish(String(data=self.adcb_status.logic_mode))
+            self.rc_mode_pub.publish(Bool(data=self.adcb_status.rc_mode))
+            self.throttle_pwm_pub.publish(UInt16(data=self.adcb_status.throttle_pwm))
+            self.steering_pwm_pub.publish(UInt16(data=self.adcb_status.steering_pwm))
+        except Exception as e:
+            self.logger.error(f"Failed to parse CAN message: {e}")
+    #--------------------------------------------------------------------------#
+
+    # Command Callbacks -------------------------------------------------------#
     def cmd_thr(self, throttle_msg: Float32):
         self.cmd_count += 1
         if not (0.0 <= throttle_msg.data <= 100.0):
@@ -119,7 +133,9 @@ class ECommsNode(Node):
             self.steering_angle = 0.0  # Default to straight if invalid command
             return
         self.steering_angle = steering_msg.data
-
+    #--------------------------------------------------------------------------#
+    
+    # CAN TX ------------------------------------------------------------------#
     def on_timer(self):
         tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle, self.logger)
         # self.logger.info(f"Steering: {steering_msg.data}")
@@ -136,17 +152,7 @@ class ECommsNode(Node):
                 self.bus.send(msg)
             except can.CanError as e:
                 self.logger.error(f"Failed to send CAN message: {e}")
-
-    def handle_status_msg(self, msg_data: bytes):
-        try:
-            self.adcb_status = e_comms.unpack_status_message(msg_data, self.logger)
-
-            self.adcb_state_pub.publish(String(data=self.adcb_status.logic_mode))
-            self.rc_mode_pub.publish(Bool(data=self.adcb_status.rc_mode))
-            self.throttle_pwm_pub.publish(UInt16(data=self.adcb_status.throttle_pwm))
-            self.steering_pwm_pub.publish(UInt16(data=self.adcb_status.steering_pwm))
-        except Exception as e:
-            self.logger.error(f"Failed to parse CAN message: {e}")
+    #--------------------------------------------------------------------------#
 
     def destroy_node(self):
         # Close CAN

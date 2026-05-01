@@ -99,6 +99,13 @@ def odom():
     return jsonify(master_node.get_odom())
 
 
+@app.route("/e_comms", methods=["GET"])
+def e_comms():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify(master_node.get_e_comms())
+
+
 @app.route("/imu/calibrate", methods=["POST"])
 def imu_calibrate():
     if not master_node:

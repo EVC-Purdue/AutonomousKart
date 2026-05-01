@@ -5,7 +5,7 @@ from enum import Enum
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from std_msgs.msg import String, Float32MultiArray, Float32, Empty
+from std_msgs.msg import String, Float32MultiArray, Float32, Bool, UInt16, Empty
 
 
 
@@ -58,9 +58,19 @@ class MasterNode(Node):
             "vx": 0.0, "vy": 0.0, "vz": 0.0,
             "wx": 0.0, "wy": 0.0, "wz": 0.0,
             "speed": 0.0,
+            "pose_cov": [0.0] * 36,
+            "twist_cov": [0.0] * 36,
             "stamp_ns": 0,
         }
         self.cmd_data = {"motor": 0.0, "steer": 0.0}
+
+        # e_comms ADCB state snapshot
+        self.e_comms_data = {
+            "adcb_state": "",
+            "rc_mode": False,
+            "throttle_pwm": 0,
+            "steering_pwm": 0,
+        }
 
         self.odom_subscriber = self.create_subscription(
             Odometry, "odom", self.odom_callback, 5
@@ -71,6 +81,12 @@ class MasterNode(Node):
         # Track cmd_vel and cmd_turn individually
         self.create_subscription(Float32, "cmd_vel", self._velocity_callback, 5)
         self.create_subscription(Float32, "cmd_turn", self._turn_callback, 5)
+
+        # e_comms ADCB telemetry
+        self.create_subscription(String, "e_comms/adcb_state", self._adcb_state_callback, 1)
+        self.create_subscription(Bool, "e_comms/rc_mode", self._rc_mode_callback, 1)
+        self.create_subscription(UInt16, "e_comms/throttle_pwm", self._throttle_pwm_callback, 1)
+        self.create_subscription(UInt16, "e_comms/steering_pwm", self._steering_pwm_callback, 1)
 
         # Dynamic line output
         self.dynamic_line_data = {"active": False, "strategy": None, "merge_idx": -1, "points": []}
@@ -147,6 +163,8 @@ class MasterNode(Node):
                 "vx": tl.x, "vy": tl.y, "vz": tl.z,
                 "wx": ta.x, "wy": ta.y, "wz": ta.z,
                 "speed": tl.x,
+                "pose_cov": list(msg.pose.covariance),
+                "twist_cov": list(msg.twist.covariance),
                 "stamp_ns": stamp.sec * 1_000_000_000 + stamp.nanosec,
             }
 
@@ -157,6 +175,22 @@ class MasterNode(Node):
     def _turn_callback(self, msg: Float32):
         with self._lock:
             self.cmd_data["steer"] = msg.data
+
+    def _adcb_state_callback(self, msg: String):
+        with self._lock:
+            self.e_comms_data["adcb_state"] = msg.data
+
+    def _rc_mode_callback(self, msg: Bool):
+        with self._lock:
+            self.e_comms_data["rc_mode"] = msg.data
+
+    def _throttle_pwm_callback(self, msg: UInt16):
+        with self._lock:
+            self.e_comms_data["throttle_pwm"] = msg.data
+
+    def _steering_pwm_callback(self, msg: UInt16):
+        with self._lock:
+            self.e_comms_data["steering_pwm"] = msg.data
 
     def get_odom(self):
         with self._lock:
@@ -176,6 +210,10 @@ class MasterNode(Node):
 
     def trigger_imu_calibration(self):
         self.imu_calibrate_publisher.publish(Empty())
+
+    def get_e_comms(self):
+        with self._lock:
+            return dict(self.e_comms_data)
 
 
 def main(args=None):

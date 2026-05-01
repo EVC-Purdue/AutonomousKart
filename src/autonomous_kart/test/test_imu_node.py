@@ -85,8 +85,14 @@ def fake_bus(monkeypatch):
     return bus_holder  # caller pulls bus_holder["bus"] after node ctor
 
 
-def _imu_params(cache_path, *, calib_samples=5, frequency=100.0):
-    """Default parameter set for ImuNode tests. Small sample count keeps tests fast."""
+def _imu_params(cache_path, *, calib_samples=5, frequency=1.0):
+    """
+    Default parameter set for ImuNode tests.
+
+    `imu_frequency` is intentionally low (1 Hz) so the periodic publish timer
+    doesn't fire during ROS discovery / message-delivery spins. All tests drive
+    `publish_imu()` directly instead of relying on the timer.
+    """
     return {
         "simulation_mode": False,
         "i2c_bus": 1,

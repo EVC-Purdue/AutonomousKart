@@ -65,18 +65,11 @@ def generate_launch_description():
                         name="steering_node",
                         parameters=[steering_yaml],
                     ),
-                    ExecuteProcess(
-                        cmd=[
-                            str(camera_binary),
-                            "--ros-args",
-                            "-r",
-                            "__node:=camera_node",
-                            "--params-file",
-                            camera_yaml,
-                            "--params-file",
-                            system_yaml,
-                        ],
-                        output="screen",
+                    Node(
+                        package="autonomous_kart_cpp",
+                        executable="camera_node",
+                        name="camera_node",
+                        parameters=[camera_yaml],
                     ),
                     Node(
                         package="autonomous_kart",

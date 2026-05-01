@@ -161,9 +161,9 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
   cv::VideoCapture cap_;
-  double fps_ = 60.0;
-  double video_fps_ = 60.0;
-  bool sim_mode_ = true;
+  double fps_;
+  double video_fps_;
+  bool sim_mode_;
   bool running_;
   size_t frame_counter_;
   std::shared_ptr<sensor_msgs::msg::Image> latest_frame_;

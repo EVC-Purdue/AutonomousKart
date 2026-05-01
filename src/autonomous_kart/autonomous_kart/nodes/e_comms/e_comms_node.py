@@ -29,6 +29,8 @@ class ECommsNode(Node):
 
         # Parameters
         self.simulation_mode: bool = self.get_parameter("simulation_mode").value
+        self.can_tx_hz: float = self.get_parameter("can_tx_hz").value
+        self.can_timeout: float = self.get_parameter("can_timeout").value
 
         # Inputs
         self.throttle_percent: float = 0.0
@@ -74,9 +76,9 @@ class ECommsNode(Node):
         self.throttle_sub = self.create_subscription(Float32, "cmd_vel", self.cmd_thr, 5)
         self.last_command_time = self.get_clock().now()
 
-        # CAN TX timer at 50Hz to send latest command values
-        # TODO: make a parameter
-        self.timer = self.create_timer(1.0 / 50.0, self.can_tx)
+        # CAN TX timer at a fixed rate to send latest command values
+        self.timer = self.create_timer(1.0 / self.can_tx_hz, self.can_tx)
+        self.logger.error(f"CAN TX timer set to {self.can_tx_hz} Hz (interval: {1.0 / self.can_tx_hz:.3f} sec)")
 
         # Publishers
         self.adcb_state_pub = self.create_publisher(
@@ -144,11 +146,10 @@ class ECommsNode(Node):
         Send the latest throttle and steering commands on the CAN bus at a fixed rate.
         If we have not received any new commands for a while (1 sec) reset to default/zero commands instead.
         """
-        if (self.get_clock().now() - self.last_command_time).nanoseconds / 1e9 > 1.0:
+        if (self.get_clock().now() - self.last_command_time).nanoseconds / 1e9 > self.can_timeout:
             # No recent commands, default to zero
             self.throttle_percent = 0.0
             self.steering_angle = 0.0
-            # TODO: make the 1 sec timeout a parameter
 
         tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
         if self.bus is not None:

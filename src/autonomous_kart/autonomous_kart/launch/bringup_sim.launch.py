@@ -17,6 +17,7 @@ def generate_launch_description():
     system_yaml = os.path.join(pkg_share, "params", "system.yaml")
     pathfinder_yaml = os.path.join(pkg_share, "params", "pathfinder.yaml")
     localization_yaml = os.path.join(pkg_share, "params", "localization.yaml")
+    e_comms_yaml = os.path.join(pkg_share, "params", "e_comms.yaml")
 
     sim_mode = LaunchConfiguration("simulation_mode")
 
@@ -71,6 +72,7 @@ def generate_launch_description():
                         package="autonomous_kart",
                         executable="e_comms_node",
                         name="e_comms_node",
+                        parameters=[e_comms_yaml],
                     ),
                     Node(
                         package="autonomous_kart",

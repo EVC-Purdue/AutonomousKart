@@ -8,7 +8,6 @@ from rclpy.node import Node
 from rclpy.time import Time
 from std_msgs.msg import Float32, UInt16, Bool, String
 from rclpy.impl.rcutils_logger import RcutilsLogger
-from message_filters import Subscriber, ApproximateTimeSynchronizer
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms
 

@@ -144,11 +144,11 @@ class ECommsNode(Node):
         Send the latest throttle and steering commands on the CAN bus at a fixed rate.
         If we have not received any new commands for a while (1 sec) reset to default/zero commands instead.
         """
-        if (self.get_clock().now() - self.last_command_time).nanoseconds / 1e9 > 1.0:
-            # No recent commands, default to zero
-            self.throttle_percent = 0.0
-            self.steering_angle = 0.0
-            # TODO: make the 1 sec timeout a parameter
+        # if (self.get_clock().now() - self.last_command_time).nanoseconds / 1e9 > 1.0:
+        #     # No recent commands, default to zero
+        #     self.throttle_percent = 0.0
+        #     self.steering_angle = 0.0
+        #     # TODO: make the 1 sec timeout a parameter
 
         tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
         if self.bus is not None:

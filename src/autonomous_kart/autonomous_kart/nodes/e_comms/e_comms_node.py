@@ -118,7 +118,7 @@ class ECommsNode(Node):
             raise ValueError("Command values out of bounds")
 
         self.throttle_percent = throttle_msg.data
-        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
+        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle, self.logger)
 
         if self.bus is not None:
             msg = can.Message(
@@ -155,7 +155,8 @@ class ECommsNode(Node):
             raise ValueError("Command values out of bounds")
 
         self.steering_angle = steering_msg.data
-        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
+        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle, self.logger)
+        self.logger.info(f"Steering: {steering_msg.data}")
         for i, hx in enumerate(list(tx_data)):
             self.logger.info(f"{i}: {hx}")
         self.logger.info(f"tx_data: {tx_data}")

@@ -165,7 +165,6 @@ class ECommsNode(Node):
             )
             try:
                 self.bus.send(msg)
-                self.logger.info(msg.data)
             except can.CanError as e:
                 self.logger.error(f"Failed to send CAN message: {e}")
 

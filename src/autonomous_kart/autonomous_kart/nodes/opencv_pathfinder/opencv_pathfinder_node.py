@@ -10,10 +10,7 @@ from rclpy.qos import DurabilityPolicy, ReliabilityPolicy, QoSProfile
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 
-from autonomous_kart.nodes.opencv_pathfinder.angle_calculator import (
-    calculate_track_angles,
-)
-
+from autonomous_kart.nodes.opencv_pathfinder.angle import AngleFinder
 
 class OpenCVPathfinderNode(Node):
     def __init__(self):
@@ -28,6 +25,7 @@ class OpenCVPathfinderNode(Node):
         self.bridge = CvBridge()
         self.frame_count = 0
         self.angle_msg = None
+        self.angle_finder = AngleFinder(self.logger)
 
         self.system_frequency = self.get_parameter("system_frequency").value
 
@@ -70,13 +68,15 @@ class OpenCVPathfinderNode(Node):
             self.frames_since_last_log = 0
 
         # Publish angles
-        angles = calculate_track_angles(frame)
-        if not self.angle_msg:
-            self.angle_msg = Float32MultiArray(data=angles)
-        else:
-            # self.angle_pub.publish(Float32MultiArray(data=angles))
-            self.angle_msg.data = angles
-        self.angle_pub.publish(self.angle_msg)
+        right_angle, left_angle = self.angle_finder.get_img_angles(frame, debug=False, percent=0.0, pixel_range=3, pic_offset=5)
+        if right_angle is None or left_angle is None:
+            self.logger.warn("Right or Left angle returned None")
+        msg = Float32MultiArray()
+        msg.data = [
+            float(right_angle) if right_angle is not None else float('nan'),
+            float(left_angle) if left_angle is not None else float('nan'),
+        ]
+        self.angle_pub.publish(msg)
 
 
 def main(args=None):

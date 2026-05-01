@@ -137,7 +137,7 @@ class ECommsNode(Node):
         self.steering_angle = steering_msg.data
         self.last_command_time = self.get_clock().now()
     #--------------------------------------------------------------------------#
-    
+
     # CAN TX ------------------------------------------------------------------#
     def can_tx(self):
         """

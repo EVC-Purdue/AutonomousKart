@@ -16,6 +16,7 @@ CAN_BITRATE = 500000
 
 CONTROL_ID = 0x100
 STATUS_ID = 0x101
+HEARTBEAT_ID = 0x102
 
 
 class ECommsNode(Node):
@@ -74,9 +75,10 @@ class ECommsNode(Node):
         self.throttle_sub = self.create_subscription(Float32, "cmd_vel", self.cmd_thr, 5)
         self.last_command_time = self.get_clock().now()
 
-        # CAN TX timer at 50Hz to send latest command values
-        # TODO: make a parameter
-        self.timer = self.create_timer(1.0 / 50.0, self.can_tx)
+        # CAN heartbeat
+        self.hb_counter = 0
+        self.timer = self.create_timer(1.0 / 10.0, self.can_hb_tx)
+        # TODO: make heartbeat rate a parameter
 
         # Publishers
         self.adcb_state_pub = self.create_publisher(
@@ -139,6 +141,25 @@ class ECommsNode(Node):
     #--------------------------------------------------------------------------#
 
     # CAN TX ------------------------------------------------------------------#
+    def can_hb_tx(self):
+        """
+        Send heartbeat message on CAN bus at a fixed rate.
+        Also updates the heartbeat counter which is included in the message payload.
+        """
+        self.hb_counter = (self.hb_counter + 1) % 256  # Wrap around at 255
+        hb_data = e_comms.pack_hb_message(self.hb_counter)
+
+        if self.bus is not None:
+            msg = can.Message(
+                arbitration_id=HEARTBEAT_ID,
+                data=hb_data,
+                is_extended_id=False,
+            )
+            try:
+                self.bus.send(msg)
+            except can.CanError as e:
+                self.logger.error(f"Failed to send CAN heartbeat message: {e}")
+
     def can_tx(self):
         """
         Send the latest throttle and steering commands on the CAN bus at a fixed rate.

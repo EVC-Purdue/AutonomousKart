@@ -4,6 +4,7 @@ import os
 import time
 import traceback
 
+import numpy as np
 import rclpy
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -17,6 +18,18 @@ from smbus2 import SMBus
 WAITING = "WAITING"
 CALIBRATING = "CALIBRATING"
 CALIBRATED = "CALIBRATED"
+
+
+def _level_rotation(g, target):
+    """Rotation aligning g with target (Rodrigues)."""
+    u = g / np.linalg.norm(g)
+    d = target / np.linalg.norm(target)
+    v = np.cross(u, d)
+    c = float(np.dot(u, d))
+    if c <= -0.999999:
+        return np.diag([1.0, -1.0, -1.0])
+    K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    return np.eye(3) + K + (K @ K) / (1.0 + c)
 
 
 class ImuNode(Node):
@@ -56,7 +69,9 @@ class ImuNode(Node):
             self.logger.warning(f"No IMU status frequency known, defualt = {self.status_frequency}")
 
         self.gyro_bias = [0.0, 0.0, 0.0]
+        self.R = np.eye(3)
         self._calib_sum = [0.0, 0.0, 0.0]
+        self._calib_accel_sum = [0.0, 0.0, 0.0]
         self._calib_count = 0
         self.state = WAITING
         self.last_error = ""
@@ -118,6 +133,7 @@ class ImuNode(Node):
     def _reset_calibration(self, reason: str):
         self.state = WAITING
         self._calib_sum = [0.0, 0.0, 0.0]
+        self._calib_accel_sum = [0.0, 0.0, 0.0]
         self._calib_count = 0
         self.last_error = reason
         self._publish_status()
@@ -143,13 +159,16 @@ class ImuNode(Node):
             return f"|accel|={accel_mag:.3f} m/s^2 deviates from g by > {self.accel_motion_thresh}"
         return None
 
-    def _accumulate(self, gyro):
+    def _accumulate(self, accel, gyro):
         for i in range(3):
             self._calib_sum[i] += gyro[i]
+            self._calib_accel_sum[i] += accel[i]
         self._calib_count += 1
 
     def _finish_calibration(self):
         self.gyro_bias = [s / self._calib_count for s in self._calib_sum]
+        accel_mean = np.array([s / self._calib_count for s in self._calib_accel_sum])
+        self.R = _level_rotation(accel_mean, np.array([0.0, 0.0, self.default_g]))
         self.state = CALIBRATED
         self.last_error = ""
         self.logger.info(
@@ -169,6 +188,11 @@ class ImuNode(Node):
             if not (isinstance(bias, list) and len(bias) == 3):
                 raise ValueError("gyro_bias must be a length-3 list")
             self.gyro_bias = [float(b) for b in bias]
+            R = data.get("R")
+            if R is not None:
+                R_arr = np.asarray(R, dtype=float)
+                if R_arr.shape == (3, 3):
+                    self.R = R_arr
             self.state = CALIBRATED
             self.logger.info(
                 f"Loaded calibration from {self.cache_path}: gyro_bias={self.gyro_bias}"
@@ -181,6 +205,7 @@ class ImuNode(Node):
     def _save_cache(self):
         payload = {
             "gyro_bias": self.gyro_bias,
+            "R": self.R.tolist(),
             "samples": self._calib_count,
             "timestamp": time.time(),
         }
@@ -217,11 +242,14 @@ class ImuNode(Node):
             self._reset_calibration(motion_reason)
             return
 
-        self._accumulate(gyro)
+        self._accumulate(accel, gyro)
         if self._calib_count >= self.calib_samples:
             self._finish_calibration()
 
     def _publish_imu_msg(self, accel, gyro):
+        accel = self.R @ np.asarray(accel)
+        gyro = self.R @ (np.asarray(gyro) - np.asarray(self.gyro_bias))
+
         msg = Imu()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "imu_link"
@@ -235,9 +263,9 @@ class ImuNode(Node):
         msg.linear_acceleration_covariance[4] = self.accel_var
         msg.linear_acceleration_covariance[8] = self.accel_var
 
-        msg.angular_velocity.x = gyro[0] - self.gyro_bias[0]
-        msg.angular_velocity.y = gyro[1] - self.gyro_bias[1]
-        msg.angular_velocity.z = gyro[2] - self.gyro_bias[2]
+        msg.angular_velocity.x = gyro[0]
+        msg.angular_velocity.y = gyro[1]
+        msg.angular_velocity.z = gyro[2]
         msg.angular_velocity_covariance[0] = self.gyro_var
         msg.angular_velocity_covariance[4] = self.gyro_var
         msg.angular_velocity_covariance[8] = self.gyro_var

@@ -27,6 +27,9 @@ RUN apt-get -o Acquire::http::Pipeline-Depth="0" \
 COPY requirements.txt requirements.txt
 RUN pip3 install --no-cache-dir -r requirements.txt
 
+COPY docker/cyclonedds.xml /etc/cyclonedds.xml
+ENV CYCLONEDDS_URI=file:///etc/cyclonedds.xml
+
 # Workspace path
 ENV WS=/ws
 RUN mkdir -p ${WS}/src

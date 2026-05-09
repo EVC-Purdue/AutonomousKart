@@ -5,6 +5,7 @@ from enum import Enum
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
+from sensor_msgs.msg import Imu
 from std_msgs.msg import String, Float32MultiArray, Float32, Bool, UInt16, Empty
 
 
@@ -100,6 +101,15 @@ class MasterNode(Node):
         self.create_subscription(
             String, "imu/calibration_status", self._imu_status_callback, 1
         )
+
+        # Latest IMU reading snapshot
+        self.imu_data = {
+            "ax": 0.0, "ay": 0.0, "az": 0.0,
+            "gx": 0.0, "gy": 0.0, "gz": 0.0,
+            "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0,
+            "stamp_ns": 0,
+        }
+        self.create_subscription(Imu, "imu", self._imu_callback, 5)
 
         self.logger.info("Initialize Master Node")
 
@@ -210,6 +220,21 @@ class MasterNode(Node):
 
     def trigger_imu_calibration(self):
         self.imu_calibrate_publisher.publish(Empty())
+
+    def _imu_callback(self, msg: Imu):
+        a, g, q = msg.linear_acceleration, msg.angular_velocity, msg.orientation
+        stamp = msg.header.stamp
+        with self._lock:
+            self.imu_data = {
+                "ax": a.x, "ay": a.y, "az": a.z,
+                "gx": g.x, "gy": g.y, "gz": g.z,
+                "qx": q.x, "qy": q.y, "qz": q.z, "qw": q.w,
+                "stamp_ns": stamp.sec * 1_000_000_000 + stamp.nanosec,
+            }
+
+    def get_imu(self):
+        with self._lock:
+            return dict(self.imu_data)
 
     def get_e_comms(self):
         with self._lock:

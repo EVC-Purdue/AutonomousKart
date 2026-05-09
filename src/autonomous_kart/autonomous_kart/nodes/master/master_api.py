@@ -121,6 +121,13 @@ def imu_status():
     return jsonify(master_node.get_imu_status())
 
 
+@app.route("/imu", methods=["GET"])
+def imu():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify(master_node.get_imu())
+
+
 @app.route("/racing_line", methods=["GET"])
 def racing_line():
     path = master_node.path

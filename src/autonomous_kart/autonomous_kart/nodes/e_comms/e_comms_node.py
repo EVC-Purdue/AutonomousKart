@@ -80,21 +80,13 @@ class ECommsNode(Node):
         # TODO: make heartbeat rate a parameter
 
         # Publishers
-        self.adcb_state_pub = self.create_publisher(
-            String, "e_comms/adcb_state", 1
-        )
-        self.rc_mode_pub = self.create_publisher(
-            Bool, "e_comms/rc_mode", 1
-        )
-        self.throttle_pwm_pub = self.create_publisher(
-            UInt16, "e_comms/throttle_pwm", 1
-        )
-        self.steering_pwm_pub = self.create_publisher(
-            UInt16, "e_comms/steering_pwm", 1
-        )
+        self.adcb_state_pub = self.create_publisher(String, "e_comms/adcb_state", 1)
+        self.rc_mode_pub = self.create_publisher(Bool, "e_comms/rc_mode", 1)
+        self.throttle_pwm_pub = self.create_publisher(UInt16, "e_comms/throttle_pwm", 1)
+        self.steering_pwm_pub = self.create_publisher(UInt16, "e_comms/steering_pwm", 1)
 
         # Init finished
-        self.logger.info("Initialize EComms Node")
+        self.logger.info("Initialized EComms Node")
 
     # CAN RX ------------------------------------------------------------------#
     def _on_can_msg(self, msg: can.Message):

@@ -1,0 +1,3 @@
+e_comms_node:
+  ros__parameters:
+    heartbeat_period_ms: 100.0

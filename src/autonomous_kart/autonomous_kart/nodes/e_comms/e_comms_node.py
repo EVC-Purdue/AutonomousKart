@@ -76,8 +76,8 @@ class ECommsNode(Node):
 
         # CAN heartbeat
         self.hb_counter = 0
-        self.timer = self.create_timer(1.0 / 10.0, self.can_hb_tx)
-        # TODO: make heartbeat rate a parameter
+        self.hb_tx_period_ms = self.get_parameter("heartbeat_period_ms").value
+        self.hb_timer = self.create_timer(self.hb_tx_period_ms / 1000.0, self.can_hb_tx)
 
         # Publishers
         self.adcb_state_pub = self.create_publisher(String, "e_comms/adcb_state", 1)

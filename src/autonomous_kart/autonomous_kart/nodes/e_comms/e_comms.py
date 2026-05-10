@@ -69,8 +69,8 @@ def pack_hb_message(counter: int) -> bytes:
     Pack a heartbeat message with a simple counter.
 
     - ID = `0x102` - **E_Comms heartbeat** (RX)
-	    - Byte 0: E_Comms heartbeat counter (uint8_t)
-	    - Byte 1-7: reserved / future use
+        - Byte 0: E_Comms heartbeat counter (uint8_t)
+        - Byte 1-7: reserved / future use
 
     :param counter: Heartbeat counter (does not have to be 0-255, will be truncated to uint8_t)
     :return: byte array of length 8.

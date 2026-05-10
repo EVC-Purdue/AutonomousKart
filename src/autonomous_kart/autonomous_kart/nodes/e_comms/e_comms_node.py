@@ -117,8 +117,8 @@ class ECommsNode(Node):
         if not (0.0 <= throttle_msg.data <= 100.0):
             self.logger.error(f"Received out-of-bounds throttle command: {throttle_msg.data}.")
             self.throttle_percent = 0.0  # Default to zero if invalid command
-            return
-        self.throttle_percent = throttle_msg.data
+        else:
+            self.throttle_percent = throttle_msg.data
         self.can_control_tx()  # Send updated command immediately on CAN bus
 
     def cmd_steer(self, steering_msg: Float32):
@@ -126,8 +126,8 @@ class ECommsNode(Node):
         if not (-100.0 <= steering_msg.data <= 100.0):
             self.logger.error(f"Received out-of-bounds steering command: {steering_msg.data}.")
             self.steering_angle = 0.0  # Default to straight if invalid command
-            return
-        self.steering_angle = steering_msg.data
+        else:
+            self.steering_angle = steering_msg.data
         self.can_control_tx()  # Send updated command immediately on CAN bus
     #--------------------------------------------------------------------------#
 

@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import threading
 import time
 import traceback
 
@@ -68,6 +69,11 @@ class ImuNode(Node):
             self.status_frequency = 1.0
             self.logger.warning(f"No IMU status frequency known, defualt = {self.status_frequency}")
 
+        # Protects R, gyro_bias, calib accumulators, state, last_error.
+        # MultiThreadedExecutor lets publish_imu run concurrently with the
+        # yaw-offset / calibrate / status callbacks, so all shared mutable
+        # state goes through this lock.
+        self._lock = threading.Lock()
         self.gyro_bias = [0.0, 0.0, 0.0]
         self.R = np.eye(3)
         self._calib_sum = [0.0, 0.0, 0.0]
@@ -134,16 +140,18 @@ class ImuNode(Node):
     def _yaw_offset_callback(self, msg: Float32):
         c, s = math.cos(msg.data), math.sin(msg.data)
         Rz = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
-        self.R = Rz @ self.R
+        with self._lock:
+            self.R = Rz @ self.R
         self._save_cache()
         self.logger.info(f"Applied yaw offset {msg.data:.4f} rad")
 
     def _reset_calibration(self, reason: str):
-        self.state = WAITING
-        self._calib_sum = [0.0, 0.0, 0.0]
-        self._calib_accel_sum = [0.0, 0.0, 0.0]
-        self._calib_count = 0
-        self.last_error = reason
+        with self._lock:
+            self.state = WAITING
+            self._calib_sum = [0.0, 0.0, 0.0]
+            self._calib_accel_sum = [0.0, 0.0, 0.0]
+            self._calib_count = 0
+            self.last_error = reason
         self._publish_status()
 
     def _cmd_vel_is_zero(self) -> bool:
@@ -168,19 +176,23 @@ class ImuNode(Node):
         return None
 
     def _accumulate(self, accel, gyro):
-        for i in range(3):
-            self._calib_sum[i] += gyro[i]
-            self._calib_accel_sum[i] += accel[i]
-        self._calib_count += 1
+        with self._lock:
+            for i in range(3):
+                self._calib_sum[i] += gyro[i]
+                self._calib_accel_sum[i] += accel[i]
+            self._calib_count += 1
 
     def _finish_calibration(self):
-        self.gyro_bias = [s / self._calib_count for s in self._calib_sum]
-        accel_mean = np.array([s / self._calib_count for s in self._calib_accel_sum])
-        self.R = _level_rotation(accel_mean, np.array([0.0, 0.0, self.default_g]))
-        self.state = CALIBRATED
-        self.last_error = ""
+        with self._lock:
+            self.gyro_bias = [s / self._calib_count for s in self._calib_sum]
+            accel_mean = np.array([s / self._calib_count for s in self._calib_accel_sum])
+            self.R = _level_rotation(accel_mean, np.array([0.0, 0.0, self.default_g]))
+            self.state = CALIBRATED
+            self.last_error = ""
+            count = self._calib_count
+            bias_snapshot = list(self.gyro_bias)
         self.logger.info(
-            f"Calibration complete after {self._calib_count} samples. gyro_bias={self.gyro_bias}"
+            f"Calibration complete after {count} samples. gyro_bias={bias_snapshot}"
         )
         self._save_cache()
         self._publish_status()
@@ -195,15 +207,17 @@ class ImuNode(Node):
             bias = data["gyro_bias"]
             if not (isinstance(bias, list) and len(bias) == 3):
                 raise ValueError("gyro_bias must be a length-3 list")
-            self.gyro_bias = [float(b) for b in bias]
-            R = data.get("R")
-            if R is not None:
-                R_arr = np.asarray(R, dtype=float)
-                if R_arr.shape == (3, 3):
-                    self.R = R_arr
-            self.state = CALIBRATED
+            with self._lock:
+                self.gyro_bias = [float(b) for b in bias]
+                R = data.get("R")
+                if R is not None:
+                    R_arr = np.asarray(R, dtype=float)
+                    if R_arr.shape == (3, 3):
+                        self.R = R_arr
+                self.state = CALIBRATED
+                bias_snapshot = list(self.gyro_bias)
             self.logger.info(
-                f"Loaded calibration from {self.cache_path}: gyro_bias={self.gyro_bias}"
+                f"Loaded calibration from {self.cache_path}: gyro_bias={bias_snapshot}"
             )
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as e:
             self.logger.warning(
@@ -211,12 +225,13 @@ class ImuNode(Node):
             )
 
     def _save_cache(self):
-        payload = {
-            "gyro_bias": self.gyro_bias,
-            "R": self.R.tolist(),
-            "samples": self._calib_count,
-            "timestamp": time.time(),
-        }
+        with self._lock:
+            payload = {
+                "gyro_bias": list(self.gyro_bias),
+                "R": self.R.tolist(),
+                "samples": self._calib_count,
+                "timestamp": time.time(),
+            }
         tmp = self.cache_path + ".tmp"
         try:
             with open(tmp, "w") as f:
@@ -233,14 +248,18 @@ class ImuNode(Node):
             self.logger.warning(f"IMU read failed: {e}")
             return
 
-        if self.state == CALIBRATED:
+        with self._lock:
+            state = self.state
+
+        if state == CALIBRATED:
             self._publish_imu_msg(accel, gyro)
             return
 
-        if self.state == WAITING:
+        if state == WAITING:
             if not self._cmd_vel_is_zero():
                 return
-            self.state = CALIBRATING
+            with self._lock:
+                self.state = CALIBRATING
             self.logger.info("Starting calibration")
 
         # CALIBRATING
@@ -251,12 +270,17 @@ class ImuNode(Node):
             return
 
         self._accumulate(accel, gyro)
-        if self._calib_count >= self.calib_samples:
+        with self._lock:
+            count = self._calib_count
+        if count >= self.calib_samples:
             self._finish_calibration()
 
     def _publish_imu_msg(self, accel, gyro):
-        accel = self.R @ np.asarray(accel)
-        gyro = self.R @ (np.asarray(gyro) - np.asarray(self.gyro_bias))
+        with self._lock:
+            R = self.R
+            bias = list(self.gyro_bias)
+        accel = R @ np.asarray(accel)
+        gyro = R @ (np.asarray(gyro) - np.asarray(bias))
 
         msg = Imu()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -281,14 +305,15 @@ class ImuNode(Node):
         self.imu_publisher.publish(msg)
 
     def _publish_status(self):
-        payload = {
-            "state": self.state,
-            "samples": self._calib_count,
-            "target_samples": self.calib_samples,
-            "gyro_bias": self.gyro_bias,
-            "last_error": self.last_error,
-            "cache_path": self.cache_path,
-        }
+        with self._lock:
+            payload = {
+                "state": self.state,
+                "samples": self._calib_count,
+                "target_samples": self.calib_samples,
+                "gyro_bias": list(self.gyro_bias),
+                "last_error": self.last_error,
+                "cache_path": self.cache_path,
+            }
         self.status_publisher.publish(String(data=json.dumps(payload)))
 
 

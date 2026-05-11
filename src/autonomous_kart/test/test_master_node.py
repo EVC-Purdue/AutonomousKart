@@ -147,6 +147,7 @@ def _yaw_cal_params(state="IDLE", **overrides):
     p.update({
         "yaw_cal_speed": 10.0,
         "yaw_cal_duration_s": 0.3,
+        "yaw_cal_tick_dt": 0.02,
         "yaw_cal_accel_floor": 0.1,
         "yaw_cal_min_samples": 2,
     })

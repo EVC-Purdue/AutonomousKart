@@ -33,6 +33,7 @@ class MasterNode(Node):
         self.path = self.get_parameter("line_path").value
         self.yaw_cal_speed = self.get_parameter("yaw_cal_speed").value
         self.yaw_cal_duration_s = self.get_parameter("yaw_cal_duration_s").value
+        self.yaw_cal_tick_dt = self.get_parameter("yaw_cal_tick_dt").value
         self.yaw_cal_accel_floor = self.get_parameter("yaw_cal_accel_floor").value
         self.yaw_cal_min_samples = self.get_parameter("yaw_cal_min_samples").value
 
@@ -249,7 +250,7 @@ class MasterNode(Node):
         self.logger.info("Yaw calibration: drive starting")
         self.update_state(STATES.MANUAL.value)
 
-        tick_dt = 0.05  # 20 Hz
+        tick_dt = float(self.yaw_cal_tick_dt)
         duration = float(self.yaw_cal_duration_s)
         accel_floor = float(self.yaw_cal_accel_floor)
         min_samples = int(self.yaw_cal_min_samples)
@@ -280,7 +281,7 @@ class MasterNode(Node):
 
         yaws = [y for (_, _, y) in kept]
         if max(yaws) - min(yaws) < 1e-3:
-            self.logger.warning("Yaw calibration aborted: GPS yaw unchanged; R unchanged.")
+            self.logger.warning("Yaw calibration aborted: Heading estimate unchanged; R unchanged.")
             return
 
         ax_mean = sum(ax for (ax, _, _) in kept) / len(kept)

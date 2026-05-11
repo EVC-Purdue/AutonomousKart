@@ -1,15 +1,14 @@
 import json
-import math
 import threading
 import time
 from enum import Enum
 
+import math
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from std_msgs.msg import String, Float32MultiArray, Float32, Bool, UInt16, Empty
-
 
 
 class STATES(Enum):
@@ -83,12 +82,8 @@ class MasterNode(Node):
         self.odom_subscriber = self.create_subscription(
             Odometry, "odom", self.odom_callback, 5
         )
-        self.cmd_vel_sub = self.create_subscription(
-            Float32MultiArray, "cmd_vel_steer", lambda m: None, 5  # placeholder
-        )
-        # Track cmd_vel and cmd_turn individually
-        self.create_subscription(Float32, "cmd_vel", self._velocity_callback, 5)
-        self.create_subscription(Float32, "cmd_turn", self._turn_callback, 5)
+        # Track combined drive commands for telemetry
+        self.create_subscription(Float32MultiArray, "cmd_drive", self._drive_callback, 5)
 
         # e_comms ADCB telemetry
         self.create_subscription(String, "e_comms/adcb_state", self._adcb_state_callback, 1)
@@ -187,13 +182,12 @@ class MasterNode(Node):
                 "stamp_ns": stamp.sec * 1_000_000_000 + stamp.nanosec,
             }
 
-    def _velocity_callback(self, msg: Float32):
+    def _drive_callback(self, msg: Float32MultiArray):
+        if len(msg.data) < 2:
+            return
         with self._lock:
-            self.cmd_data["motor"] = msg.data
-
-    def _turn_callback(self, msg: Float32):
-        with self._lock:
-            self.cmd_data["steer"] = msg.data
+            self.cmd_data["motor"] = float(msg.data[0])
+            self.cmd_data["steer"] = float(msg.data[1])
 
     def _adcb_state_callback(self, msg: String):
         with self._lock:

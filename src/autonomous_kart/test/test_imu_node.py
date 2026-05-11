@@ -385,17 +385,17 @@ def test_calibrate_trigger_resets_to_waiting(imu_factory, tmp_path, spin_helper)
 
 
 def test_cmd_vel_subscription_updates_internal_state(imu_factory, spin_helper):
-    from std_msgs.msg import Float32
+    from std_msgs.msg import Float32MultiArray
 
     with imu_factory() as (node, _bus, rclpy):
         pub_node = rclpy.create_node("vel_pub")
-        pub = pub_node.create_publisher(Float32, "cmd_vel", 5)
+        pub = pub_node.create_publisher(Float32MultiArray, "cmd_drive", 5)
         exe = rclpy.executors.SingleThreadedExecutor()
         exe.add_node(node)
         exe.add_node(pub_node)
         try:
             spin_helper(exe, lambda: False, timeout=0.4)
-            pub.publish(Float32(data=2.5))
+            pub.publish(Float32MultiArray(data=[2.5, 0.0]))
             assert spin_helper(exe, lambda: node._last_cmd_vel == 2.5, timeout=2.0)
             assert node._last_cmd_vel_t > 0.0
         finally:

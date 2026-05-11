@@ -11,7 +11,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from sensor_msgs.msg import Imu
-from std_msgs.msg import Empty, Float32, String
+from std_msgs.msg import Empty, Float32MultiArray, String
 
 from smbus2 import SMBus
 
@@ -89,7 +89,7 @@ class ImuNode(Node):
         self.imu_publisher = self.create_publisher(Imu, "imu", 10)
         self.status_publisher = self.create_publisher(String, "imu/calibration_status", 1)
 
-        self.create_subscription(Float32, "cmd_vel", self._cmd_vel_callback, 5)
+        self.create_subscription(Float32MultiArray, "cmd_drive", self._cmd_vel_callback, 5)
         self.create_subscription(Empty, "imu/calibrate", self._calibrate_trigger, 1)
         self.create_subscription(Float32, "imu/yaw_offset", self._yaw_offset_callback, 1)
 
@@ -129,8 +129,10 @@ class ImuNode(Node):
         )
         return accel, gyro
 
-    def _cmd_vel_callback(self, msg: Float32):
-        self._last_cmd_vel = float(msg.data)
+    def _cmd_vel_callback(self, msg: Float32MultiArray):
+        if not msg.data:
+            return
+        self._last_cmd_vel = float(msg.data[0])
         self._last_cmd_vel_t = time.time()
 
     def _calibrate_trigger(self, _msg: Empty):

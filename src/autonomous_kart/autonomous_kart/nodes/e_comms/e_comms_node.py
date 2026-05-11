@@ -6,7 +6,7 @@ import can
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from std_msgs.msg import Float32, UInt16, Bool, String
+from std_msgs.msg import Float32MultiArray, UInt16, Bool, String
 from rclpy.impl.rcutils_logger import RcutilsLogger
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms
@@ -16,6 +16,7 @@ CAN_BITRATE = 500000
 
 CONTROL_ID = 0x100
 STATUS_ID = 0x101
+HEARTBEAT_ID = 0x102
 
 
 class ECommsNode(Node):
@@ -29,6 +30,13 @@ class ECommsNode(Node):
 
         # Parameters
         self.simulation_mode: bool = self.get_parameter("simulation_mode").value
+
+        self.min_speed: float = float(self.get_parameter("min_speed").value)
+        self.max_steering: float = float(self.get_parameter("max_steering").value)
+        self.min_steering: float = float(self.get_parameter("min_steering").value)
+        v_max_mps: float = float(self.get_parameter("v_max_mps").value)
+        self.max_speed: float = v_max_mps
+        self.pct_to_mps: float = v_max_mps / 100.0
 
         # Inputs
         self.throttle_percent: float = 0.0
@@ -67,33 +75,25 @@ class ECommsNode(Node):
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
-        # Subscribe for throttle and steering commands
-        # Each command updates the internal state, and the latest values are sent
-        # out on the CAN bus at a fixed rate in can_tx()
-        self.steering_sub = self.create_subscription(Float32, "cmd_turn", self.cmd_steer, 5)
-        self.throttle_sub = self.create_subscription(Float32, "cmd_vel", self.cmd_thr, 5)
-        self.last_command_time = self.get_clock().now()
+        # Subscribe for combined [throttle, steering] commands. Both values must
+        # arrive together — the CAN control frame carries both, so it never makes
+        # sense to update one half on its own. Each message updates internal state
+        # and immediately fires can_control_tx.
+        self.drive_sub = self.create_subscription(Float32MultiArray, "cmd_drive", self.cmd_drive, 5)
 
-        # CAN TX timer at 50Hz to send latest command values
-        # TODO: make a parameter
-        self.timer = self.create_timer(1.0 / 50.0, self.can_tx)
+        # CAN heartbeat
+        self.hb_counter = 0
+        self.hb_tx_period_ms = self.get_parameter("heartbeat_period_ms").value
+        self.hb_timer = self.create_timer(self.hb_tx_period_ms / 1000.0, self.can_hb_tx)
 
         # Publishers
-        self.adcb_state_pub = self.create_publisher(
-            String, "e_comms/adcb_state", 1
-        )
-        self.rc_mode_pub = self.create_publisher(
-            Bool, "e_comms/rc_mode", 1
-        )
-        self.throttle_pwm_pub = self.create_publisher(
-            UInt16, "e_comms/throttle_pwm", 1
-        )
-        self.steering_pwm_pub = self.create_publisher(
-            UInt16, "e_comms/steering_pwm", 1
-        )
+        self.adcb_state_pub = self.create_publisher(String, "e_comms/adcb_state", 1)
+        self.rc_mode_pub = self.create_publisher(Bool, "e_comms/rc_mode", 1)
+        self.throttle_pwm_pub = self.create_publisher(UInt16, "e_comms/throttle_pwm", 1)
+        self.steering_pwm_pub = self.create_publisher(UInt16, "e_comms/steering_pwm", 1)
 
         # Init finished
-        self.logger.info("Initialize EComms Node")
+        self.logger.info("Initialized EComms Node")
 
     # CAN RX ------------------------------------------------------------------#
     def _on_can_msg(self, msg: can.Message):
@@ -119,37 +119,55 @@ class ECommsNode(Node):
     #--------------------------------------------------------------------------#
 
     # Command Callbacks -------------------------------------------------------#
-    def cmd_thr(self, throttle_msg: Float32):
+    def cmd_drive(self, msg: Float32MultiArray):
         self.cmd_count += 1
-        if not (0.0 <= throttle_msg.data <= 100.0):
-            self.logger.error(f"Received out-of-bounds throttle command: {throttle_msg.data}.")
-            self.throttle_percent = 0.0  # Default to zero if invalid command
+        if len(msg.data) < 2:
+            self.logger.error(f"cmd_drive payload too short: {list(msg.data)}")
             return
-        self.throttle_percent = throttle_msg.data
-        self.last_command_time = self.get_clock().now()
+        self.steering_angle, self.throttle_percent = self.convert(
+            float(msg.data[1]), float(msg.data[0]),
+        )
+        self.can_control_tx()  # Send updated command immediately on CAN bus
 
-    def cmd_steer(self, steering_msg: Float32):
-        self.cmd_count += 1
-        if not (-100.0 <= steering_msg.data <= 100.0):
-            self.logger.error(f"Received out-of-bounds steering command: {steering_msg.data}.")
-            self.steering_angle = 0.0  # Default to straight if invalid command
-            return
-        self.steering_angle = steering_msg.data
-        self.last_command_time = self.get_clock().now()
+    def convert(self, steering: float, throttle: float) -> tuple:
+        """Clamp + unit-convert (steering, throttle) for the CAN control frame."""
+        if throttle < self.min_speed:
+            throttle = self.min_speed
+        elif throttle > self.max_speed:
+            throttle = self.max_speed
+
+        if steering < self.min_steering:
+            steering = self.min_steering
+        elif steering > self.max_steering:
+            steering = self.max_steering
+        return steering, throttle
     #--------------------------------------------------------------------------#
 
     # CAN TX ------------------------------------------------------------------#
-    def can_tx(self):
+    def can_hb_tx(self):
         """
-        Send the latest throttle and steering commands on the CAN bus at a fixed rate.
-        If we have not received any new commands for a while (1 sec) reset to default/zero commands instead.
+        Send heartbeat message on CAN bus at a fixed rate.
+        Also updates the heartbeat counter which is included in the message payload.
         """
-        # if (self.get_clock().now() - self.last_command_time).nanoseconds / 1e9 > 1.0:
-        #     # No recent commands, default to zero
-        #     self.throttle_percent = 0.0
-        #     self.steering_angle = 0.0
-        #     # TODO: make the 1 sec timeout a parameter
+        self.hb_counter = (self.hb_counter + 1) % 256  # Wrap around at 255
+        hb_data = e_comms.pack_hb_message(self.hb_counter)
 
+        if self.bus is not None:
+            msg = can.Message(
+                arbitration_id=HEARTBEAT_ID,
+                data=hb_data,
+                is_extended_id=False,
+            )
+            try:
+                self.bus.send(msg)
+            except can.CanError as e:
+                self.logger.error(f"Failed to send CAN heartbeat message: {e}")
+
+    def can_control_tx(self):
+        """
+        Send the latest throttle and steering commands on the CAN bus.
+        Uses internal state updated by the command callbacks.
+        """
         tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
         if self.bus is not None:
             msg = can.Message(

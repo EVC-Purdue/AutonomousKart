@@ -1,12 +1,14 @@
 import json
 import threading
+import time
 from enum import Enum
 
+import math
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from std_msgs.msg import String, Float32MultiArray, Bool, UInt16, Empty
-
+from sensor_msgs.msg import Imu
+from std_msgs.msg import String, Float32MultiArray, Float32, Bool, UInt16, Empty
 
 
 class STATES(Enum):
@@ -28,6 +30,11 @@ class MasterNode(Node):
         self.state = self.get_parameter("system_state").value
         self.system_frequency = self.get_parameter("system_frequency").value
         self.path = self.get_parameter("line_path").value
+        self.yaw_cal_speed = self.get_parameter("yaw_cal_speed").value
+        self.yaw_cal_duration_s = self.get_parameter("yaw_cal_duration_s").value
+        self.yaw_cal_tick_dt = self.get_parameter("yaw_cal_tick_dt").value
+        self.yaw_cal_accel_floor = self.get_parameter("yaw_cal_accel_floor").value
+        self.yaw_cal_min_samples = self.get_parameter("yaw_cal_min_samples").value
 
         assert self.state in [s.value for s in STATES]
 
@@ -92,10 +99,21 @@ class MasterNode(Node):
 
         # IMU calibration plumbing
         self.imu_calibrate_publisher = self.create_publisher(Empty, "imu/calibrate", 1)
+        self.yaw_offset_publisher = self.create_publisher(Float32, "imu/yaw_offset", 1)
+        self._yaw_cal_thread: threading.Thread | None = None
         self.imu_status_data = {"state": "unknown"}
         self.create_subscription(
             String, "imu/calibration_status", self._imu_status_callback, 1
         )
+
+        # Latest IMU reading snapshot
+        self.imu_data = {
+            "ax": 0.0, "ay": 0.0, "az": 0.0,
+            "gx": 0.0, "gy": 0.0, "gz": 0.0,
+            "qx": 0.0, "qy": 0.0, "qz": 0.0, "qw": 1.0,
+            "stamp_ns": 0,
+        }
+        self.create_subscription(Imu, "imu", self._imu_callback, 5)
 
         self.logger.info("Initialize Master Node")
 
@@ -205,6 +223,93 @@ class MasterNode(Node):
 
     def trigger_imu_calibration(self):
         self.imu_calibrate_publisher.publish(Empty())
+
+    def start_yaw_calibration(self):
+        """Validate preconditions and spawn the drive worker. Returns (ok, reason)."""
+        if self._yaw_cal_thread is not None and self._yaw_cal_thread.is_alive():
+            return False, "yaw calibration already running"
+        if self.state not in (STATES.IDLE.value, STATES.STOPPED.value):
+            return False, f"state must be IDLE or STOPPED (got {self.state})"
+        with self._lock:
+            imu_state = self.imu_status_data.get("state")
+        if imu_state != "CALIBRATED":
+            return False, f"IMU not level-calibrated (state={imu_state})"
+        self._yaw_cal_thread = threading.Thread(
+            target=self._run_yaw_calibration, daemon=True
+        )
+        self._yaw_cal_thread.start()
+        return True, "ok"
+
+    def _run_yaw_calibration(self):
+        self.logger.info("Yaw calibration: drive starting")
+        self.update_state(STATES.MANUAL.value)
+
+        tick_dt = float(self.yaw_cal_tick_dt)
+        duration = float(self.yaw_cal_duration_s)
+        accel_floor = float(self.yaw_cal_accel_floor)
+        min_samples = int(self.yaw_cal_min_samples)
+        speed = float(self.yaw_cal_speed)
+
+        samples = []
+        t_end = time.monotonic() + duration
+        while time.monotonic() < t_end:
+            self.manual_control(speed, 0.0)
+            with self._lock:
+                ax = self.imu_data["ax"]
+                ay = self.imu_data["ay"]
+                yaw = self.odom_data["yaw"]
+            samples.append((ax, ay, yaw))
+            time.sleep(tick_dt)
+
+        self.manual_control(0.0, 0.0)
+        self.update_state(STATES.STOPPED.value)
+
+        kept = [(ax, ay, yaw) for (ax, ay, yaw) in samples
+                if math.hypot(ax, ay) > accel_floor]
+        if len(kept) < min_samples:
+            self.logger.warning(
+                f"Yaw calibration aborted: only {len(kept)} samples above accel "
+                f"floor {accel_floor} (need {min_samples}); R unchanged."
+            )
+            return
+
+        yaws = [y for (_, _, y) in kept]
+        if max(yaws) - min(yaws) < 1e-3:
+            self.logger.warning("Yaw calibration aborted: Heading estimate unchanged; R unchanged.")
+            return
+
+        ax_mean = sum(ax for (ax, _, _) in kept) / len(kept)
+        ay_mean = sum(ay for (_, ay, _) in kept) / len(kept)
+        theta_imu = math.atan2(ay_mean, ax_mean)
+
+        n = len(yaws)
+        psi_gps = math.atan2(
+            sum(math.sin(y) for y in yaws) / n,
+            sum(math.cos(y) for y in yaws) / n,
+        )
+
+        yaw_offset = math.atan2(math.sin(psi_gps - theta_imu), math.cos(psi_gps - theta_imu))
+        self.yaw_offset_publisher.publish(Float32(data=yaw_offset))
+        self.logger.info(
+            f"Yaw calibration complete: theta_imu={theta_imu:.4f} rad, "
+            f"psi_gps={psi_gps:.4f} rad, offset={yaw_offset:.4f} rad "
+            f"({len(kept)}/{len(samples)} samples used)"
+        )
+
+    def _imu_callback(self, msg: Imu):
+        a, g, q = msg.linear_acceleration, msg.angular_velocity, msg.orientation
+        stamp = msg.header.stamp
+        with self._lock:
+            self.imu_data = {
+                "ax": a.x, "ay": a.y, "az": a.z,
+                "gx": g.x, "gy": g.y, "gz": g.z,
+                "qx": q.x, "qy": q.y, "qz": q.z, "qw": q.w,
+                "stamp_ns": stamp.sec * 1_000_000_000 + stamp.nanosec,
+            }
+
+    def get_imu(self):
+        with self._lock:
+            return dict(self.imu_data)
 
     def get_e_comms(self):
         with self._lock:

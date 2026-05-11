@@ -137,6 +137,160 @@ def test_odom_snapshot_and_cmd_callbacks(ros_ctx, spin_helper):
             node.destroy_node()
 
 
+# ----------------------------------------------------- yaw calibration drive
+
+
+def _yaw_cal_params(state="IDLE", **overrides):
+    p = _default_params(state)
+    p.update({
+        "yaw_cal_speed": 10.0,
+        "yaw_cal_duration_s": 0.3,
+        "yaw_cal_tick_dt": 0.02,
+        "yaw_cal_accel_floor": 0.1,
+        "yaw_cal_min_samples": 2,
+    })
+    p.update(overrides)
+    return p
+
+
+def test_start_yaw_calibration_rejects_when_imu_not_calibrated(ros_ctx):
+    with ros_ctx(_yaw_cal_params("IDLE")) as rclpy:
+        node = MasterNode()
+        try:
+            ok, reason = node.start_yaw_calibration()
+            assert not ok
+            assert "IMU" in reason
+        finally:
+            node.destroy_node()
+
+
+def test_start_yaw_calibration_rejects_when_state_is_autonomous(ros_ctx):
+    with ros_ctx(_yaw_cal_params("AUTONOMOUS")) as rclpy:
+        node = MasterNode()
+        try:
+            node.imu_status_data = {"state": "CALIBRATED"}
+            ok, reason = node.start_yaw_calibration()
+            assert not ok
+            assert "state must be IDLE or STOPPED" in reason
+        finally:
+            node.destroy_node()
+
+
+def test_start_yaw_calibration_rejects_when_already_running(ros_ctx):
+    with ros_ctx(_yaw_cal_params("IDLE", yaw_cal_duration_s=0.5)) as rclpy:
+        node = MasterNode()
+        try:
+            node.imu_status_data = {"state": "CALIBRATED"}
+            with node._lock:
+                node.imu_data["ax"] = 1.0
+                node.imu_data["ay"] = 0.0
+                node.odom_data["yaw"] = 0.0
+
+            ok, _ = node.start_yaw_calibration()
+            assert ok
+
+            ok2, reason = node.start_yaw_calibration()
+            assert not ok2
+            assert "already running" in reason
+
+            node._yaw_cal_thread.join(timeout=2.0)
+        finally:
+            node.destroy_node()
+
+
+def test_yaw_calibration_publishes_offset_and_ends_in_stopped(ros_ctx, spin_helper):
+    """End-to-end: drive worker collects samples and publishes computed offset."""
+    import threading
+    import time as _time
+    from std_msgs.msg import Float32
+
+    with ros_ctx(_yaw_cal_params("IDLE", yaw_cal_duration_s=0.5, yaw_cal_min_samples=2)) as rclpy:
+        node = MasterNode()
+        listener = rclpy.create_node("yaw_listener")
+        received = []
+        listener.create_subscription(
+            Float32, "imu/yaw_offset", lambda m: received.append(m.data), 1
+        )
+        exe = rclpy.executors.SingleThreadedExecutor()
+        exe.add_node(node)
+        exe.add_node(listener)
+        try:
+            spin_helper(exe, lambda: False, timeout=0.3)  # discovery
+
+            node.imu_status_data = {"state": "CALIBRATED"}
+            with node._lock:
+                node.imu_data["ax"] = 1.0   # forward accel along body-X in leveled frame
+                node.imu_data["ay"] = 0.0
+                node.odom_data["yaw"] = 0.4
+
+            # Bump yaw partway through so the "GPS yaw unchanged" guard passes.
+            def bumper():
+                _time.sleep(0.2)
+                with node._lock:
+                    node.odom_data["yaw"] = 0.6
+            threading.Thread(target=bumper, daemon=True).start()
+
+            ok, _ = node.start_yaw_calibration()
+            assert ok
+
+            assert spin_helper(exe, lambda: len(received) >= 1, timeout=3.0)
+            node._yaw_cal_thread.join(timeout=2.0)
+
+            assert node.state == "STOPPED"
+            # theta_imu = atan2(0, 1) = 0; psi_gps ≈ 0.5; offset ≈ 0.5
+            assert received[0] == pytest.approx(0.5, abs=0.15)
+        finally:
+            exe.remove_node(listener)
+            exe.remove_node(node)
+            listener.destroy_node()
+            node.destroy_node()
+
+
+def test_yaw_calibration_aborts_when_below_accel_floor(ros_ctx):
+    """All samples have |a_h| below the floor → abort with no publish, R untouched."""
+    from std_msgs.msg import Float32
+
+    with ros_ctx(_yaw_cal_params(
+        "IDLE",
+        yaw_cal_duration_s=0.2,
+        yaw_cal_accel_floor=10.0,
+        yaw_cal_min_samples=5,
+    )) as rclpy:
+        node = MasterNode()
+        listener = rclpy.create_node("yaw_listener")
+        received = []
+        listener.create_subscription(
+            Float32, "imu/yaw_offset", lambda m: received.append(m.data), 1
+        )
+        exe = rclpy.executors.SingleThreadedExecutor()
+        exe.add_node(node)
+        exe.add_node(listener)
+        try:
+            node.imu_status_data = {"state": "CALIBRATED"}
+            with node._lock:
+                node.imu_data["ax"] = 0.05   # well below 10.0 floor
+                node.imu_data["ay"] = 0.0
+                node.odom_data["yaw"] = 0.0
+
+            ok, _ = node.start_yaw_calibration()
+            assert ok
+            node._yaw_cal_thread.join(timeout=2.0)
+
+            # Drain any pending publishes (there shouldn't be any).
+            import time as _t
+            t0 = _t.monotonic()
+            while _t.monotonic() - t0 < 0.5 and not received:
+                exe.spin_once(timeout_sec=0.05)
+
+            assert received == []
+            assert node.state == "STOPPED"
+        finally:
+            exe.remove_node(listener)
+            exe.remove_node(node)
+            listener.destroy_node()
+            node.destroy_node()
+
+
 def test_get_logs_flushes_after_read(ros_ctx):
     from std_msgs.msg import String
 

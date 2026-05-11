@@ -1,4 +1,4 @@
-# Actuator limits used by e_comms.convert.
+# Steering limits enforced by e_comms.convert before packing the CAN frame.
 e_comms_node:
   ros__parameters:
     min_speed: 0.0        # m/s

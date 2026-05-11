@@ -90,6 +90,10 @@ class MasterNode(Node):
             String, "pathfinder/dynamic_line", self.dynamic_line_callback, 1
         )
 
+        # GPS status snapshot (fix quality, RTK, sigmas, RTCM stats)
+        self.gps_status_data = {"fix_quality": 0, "fix_label": "INVALID"}
+        self.create_subscription(String, "gps/status", self._gps_status_callback, 1)
+
         # IMU calibration plumbing
         self.imu_calibrate_publisher = self.create_publisher(Empty, "imu/calibrate", 1)
         self.imu_status_data = {"state": "unknown"}
@@ -209,6 +213,18 @@ class MasterNode(Node):
     def get_e_comms(self):
         with self._lock:
             return dict(self.e_comms_data)
+
+    def _gps_status_callback(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except (ValueError, TypeError):
+            return
+        with self._lock:
+            self.gps_status_data = data
+
+    def get_gps_status(self):
+        with self._lock:
+            return dict(self.gps_status_data)
 
 
 def main(args=None):

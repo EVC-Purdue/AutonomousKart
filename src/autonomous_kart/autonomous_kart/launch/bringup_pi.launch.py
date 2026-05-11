@@ -9,8 +9,6 @@ import os
 def generate_launch_description():
     pkg_share = get_package_share_directory("autonomous_kart")
 
-    motor_yaml = os.path.join(pkg_share, "params", "motor.yaml")
-    steering_yaml = os.path.join(pkg_share, "params", "steering.yaml")
     camera_yaml = os.path.join(pkg_share, "params", "camera.yaml")
     gps_yaml = os.path.join(pkg_share, "params", "gps.yaml")
     safety_yaml = os.path.join(pkg_share, "params", "safety.yaml")
@@ -19,6 +17,7 @@ def generate_launch_description():
     localization_yaml = os.path.join(pkg_share, "params", "localization.yaml")
     imu_yaml = os.path.join(pkg_share, "params", "imu.yaml")
     e_comms_yaml = os.path.join(pkg_share, "params", "e_comms.yaml")
+    actuators_yaml = os.path.join(pkg_share, "params", "actuators.yaml")
 
     sim_mode = LaunchConfiguration("simulation_mode")
 
@@ -29,18 +28,6 @@ def generate_launch_description():
                 [
                     SetParametersFromFile(system_yaml),
                     SetParameter(name="simulation_mode", value=sim_mode),
-                    Node(
-                        package="autonomous_kart",
-                        executable="motor_node",
-                        name="motor_node",
-                        parameters=[motor_yaml],
-                    ),
-                    Node(
-                        package="autonomous_kart",
-                        executable="steering_node",
-                        name="steering_node",
-                        parameters=[steering_yaml],
-                    ),
                     Node(
                         package="autonomous_kart",
                         executable="camera_node",
@@ -79,7 +66,7 @@ def generate_launch_description():
                         package="autonomous_kart",
                         executable="e_comms_node",
                         name="e_comms_node",
-                        parameters=[e_comms_yaml],
+                        parameters=[e_comms_yaml, actuators_yaml],
                     ),
                     Node(
                         package="autonomous_kart",

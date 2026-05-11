@@ -6,7 +6,7 @@ import can
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from std_msgs.msg import Float32, UInt16, Bool, String
+from std_msgs.msg import Float32MultiArray, UInt16, Bool, String
 from rclpy.impl.rcutils_logger import RcutilsLogger
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms
@@ -30,6 +30,13 @@ class ECommsNode(Node):
 
         # Parameters
         self.simulation_mode: bool = self.get_parameter("simulation_mode").value
+
+        # Actuator limits + unit conversion (from actuators.yaml)
+        self.max_speed: float = float(self.get_parameter("max_speed").value)
+        self.min_speed: float = float(self.get_parameter("min_speed").value)
+        self.max_steering: float = float(self.get_parameter("max_steering").value)
+        self.min_steering: float = float(self.get_parameter("min_steering").value)
+        self.pct_to_mps: float = float(self.get_parameter("pct_to_mps").value)
 
         # Inputs
         self.throttle_percent: float = 0.0
@@ -68,11 +75,8 @@ class ECommsNode(Node):
         # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
-        # Subscribe for throttle and steering commands
-        # Each command updates the internal state and then calls can_control_tx to send
-        # the latest command on the CAN bus immediately
-        self.steering_sub = self.create_subscription(Float32, "cmd_turn", self.cmd_steer, 5)
-        self.throttle_sub = self.create_subscription(Float32, "cmd_vel", self.cmd_thr, 5)
+        # Subscribe for combined throttle + steering commands. Both values must arrive together
+        self.drive_sub = self.create_subscription(Float32MultiArray, "cmd_drive", self.cmd_drive, 5)
 
         # CAN heartbeat
         self.hb_counter = 0
@@ -112,22 +116,22 @@ class ECommsNode(Node):
     #--------------------------------------------------------------------------#
 
     # Command Callbacks -------------------------------------------------------#
-    def cmd_thr(self, throttle_msg: Float32):
+    def cmd_drive(self, msg: Float32MultiArray):
+        """
+        Receive a combined [throttle, steering] command, then push to the CAN bus.
+        """
         self.cmd_count += 1
-        if not (0.0 <= throttle_msg.data <= 100.0):
-            self.logger.error(f"Received out-of-bounds throttle command: {throttle_msg.data}.")
-            self.throttle_percent = 0.0  # Default to zero if invalid command
-        else:
-            self.throttle_percent = throttle_msg.data
-        self.can_control_tx()  # Send updated command immediately on CAN bus
-
-    def cmd_steer(self, steering_msg: Float32):
-        self.cmd_count += 1
-        if not (-100.0 <= steering_msg.data <= 100.0):
-            self.logger.error(f"Received out-of-bounds steering command: {steering_msg.data}.")
-            self.steering_angle = 0.0  # Default to straight if invalid command
-        else:
-            self.steering_angle = steering_msg.data
+        if len(msg.data) < 2:
+            self.logger.error(f"cmd_drive payload too short: {list(msg.data)}")
+            return
+        steering, throttle = e_comms.convert(
+            float(msg.data[1]), float(msg.data[0]),
+            self.max_speed, self.min_speed,
+            self.max_steering, self.min_steering,
+            self.pct_to_mps,
+        )
+        self.steering_angle = steering
+        self.throttle_percent = throttle
         self.can_control_tx()  # Send updated command immediately on CAN bus
     #--------------------------------------------------------------------------#
 

@@ -9,8 +9,6 @@ import os
 def generate_launch_description():
     pkg_share = get_package_share_directory("autonomous_kart")
 
-    motor_yaml = os.path.join(pkg_share, "params", "motor.yaml")
-    steering_yaml = os.path.join(pkg_share, "params", "steering.yaml")
     camera_yaml = os.path.join(pkg_share, "params", "camera.yaml")
     gps_yaml = os.path.join(pkg_share, "params", "gps.yaml")
     safety_yaml = os.path.join(pkg_share, "params", "safety.yaml")
@@ -27,18 +25,6 @@ def generate_launch_description():
                 [
                     SetParametersFromFile(system_yaml),
                     SetParameter(name="simulation_mode", value=sim_mode),
-                    Node(
-                        package="autonomous_kart",
-                        executable="motor_node",
-                        name="motor_node",
-                        parameters=[motor_yaml],
-                    ),
-                    Node(
-                        package="autonomous_kart",
-                        executable="steering_node",
-                        name="steering_node",
-                        parameters=[steering_yaml],
-                    ),
                     Node(
                         package="autonomous_kart",
                         executable="camera_node",

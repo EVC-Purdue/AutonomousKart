@@ -96,14 +96,13 @@ def test_manual_control_publishes_on_manual_commands(ros_ctx, spin_helper):
 
 def test_odom_snapshot_and_cmd_callbacks(ros_ctx, spin_helper):
     from nav_msgs.msg import Odometry
-    from std_msgs.msg import Float32
+    from std_msgs.msg import Float32MultiArray
 
     with ros_ctx(_default_params("AUTONOMOUS")) as rclpy:
         node = MasterNode()
         pub_node = rclpy.create_node("fake_pubs")
         odom_pub = pub_node.create_publisher(Odometry, "odom", 10)
-        vel_pub = pub_node.create_publisher(Float32, "cmd_vel", 10)
-        turn_pub = pub_node.create_publisher(Float32, "cmd_turn", 10)
+        drive_pub = pub_node.create_publisher(Float32MultiArray, "cmd_drive", 10)
         exe = rclpy.executors.SingleThreadedExecutor()
         exe.add_node(node)
         exe.add_node(pub_node)
@@ -116,8 +115,7 @@ def test_odom_snapshot_and_cmd_callbacks(ros_ctx, spin_helper):
             msg.pose.pose.orientation.w = 1.0
             msg.twist.twist.linear.x = 3.5
             odom_pub.publish(msg)
-            vel_pub.publish(Float32(data=11.0))
-            turn_pub.publish(Float32(data=-0.25))
+            drive_pub.publish(Float32MultiArray(data=[11.0, -0.25]))
 
             assert spin_helper(
                 exe,

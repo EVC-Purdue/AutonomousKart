@@ -5,7 +5,7 @@ from typing import Tuple, List
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray, Float32, String
+from std_msgs.msg import Float32MultiArray, String
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
 
 from autonomous_kart.nodes.master.master_node import STATES
@@ -118,11 +118,8 @@ class PathfinderNode(Node):
             5
         )
 
-        # Publisher to motor
-        self.motor_publisher = self.create_publisher(Float32, "cmd_vel", 5)
-
-        # Publisher to steering
-        self.steering_publisher = self.create_publisher(Float32, "cmd_turn", 5)
+        # Publisher for combined [throttle, steering] commands
+        self.drive_publisher = self.create_publisher(Float32MultiArray, "cmd_drive", 5)
 
         self.logger.info("Initialize Pathfinder Node")
 
@@ -145,7 +142,7 @@ class PathfinderNode(Node):
             # Set speed to zero on state change
             self.speed = 0.0
             self.expected_speed = 0.0
-            self.motor_publisher.publish(Float32(data=0.0))
+            self.drive_publisher.publish(Float32MultiArray(data=[0.0, self.steering]))
         if msg.data not in [s.value for s in STATES]:
             self.logger.error(f"State {msg.data} not recognized")
             return
@@ -281,8 +278,7 @@ class PathfinderNode(Node):
                 min_approach_speed_pct=self.min_approach_speed_pct,
             )
             self.logger.debug(f"Steering/Motor output: {steering_pct}, {motor_pct}")
-            self.steering_publisher.publish(Float32(data=steering_pct))
-            self.motor_publisher.publish(Float32(data=motor_pct))
+            self.drive_publisher.publish(Float32MultiArray(data=[motor_pct, steering_pct]))
 
     def manual_loop(self, msg: Float32MultiArray):
         self.cmd_count += 1
@@ -341,8 +337,7 @@ class PathfinderNode(Node):
 
     def publish_commands(self):
         """Publishes commands from params to steering & motor"""
-        self.steering_publisher.publish(Float32(data=self.steering))
-        self.motor_publisher.publish(Float32(data=self.speed))
+        self.drive_publisher.publish(Float32MultiArray(data=[self.speed, self.steering]))
 
         time = self.get_clock().now().nanoseconds
 

@@ -31,6 +31,46 @@ class AdcbStatus:
     steering_pwm: int # Integer value of the steering PWM (1000-2000)
 
 
+def convert(
+    steering: float,
+    throttle: float,
+    max_speed: float,
+    min_speed: float,
+    max_steering: float,
+    min_steering: float,
+    pct_to_mps: float,
+) -> tuple:
+    """
+    Sanitize + unit-convert steering/throttle inputs for the e_comms layer.
+
+    Throttle arrives as a percent. It's converted to m/s via `pct_to_mps`,
+    clamped against the physical speed limits [min_speed, max_speed] in m/s,
+    and converted back to a percent for `pack_control_message`. Steering is
+    clamped in percent against [min_steering, max_steering].
+
+    :param steering: Steering command as percent (e.g. -100..100).
+    :param throttle: Throttle command as percent (e.g. 0..100).
+    :param max_speed: Upper speed limit in m/s.
+    :param min_speed: Lower speed limit in m/s.
+    :param max_steering: Upper steering limit in percent.
+    :param min_steering: Lower steering limit in percent.
+    :param pct_to_mps: Conversion factor — m/s per % throttle.
+    :return: (steering, throttle), both clamped to their valid ranges in %.
+    """
+    speed_mps = throttle * pct_to_mps
+    if speed_mps < min_speed:
+        speed_mps = min_speed
+    elif speed_mps > max_speed:
+        speed_mps = max_speed
+    throttle = speed_mps / pct_to_mps if pct_to_mps > 0.0 else 0.0
+
+    if steering < min_steering:
+        steering = min_steering
+    elif steering > max_steering:
+        steering = max_steering
+    return steering, throttle
+
+
 def pack_control_message(throttle_percent: float, steering_angle: float) -> bytes:
     """
     Pack the throttle and steering commands into a bytearray buffer for CAN

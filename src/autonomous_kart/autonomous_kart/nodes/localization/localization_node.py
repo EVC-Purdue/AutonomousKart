@@ -1,7 +1,7 @@
 """
 Localization node — publishes Odometry on /odom.
 
-Sim mode:  Integrates bicycle kinematics from cmd_vel + cmd_turn.
+Sim mode:  Integrates bicycle kinematics from cmd_drive [throttle, steering].
 Real mode: TODO: fuse GPS RTK + IMU via Kalman filter / factor graph.
 """
 import math
@@ -10,7 +10,7 @@ import traceback
 import rclpy
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32MultiArray
 from geometry_msgs.msg import Quaternion, TransformStamped
 from tf2_ros import TransformBroadcaster
 
@@ -65,8 +65,7 @@ class LocalizationNode(Node):
         self.cmd_motor = 0.0
         self.cmd_steer = 0.0
 
-        self.create_subscription(Float32, "cmd_vel", self._cb_vel, 5)
-        self.create_subscription(Float32, "cmd_turn", self._cb_turn, 5)
+        self.create_subscription(Float32MultiArray, "cmd_drive", self._cb_drive, 5)
         self.create_timer(self.dt, self._sim_step)
 
     def _auto_spawn(self):
@@ -95,11 +94,11 @@ class LocalizationNode(Node):
             self.logger.warning("line_path missing")
             pass  # No line_path or file missing — start at origin
 
-    def _cb_vel(self, msg: Float32):
-        self.cmd_motor = msg.data
-
-    def _cb_turn(self, msg: Float32):
-        self.cmd_steer = msg.data
+    def _cb_drive(self, msg: Float32MultiArray):
+        if len(msg.data) < 2:
+            return
+        self.cmd_motor = float(msg.data[0])
+        self.cmd_steer = float(msg.data[1])
 
     def _sim_step(self):
         x, y, yaw, speed = self.model.step(self.cmd_motor, self.cmd_steer, self.dt)

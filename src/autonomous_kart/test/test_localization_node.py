@@ -1,7 +1,7 @@
 """
 Integration test for LocalizationNode in sim mode.
 
-Drives the node with constant cmd_vel/cmd_turn and checks that:
+Drives the node with constant cmd_drive ([throttle, steering]) and checks that:
  - /odom is published
  - the kart moves forward when throttled
  - the initial pose is auto-spawned from the racing-line CSV
@@ -38,13 +38,12 @@ def test_localization_publishes_odom_and_moves_kart(
     ros_ctx, tiny_racing_line, spin_helper
 ):
     from nav_msgs.msg import Odometry
-    from std_msgs.msg import Float32
+    from std_msgs.msg import Float32MultiArray
 
     with ros_ctx(_params(tiny_racing_line)) as rclpy:
         node = LocalizationNode()
         driver = rclpy.create_node("loc_driver")
-        vel_pub = driver.create_publisher(Float32, "cmd_vel", 10)
-        turn_pub = driver.create_publisher(Float32, "cmd_turn", 10)
+        drive_pub = driver.create_publisher(Float32MultiArray, "cmd_drive", 10)
         received = []
         driver.create_subscription(Odometry, "odom", lambda m: received.append(m), 10)
 
@@ -58,8 +57,7 @@ def test_localization_publishes_odom_and_moves_kart(
             import time
             deadline = time.monotonic() + 1.0
             while time.monotonic() < deadline:
-                vel_pub.publish(Float32(data=100.0))
-                turn_pub.publish(Float32(data=0.0))
+                drive_pub.publish(Float32MultiArray(data=[100.0, 0.0]))
                 exe.spin_once(timeout_sec=0.05)
 
             assert len(received) >= 5, "expected several /odom messages"

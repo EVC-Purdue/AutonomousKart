@@ -9,7 +9,7 @@ test in this file amortises the ~10 s bringup cost:
   3. Wait for localization (/odom) and for master_api on :8000 to
      answer `GET /`.
   4. Yield a context with: base URL, the subprocess, a rclpy listener
-     already subscribed to /odom, /cmd_vel, /cmd_turn, /manual_commands.
+     already subscribed to /odom, /cmd_drive, /manual_commands.
   5. SIGINT the subprocess in teardown.
 
 Tests cover both the HTTP API surface of `master_api` and the
@@ -152,12 +152,12 @@ def running_stack():
     odom_listener = None
     try:
         from nav_msgs.msg import Odometry
-        from std_msgs.msg import Float32, Float32MultiArray
+        from std_msgs.msg import Float32MultiArray
 
         # Split listeners: high-rate /odom gets its own node + executor so
-        # it can't starve the low-rate manual_commands / cmd_vel / cmd_turn
-        # callbacks. Also use depth=1 for odom — we only need "did it arrive",
-        # not a backlog.
+        # it can't starve the low-rate manual_commands / cmd_drive callbacks.
+        # Also use depth=1 for odom — we only need "did it arrive", not a
+        # backlog.
         from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
         odom_qos = QoSProfile(
@@ -170,7 +170,7 @@ def running_stack():
         cmd_listener = rclpy.create_node("e2e_cmd_listener")
         listener = rclpy.create_node("e2e_api_listener")
 
-        counters = {"odom": 0, "cmd_vel": 0, "cmd_turn": 0}
+        counters = {"odom": 0, "cmd_drive": 0}
         manual_cmds = []
 
         odom_listener.create_subscription(
@@ -179,12 +179,8 @@ def running_stack():
             odom_qos,
         )
         cmd_listener.create_subscription(
-            Float32, "cmd_vel",
-            lambda m: counters.__setitem__("cmd_vel", counters["cmd_vel"] + 1), 10,
-        )
-        cmd_listener.create_subscription(
-            Float32, "cmd_turn",
-            lambda m: counters.__setitem__("cmd_turn", counters["cmd_turn"] + 1), 10,
+            Float32MultiArray, "cmd_drive",
+            lambda m: counters.__setitem__("cmd_drive", counters["cmd_drive"] + 1), 10,
         )
         listener.create_subscription(
             Float32MultiArray, "manual_commands",
@@ -229,15 +225,13 @@ def running_stack():
                 for _ in range(20):  # drain burst
                     before = (
                         counters["odom"],
-                        counters["cmd_vel"],
-                        counters["cmd_turn"],
+                        counters["cmd_drive"],
                         len(manual_cmds),
                     )
                     executor.spin_once(timeout_sec=0.0)
                     after = (
                         counters["odom"],
-                        counters["cmd_vel"],
-                        counters["cmd_turn"],
+                        counters["cmd_drive"],
                         len(manual_cmds),
                     )
                     if before == after:
@@ -384,14 +378,14 @@ def test_set_state_to_autonomous_and_driving_loop(running_stack):
     # Snapshot counters before the switch so we can assert delta, not
     # anything an earlier test may have produced.
     counters = running_stack["counters"]
-    vel0, turn0 = counters["cmd_vel"], counters["cmd_turn"]
+    drive0 = counters["cmd_drive"]
 
     status, body = _http_post("/set_state", {"state": "AUTONOMOUS"})
     assert status == 200
     assert body.get("success") == "ok"
 
     ok = running_stack["pump"](
-        lambda: counters["cmd_vel"] > vel0 and counters["cmd_turn"] > turn0,
+        lambda: counters["cmd_drive"] > drive0,
         timeout=25.0,
     )
     if not ok:

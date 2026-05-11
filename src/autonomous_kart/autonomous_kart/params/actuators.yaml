@@ -1,0 +1,8 @@
+# Actuator limits + unit conversion used by e_comms.convert
+e_comms_node:
+  ros__parameters:
+    max_speed: 15.0       # m/s
+    min_speed: 0.0        # m/s
+    max_steering: 100.0   # %
+    min_steering: -100.0  # %
+    pct_to_mps: 0.15      # m/s per % throttle  (= v_max_mps in pathfinder / 100)

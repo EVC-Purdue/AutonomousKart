@@ -19,7 +19,7 @@ mkdir -p /ws/logs
       --storage mcap \
       --storage-preset-profile zstd_fast \
       --max-bag-duration 60 \
-      --exclude '/camera/image_raw' \
+      --exclude '/camera/.*' \
       --output "/ws/logs/$RUN_NAME" \
       >> /ws/logs/recorder.log 2>&1
     echo "[$(date -u +%FT%TZ)] recorder exited, restarting in 1s" >> /ws/logs/recorder.log

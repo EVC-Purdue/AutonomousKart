@@ -63,6 +63,28 @@ def pack_control_message(throttle_percent: float, steering_angle: float) -> byte
 
     return bytes(data)
 
+
+def pack_hb_message(counter: int) -> bytes:
+    """
+    Pack a heartbeat message with a simple counter.
+
+    - ID = `0x102` - **E_Comms heartbeat** (RX)
+        - Byte 0: E_Comms heartbeat counter (uint8_t)
+        - Byte 1-7: reserved / future use
+
+    :param counter: Heartbeat counter (does not have to be 0-255, will be truncated to uint8_t)
+    :return: byte array of length 8.
+    """
+    data = bytearray(8)
+    data[0] = counter & 0xFF  # Truncate to uint8_t
+
+    # bytes 1-7 reserved for future use, set to 0
+    for i in range(1, 8):
+        data[i] = 0
+
+    return bytes(data)
+
+
 def unpack_status_message(data: bytes, logger: RcutilsLogger) -> AdcbStatus:
     """
     Unpack the throttle feedback from the received CAN buffer.

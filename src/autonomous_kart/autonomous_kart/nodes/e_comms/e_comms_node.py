@@ -16,6 +16,7 @@ CAN_BITRATE = 500000
 
 CONTROL_ID = 0x100
 STATUS_ID = 0x101
+HEARTBEAT_ID = 0x102
 
 
 class ECommsNode(Node):
@@ -68,32 +69,24 @@ class ECommsNode(Node):
         self.create_timer(5.0, self.log_command_rate)
 
         # Subscribe for throttle and steering commands
-        # Each command updates the internal state, and the latest values are sent
-        # out on the CAN bus at a fixed rate in can_tx()
+        # Each command updates the internal state and then calls can_control_tx to send
+        # the latest command on the CAN bus immediately
         self.steering_sub = self.create_subscription(Float32, "cmd_turn", self.cmd_steer, 5)
         self.throttle_sub = self.create_subscription(Float32, "cmd_vel", self.cmd_thr, 5)
-        self.last_command_time = self.get_clock().now()
 
-        # CAN TX timer at 50Hz to send latest command values
-        # TODO: make a parameter
-        self.timer = self.create_timer(1.0 / 50.0, self.can_tx)
+        # CAN heartbeat
+        self.hb_counter = 0
+        self.hb_tx_period_ms = self.get_parameter("heartbeat_period_ms").value
+        self.hb_timer = self.create_timer(self.hb_tx_period_ms / 1000.0, self.can_hb_tx)
 
         # Publishers
-        self.adcb_state_pub = self.create_publisher(
-            String, "e_comms/adcb_state", 1
-        )
-        self.rc_mode_pub = self.create_publisher(
-            Bool, "e_comms/rc_mode", 1
-        )
-        self.throttle_pwm_pub = self.create_publisher(
-            UInt16, "e_comms/throttle_pwm", 1
-        )
-        self.steering_pwm_pub = self.create_publisher(
-            UInt16, "e_comms/steering_pwm", 1
-        )
+        self.adcb_state_pub = self.create_publisher(String, "e_comms/adcb_state", 1)
+        self.rc_mode_pub = self.create_publisher(Bool, "e_comms/rc_mode", 1)
+        self.throttle_pwm_pub = self.create_publisher(UInt16, "e_comms/throttle_pwm", 1)
+        self.steering_pwm_pub = self.create_publisher(UInt16, "e_comms/steering_pwm", 1)
 
         # Init finished
-        self.logger.info("Initialize EComms Node")
+        self.logger.info("Initialized EComms Node")
 
     # CAN RX ------------------------------------------------------------------#
     def _on_can_msg(self, msg: can.Message):
@@ -124,32 +117,45 @@ class ECommsNode(Node):
         if not (0.0 <= throttle_msg.data <= 100.0):
             self.logger.error(f"Received out-of-bounds throttle command: {throttle_msg.data}.")
             self.throttle_percent = 0.0  # Default to zero if invalid command
-            return
-        self.throttle_percent = throttle_msg.data
-        self.last_command_time = self.get_clock().now()
+        else:
+            self.throttle_percent = throttle_msg.data
+        self.can_control_tx()  # Send updated command immediately on CAN bus
 
     def cmd_steer(self, steering_msg: Float32):
         self.cmd_count += 1
         if not (-100.0 <= steering_msg.data <= 100.0):
             self.logger.error(f"Received out-of-bounds steering command: {steering_msg.data}.")
             self.steering_angle = 0.0  # Default to straight if invalid command
-            return
-        self.steering_angle = steering_msg.data
-        self.last_command_time = self.get_clock().now()
+        else:
+            self.steering_angle = steering_msg.data
+        self.can_control_tx()  # Send updated command immediately on CAN bus
     #--------------------------------------------------------------------------#
 
     # CAN TX ------------------------------------------------------------------#
-    def can_tx(self):
+    def can_hb_tx(self):
         """
-        Send the latest throttle and steering commands on the CAN bus at a fixed rate.
-        If we have not received any new commands for a while (1 sec) reset to default/zero commands instead.
+        Send heartbeat message on CAN bus at a fixed rate.
+        Also updates the heartbeat counter which is included in the message payload.
         """
-        # if (self.get_clock().now() - self.last_command_time).nanoseconds / 1e9 > 1.0:
-        #     # No recent commands, default to zero
-        #     self.throttle_percent = 0.0
-        #     self.steering_angle = 0.0
-        #     # TODO: make the 1 sec timeout a parameter
+        self.hb_counter = (self.hb_counter + 1) % 256  # Wrap around at 255
+        hb_data = e_comms.pack_hb_message(self.hb_counter)
 
+        if self.bus is not None:
+            msg = can.Message(
+                arbitration_id=HEARTBEAT_ID,
+                data=hb_data,
+                is_extended_id=False,
+            )
+            try:
+                self.bus.send(msg)
+            except can.CanError as e:
+                self.logger.error(f"Failed to send CAN heartbeat message: {e}")
+
+    def can_control_tx(self):
+        """
+        Send the latest throttle and steering commands on the CAN bus.
+        Uses internal state updated by the command callbacks.
+        """
         tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
         if self.bus is not None:
             msg = can.Message(

@@ -28,7 +28,6 @@ class ECommsNode(Node):
         )
         self.logger: RcutilsLogger = self.get_logger()
 
-        # Parameters
         self.simulation_mode: bool = self.get_parameter("simulation_mode").value
 
         self.min_speed: float = float(self.get_parameter("min_speed").value)
@@ -38,11 +37,9 @@ class ECommsNode(Node):
         self.max_speed: float = v_max_mps
         self.pct_to_mps: float = v_max_mps / 100.0
 
-        # Inputs
         self.throttle_percent: float = 0.0
         self.steering_angle: float = 0.0
 
-        # Outputs
         self.adcb_status: e_comms.AdcbStatus = e_comms.AdcbStatus(
             logic_mode="not initialized",
             rc_mode=False,
@@ -50,17 +47,17 @@ class ECommsNode(Node):
             steering_pwm=0,
         )
 
-        # CAN bus
         if not self.simulation_mode:
             try:
-                self.bus: Optional[can.interface.Bus] = can.interface.Bus(interface="slcan", channel=CAN_CHANNEL,
-                                                                          bitrate=CAN_BITRATE)
+                self.bus: Optional[can.interface.Bus] = can.interface.Bus(
+                    interface="slcan", channel=CAN_CHANNEL, bitrate=CAN_BITRATE,
+                )
                 self.can_notifier: Optional[can.Notifier] = can.Notifier(self.bus, [self._on_can_msg])
                 self.logger.info(f"Connected to CAN device on {CAN_CHANNEL} at {CAN_BITRATE} baud")
             except FileNotFoundError:
+                # Running on-device, off-kart — fall back to sim so the node still spins.
                 self.logger.error(f"Can device not connected on {CAN_CHANNEL}")
-                self.simulation_mode = True  # Running on-device, off-kart
-
+                self.simulation_mode = True
                 self.bus: Optional[can.interface.Bus] = None
                 self.can_notifier: Optional[can.Notifier] = None
         else:
@@ -68,36 +65,42 @@ class ECommsNode(Node):
             self.can_notifier: Optional[can.Notifier] = None
             self.logger.info("Running in simulation mode, CAN bus disabled")
 
-        # Logging
         self.cmd_count: int = 0
         self.last_log_time: Time = self.get_clock().now()
-
-        # Timer to log average every 5 seconds
         self.create_timer(5.0, self.log_command_rate)
 
-        # Subscribe for combined throttle + steering commands. Both values must arrive together
         self.drive_sub = self.create_subscription(Float32MultiArray, "cmd_drive", self.cmd_drive, 5)
 
-        # CAN heartbeat
         self.hb_counter = 0
         self.hb_tx_period_ms = self.get_parameter("heartbeat_period_ms").value
         self.hb_timer = self.create_timer(self.hb_tx_period_ms / 1000.0, self.can_hb_tx)
 
-        # Publishers
         self.adcb_state_pub = self.create_publisher(String, "e_comms/adcb_state", 1)
         self.rc_mode_pub = self.create_publisher(Bool, "e_comms/rc_mode", 1)
         self.throttle_pwm_pub = self.create_publisher(UInt16, "e_comms/throttle_pwm", 1)
         self.steering_pwm_pub = self.create_publisher(UInt16, "e_comms/steering_pwm", 1)
 
-        # Init finished
         self.logger.info("Initialized EComms Node")
 
-    # CAN RX ------------------------------------------------------------------#
+    def convert(self, steering: float, throttle: float) -> tuple:
+        """Clamp + unit-convert (steering, throttle) for the CAN control frame."""
+        speed_mps = throttle * self.pct_to_mps
+        if speed_mps < self.min_speed:
+            speed_mps = self.min_speed
+        elif speed_mps > self.max_speed:
+            speed_mps = self.max_speed
+        throttle = speed_mps / self.pct_to_mps if self.pct_to_mps > 0.0 else 0.0
+
+        if steering < self.min_steering:
+            steering = self.min_steering
+        elif steering > self.max_steering:
+            steering = self.max_steering
+        return steering, throttle
+
     def _on_can_msg(self, msg: can.Message):
-        """Called by can.Notifier in a background thread for each received message."""
         if msg.arbitration_id == STATUS_ID:
-            data = bytes(msg.data)  # copy, don't hold a reference
-            # Add to executor to handle in main thread because ros publishers are not thread safe
+            data = bytes(msg.data)
+            # ROS publishers are not thread-safe; hop to the executor thread.
             if self.executor is not None:
                 self.executor.create_task(lambda: self.handle_status_msg(data))
             else:
@@ -106,96 +109,56 @@ class ECommsNode(Node):
     def handle_status_msg(self, msg_data: bytes):
         try:
             self.adcb_status = e_comms.unpack_status_message(msg_data, self.logger)
-
             self.adcb_state_pub.publish(String(data=self.adcb_status.logic_mode))
             self.rc_mode_pub.publish(Bool(data=self.adcb_status.rc_mode))
             self.throttle_pwm_pub.publish(UInt16(data=self.adcb_status.throttle_pwm))
             self.steering_pwm_pub.publish(UInt16(data=self.adcb_status.steering_pwm))
         except Exception as e:
             self.logger.error(f"Failed to parse CAN message: {e}")
-    #--------------------------------------------------------------------------#
 
-    # Command Callbacks -------------------------------------------------------#
     def cmd_drive(self, msg: Float32MultiArray):
-        """
-        Receive a combined [throttle, steering] command, then push to the CAN bus.
-        """
         self.cmd_count += 1
         if len(msg.data) < 2:
             self.logger.error(f"cmd_drive payload too short: {list(msg.data)}")
             return
-        steering, throttle = e_comms.convert(
+        self.steering_angle, self.throttle_percent = self.convert(
             float(msg.data[1]), float(msg.data[0]),
-            self.max_speed, self.min_speed,
-            self.max_steering, self.min_steering,
-            self.pct_to_mps,
         )
-        self.steering_angle = steering
-        self.throttle_percent = throttle
-        self.can_control_tx()  # Send updated command immediately on CAN bus
-    #--------------------------------------------------------------------------#
+        self.can_control_tx()
 
-    # CAN TX ------------------------------------------------------------------#
     def can_hb_tx(self):
-        """
-        Send heartbeat message on CAN bus at a fixed rate.
-        Also updates the heartbeat counter which is included in the message payload.
-        """
-        self.hb_counter = (self.hb_counter + 1) % 256  # Wrap around at 255
+        self.hb_counter = (self.hb_counter + 1) % 256
         hb_data = e_comms.pack_hb_message(self.hb_counter)
-
         if self.bus is not None:
-            msg = can.Message(
-                arbitration_id=HEARTBEAT_ID,
-                data=hb_data,
-                is_extended_id=False,
-            )
             try:
-                self.bus.send(msg)
+                self.bus.send(can.Message(arbitration_id=HEARTBEAT_ID, data=hb_data, is_extended_id=False))
             except can.CanError as e:
                 self.logger.error(f"Failed to send CAN heartbeat message: {e}")
 
     def can_control_tx(self):
-        """
-        Send the latest throttle and steering commands on the CAN bus.
-        Uses internal state updated by the command callbacks.
-        """
         tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
         if self.bus is not None:
-            msg = can.Message(
-                arbitration_id=CONTROL_ID,
-                data=tx_data,
-                is_extended_id=False,
-            )
             try:
-                self.bus.send(msg)
+                self.bus.send(can.Message(arbitration_id=CONTROL_ID, data=tx_data, is_extended_id=False))
             except can.CanError as e:
                 self.logger.error(f"Failed to send CAN message: {e}")
-    #--------------------------------------------------------------------------#
 
     def destroy_node(self):
-        # Close CAN
         if self.can_notifier is not None:
             self.can_notifier.stop()
         if self.bus is not None:
             self.bus.shutdown()
-
-        # Rest of node teardown
         super().destroy_node()
 
     def log_command_rate(self):
-        """Log average commands per second every 5 seconds"""
         current_time = self.get_clock().now()
         elapsed = (current_time - self.last_log_time).nanoseconds / 1e9
-
         if elapsed > 0:
             avg_rate = self.cmd_count / elapsed
             self.logger.info(
                 f"Average command rate: {avg_rate:.2f} commands/sec "
                 f"(Total: {self.cmd_count} in {elapsed:.1f}s)"
             )
-
-        # Reset counters
         self.cmd_count = 0
         self.last_log_time = current_time
 

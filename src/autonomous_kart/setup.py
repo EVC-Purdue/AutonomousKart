@@ -36,7 +36,6 @@ setup(
     entry_points={
         'console_scripts': [
             'pathfinder_node = autonomous_kart.nodes.pathfinder.pathfinder_node:main',
-            'manual_pathfinder_api = autonomous_kart.nodes.manual.pathfinder_api:main',
             'gps_node = autonomous_kart.nodes.gps.gps_node:main',
             'opencv_pathfinder_node = autonomous_kart.nodes.opencv_pathfinder.opencv_pathfinder_node:main',
             'e_comms_node = autonomous_kart.nodes.e_comms.e_comms_node:main',

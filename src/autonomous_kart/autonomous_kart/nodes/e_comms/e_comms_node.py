@@ -31,11 +31,6 @@ class ECommsNode(Node):
         # Parameters
         self.simulation_mode: bool = self.get_parameter("simulation_mode").value
 
-        # Actuator limits (from actuators.yaml) and the % <-> m/s scaling
-        # derived from v_max_mps (kart-wide constant in pathfinder.yaml's /**
-        # namespace, loaded into this node via the launch file). 100% throttle
-        # is defined as v_max_mps everywhere in the stack (pathfinder.py and
-        # sim_bicycle.py both use this convention), so we just compute it.
         self.min_speed: float = float(self.get_parameter("min_speed").value)
         self.max_steering: float = float(self.get_parameter("max_steering").value)
         self.min_steering: float = float(self.get_parameter("min_steering").value)

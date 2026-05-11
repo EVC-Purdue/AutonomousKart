@@ -9,8 +9,6 @@ setup(
     packages=[
         'autonomous_kart',
         'autonomous_kart.nodes',
-        'autonomous_kart.nodes.motor',
-        'autonomous_kart.nodes.steering',
         'autonomous_kart.nodes.camera',
         'autonomous_kart.nodes.gps',
         'autonomous_kart.nodes.pathfinder',
@@ -37,13 +35,10 @@ setup(
     tests_require=["pytest"],
     entry_points={
         'console_scripts': [
-            'motor_node = autonomous_kart.nodes.motor.motor_node:main',
             'pathfinder_node = autonomous_kart.nodes.pathfinder.pathfinder_node:main',
-            'manual_pathfinder_api = autonomous_kart.nodes.manual.pathfinder_api:main',
             'gps_node = autonomous_kart.nodes.gps.gps_node:main',
             'opencv_pathfinder_node = autonomous_kart.nodes.opencv_pathfinder.opencv_pathfinder_node:main',
             'e_comms_node = autonomous_kart.nodes.e_comms.e_comms_node:main',
-            'steering_node = autonomous_kart.nodes.steering.steering_node:main',
             'camera_node = autonomous_kart.nodes.camera.camera_node:main',
             'metrics_node = autonomous_kart.nodes.metrics.metrics_node:main',
             'master_api = autonomous_kart.nodes.master.master_api:main',

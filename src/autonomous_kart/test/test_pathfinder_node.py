@@ -4,7 +4,7 @@ Integration tests for PathfinderNode.
 Construction exercises CSV loading + DynamicLineManager wiring. Beyond
 that we verify:
  - AUTONOMOUS mode: fake odom + fake track_angles → publishes on
-   cmd_vel and cmd_turn.
+   cmd_drive ([throttle, steering]).
  - IDLE mode: same inputs → silent.
  - update_state accepts valid values and rejects garbage.
 """
@@ -70,7 +70,7 @@ def test_pathfinder_issues_commands_in_autonomous_mode(
     ros_ctx, tiny_racing_line, spin_helper
 ):
     from nav_msgs.msg import Odometry
-    from std_msgs.msg import Float32, Float32MultiArray
+    from std_msgs.msg import Float32MultiArray
 
     with ros_ctx(_params(tiny_racing_line, "AUTONOMOUS")) as rclpy:
         node = PathfinderNode()
@@ -78,9 +78,10 @@ def test_pathfinder_issues_commands_in_autonomous_mode(
         odom_pub = driver.create_publisher(Odometry, "odom", 10)
         angles_pub = driver.create_publisher(Float32MultiArray, "track_angles", 10)
 
-        vel, turn = [], []
-        driver.create_subscription(Float32, "cmd_vel", lambda m: vel.append(m.data), 10)
-        driver.create_subscription(Float32, "cmd_turn", lambda m: turn.append(m.data), 10)
+        drive = []
+        driver.create_subscription(
+            Float32MultiArray, "cmd_drive", lambda m: drive.append(list(m.data)), 10
+        )
 
         exe = rclpy.executors.SingleThreadedExecutor()
         exe.add_node(node)
@@ -95,15 +96,14 @@ def test_pathfinder_issues_commands_in_autonomous_mode(
             assert node.pose_ready
 
             deadline = time.monotonic() + 3.0
-            while time.monotonic() < deadline and (not vel or not turn):
+            while time.monotonic() < deadline and not drive:
                 angles_pub.publish(Float32MultiArray(data=[45.0, 45.0]))
                 exe.spin_once(timeout_sec=0.05)
 
-            assert len(vel) >= 1, "pathfinder never published cmd_vel"
-            assert len(turn) >= 1, "pathfinder never published cmd_turn"
+            assert len(drive) >= 1, "pathfinder never published cmd_drive"
             # Tiny racing line is straight along +x, kart is at origin, yaw 0
             # → steering should be small.
-            assert abs(turn[-1]) < 5.0
+            assert abs(drive[-1][1]) < 5.0
         finally:
             exe.remove_node(driver)
             exe.remove_node(node)
@@ -113,7 +113,7 @@ def test_pathfinder_issues_commands_in_autonomous_mode(
 
 def test_pathfinder_silent_in_idle_state(ros_ctx, tiny_racing_line, spin_helper):
     from nav_msgs.msg import Odometry
-    from std_msgs.msg import Float32, Float32MultiArray
+    from std_msgs.msg import Float32MultiArray
 
     with ros_ctx(_params(tiny_racing_line, "IDLE")) as rclpy:
         node = PathfinderNode()
@@ -121,9 +121,10 @@ def test_pathfinder_silent_in_idle_state(ros_ctx, tiny_racing_line, spin_helper)
         odom_pub = driver.create_publisher(Odometry, "odom", 10)
         angles_pub = driver.create_publisher(Float32MultiArray, "track_angles", 10)
 
-        vel, turn = [], []
-        driver.create_subscription(Float32, "cmd_vel", lambda m: vel.append(m.data), 10)
-        driver.create_subscription(Float32, "cmd_turn", lambda m: turn.append(m.data), 10)
+        drive = []
+        driver.create_subscription(
+            Float32MultiArray, "cmd_drive", lambda m: drive.append(list(m.data)), 10
+        )
 
         exe = rclpy.executors.SingleThreadedExecutor()
         exe.add_node(node)
@@ -137,8 +138,7 @@ def test_pathfinder_silent_in_idle_state(ros_ctx, tiny_racing_line, spin_helper)
             for _ in range(10):
                 angles_pub.publish(Float32MultiArray(data=[45.0, 45.0]))
                 exe.spin_once(timeout_sec=0.05)
-            assert vel == []
-            assert turn == []
+            assert drive == []
         finally:
             exe.remove_node(driver)
             exe.remove_node(node)

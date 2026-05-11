@@ -35,10 +35,7 @@ class MetricsNode(Node):
 
         # Subscribe to commands
         publishers = {
-            "cmd_vel": Float32MultiArray,
-            "cmd_turn": Float32,
-            "turn_angle": Float32,
-            "motor_speed": Float32,
+            "cmd_drive": Float32MultiArray,
             "track_angles": Float32MultiArray,
             # "camera/image_raw": Image, # Note: This does not work because of invalid qos.
             # Regardless, images don't need to be saved.

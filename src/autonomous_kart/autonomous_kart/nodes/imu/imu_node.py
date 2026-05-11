@@ -85,6 +85,7 @@ class ImuNode(Node):
 
         self.create_subscription(Float32, "cmd_vel", self._cmd_vel_callback, 5)
         self.create_subscription(Empty, "imu/calibrate", self._calibrate_trigger, 1)
+        self.create_subscription(Float32, "imu/yaw_offset", self._yaw_offset_callback, 1)
 
         self.logger.info(f"IMU Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}")
 
@@ -129,6 +130,13 @@ class ImuNode(Node):
     def _calibrate_trigger(self, _msg: Empty):
         self.logger.info("Calibration trigger received - resetting calibration state")
         self._reset_calibration("triggered")
+
+    def _yaw_offset_callback(self, msg: Float32):
+        c, s = math.cos(msg.data), math.sin(msg.data)
+        Rz = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+        self.R = Rz @ self.R
+        self._save_cache()
+        self.logger.info(f"Applied yaw offset {msg.data:.4f} rad")
 
     def _reset_calibration(self, reason: str):
         self.state = WAITING

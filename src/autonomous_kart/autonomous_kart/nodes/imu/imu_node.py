@@ -11,7 +11,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from sensor_msgs.msg import Imu
-from std_msgs.msg import Empty, Float32MultiArray, String
+from std_msgs.msg import Empty, Float32, Float32MultiArray, String
 
 from smbus2 import SMBus
 

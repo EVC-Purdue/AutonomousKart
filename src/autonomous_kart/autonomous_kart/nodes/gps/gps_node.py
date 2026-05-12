@@ -54,6 +54,8 @@ class GpsNode(Node):
         self.sigma_u = 0.0
         self.rtcm_bytes_total = 0
         self.rtcm_last_t = 0.0  # 0 until first RTCM byte arrives
+        self._rtcm_sock = None
+        self._last_gga_relay_t = 0.0
 
         self.last_callback_time = time.time()
 
@@ -158,8 +160,11 @@ class GpsNode(Node):
 
         while "\n" in self.buffer:
             line, self.buffer = self.buffer.split("\n", 1)
+            line = line.strip()
+            if line.startswith(("$GPGGA", "$GNGGA")):
+                self._relay_gga(line)
             try:
-                self.parse(line.strip())
+                self.parse(line)
             except Exception as e:
                 self.logger.error(f"parse crash on '{line}': {e}")
 
@@ -311,8 +316,10 @@ class GpsNode(Node):
 
     def _rtcm_loop(self):
         while rclpy.ok():
+            s = None
             try:
                 s = socket.create_connection(("localhost", 9195), timeout=5)
+                self._rtcm_sock = s
                 self.logger.info("RTCM connected")
                 while rclpy.ok():
                     data = s.recv(4096)
@@ -324,6 +331,26 @@ class GpsNode(Node):
             except Exception as e:
                 self.logger.warning(f"RTCM: {e}, retry 2s")
                 time.sleep(2)
+            finally:
+                self._rtcm_sock = None
+                if s is not None:
+                    try:
+                        s.close()
+                    except OSError:
+                        pass
+
+    def _relay_gga(self, gga: str):
+        sock = self._rtcm_sock
+        if sock is None:
+            return
+        now = time.time()
+        if now - self._last_gga_relay_t < 1.0:
+            return
+        self._last_gga_relay_t = now
+        try:
+            sock.sendall((gga + "\r\n").encode("ascii"))
+        except OSError:
+            self._rtcm_sock = None
 
 
 def main(args=None):

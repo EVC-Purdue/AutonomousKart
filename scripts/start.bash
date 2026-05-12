@@ -7,8 +7,9 @@ source /opt/ros/humble/setup.bash
 colcon build
 pkill -f master_api || true
 
-str2str -in ntrip://shayman1:shayman1@108.59.49.226:9000/MSM4_VRS -out tcpsvr://:9195 -b 1 &
+# Lat/long are approx west lafayette, not important to be highly accurate
 mkdir -p /ws/logs
+str2str -in ntrip://shayman1:shayman1@108.59.49.226:9000/MSM4_VRS -out tcpsvr://:9195 -b 1 -p 40.4376975222 -86.9444409756 200 >> /ws/logs/str2str.log 2>&1 &
 
 # Logs supervisor - crash tolerant
 (
@@ -18,7 +19,7 @@ mkdir -p /ws/logs
       --storage mcap \
       --storage-preset-profile zstd_fast \
       --max-bag-duration 60 \
-      --exclude '/camera/image_raw' \
+      --exclude '/camera/.*' \
       --output "/ws/logs/$RUN_NAME" \
       >> /ws/logs/recorder.log 2>&1
     echo "[$(date -u +%FT%TZ)] recorder exited, restarting in 1s" >> /ws/logs/recorder.log

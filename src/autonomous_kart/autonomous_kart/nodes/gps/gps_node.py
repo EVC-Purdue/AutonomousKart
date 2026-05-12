@@ -1,3 +1,4 @@
+import json
 import threading
 import socket
 import time
@@ -10,6 +11,22 @@ from geometry_msgs.msg import Quaternion
 from nav_msgs.msg import Odometry
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from std_msgs.msg import String
+
+
+# NMEA GGA fix quality codes
+FIX_LABELS = {
+    0: "INVALID",
+    1: "GPS",
+    2: "DGPS",
+    3: "PPS",
+    4: "RTK_FIXED",
+    5: "RTK_FLOAT",
+    6: "ESTIMATED",
+    7: "MANUAL",
+    8: "SIMULATION",
+    9: "WAAS",
+}
 
 
 class GpsNode(Node):
@@ -23,6 +40,22 @@ class GpsNode(Node):
         self.sim_mode = self.get_parameter("simulation_mode").value
 
         self.gps_publisher = self.create_publisher(Odometry, "gps", 5)
+        self.gps_status_publisher = self.create_publisher(String, "gps/status", 1)
+
+        # GPS status snapshot; populated from NMEA messages and the RTCM loop.
+        self.fix_quality = 0
+        self.num_satellites = 0
+        self.hdop = 0.0
+        self.lat = 0.0
+        self.lon = 0.0
+        self.altitude = 0.0
+        self.sigma_e = 0.0
+        self.sigma_n = 0.0
+        self.sigma_u = 0.0
+        self.rtcm_bytes_total = 0
+        self.rtcm_last_t = 0.0  # 0 until first RTCM byte arrives
+        self._rtcm_sock = None
+        self._last_gga_relay_t = 0.0
 
         self.last_callback_time = time.time()
 
@@ -84,6 +117,33 @@ class GpsNode(Node):
         self.logger.debug(f"GPS Pos: {msg.pose.pose.position}")
         self.logger.debug(f"GPS Cov: {msg.pose.covariance}")
         self.gps_publisher.publish(msg)
+        self.publish_status()
+
+    def publish_status(self):
+        """Publish a JSON snapshot of fix quality / RTK / measurements."""
+        now = time.time()
+        rtcm_age = (now - self.rtcm_last_t) if self.rtcm_last_t > 0.0 else None
+        payload = {
+            "fix_quality": self.fix_quality,
+            "fix_label": FIX_LABELS.get(self.fix_quality, f"UNKNOWN({self.fix_quality})"),
+            "rtk": self.fix_quality in (4, 5),
+            "rtk_fixed": self.fix_quality == 4,
+            "num_satellites": self.num_satellites,
+            "hdop": self.hdop,
+            "lat": self.lat,
+            "lon": self.lon,
+            "altitude": self.altitude,
+            "x": self.gps_data_pos[0],
+            "y": self.gps_data_pos[1],
+            "sigma_e": self.sigma_e,
+            "sigma_n": self.sigma_n,
+            "sigma_u": self.sigma_u,
+            "use_gst": self.use_gst,
+            "rtcm_bytes_total": self.rtcm_bytes_total,
+            "rtcm_last_age_s": rtcm_age,
+            "stamp_ns": self.get_clock().now().nanoseconds,
+        }
+        self.gps_status_publisher.publish(String(data=json.dumps(payload, separators=(",", ":"))))
 
     def read_gps(self):
         if self.ser is None or not self.ser.is_open:
@@ -100,8 +160,11 @@ class GpsNode(Node):
 
         while "\n" in self.buffer:
             line, self.buffer = self.buffer.split("\n", 1)
+            line = line.strip()
+            if line.startswith(("$GPGGA", "$GNGGA")):
+                self._relay_gga(line)
             try:
-                self.parse(line.strip())
+                self.parse(line)
             except Exception as e:
                 self.logger.error(f"parse crash on '{line}': {e}")
 
@@ -142,6 +205,14 @@ class GpsNode(Node):
         hdop = float(fields[8]) if fields[8] else 0.0
         altitude = float(fields[9]) if fields[9] else 0.0
 
+        self.fix_quality = fix_quality
+        try:
+            self.num_satellites = int(num_satellites) if num_satellites else 0
+        except ValueError:
+            self.num_satellites = 0
+        self.hdop = hdop
+        self.altitude = altitude
+
         if not lat or not lon or not lat_direction or not lon_direction:
             return
 
@@ -160,6 +231,9 @@ class GpsNode(Node):
 
             sigma = hdop * sigma_per_hdop
 
+            self.sigma_e = sigma
+            self.sigma_n = sigma
+            self.sigma_u = sigma
             self.gps_data_cov[0] = sigma ** 2  # sigma_x (east)
             self.gps_data_cov[7] = sigma ** 2  # sigma_y (north)
             self.gps_data_cov[14] = sigma ** 2  # sigma_z (vertical)
@@ -192,6 +266,9 @@ class GpsNode(Node):
             return
 
         self.use_gst = True
+        self.sigma_e = sigma_e
+        self.sigma_n = sigma_n
+        self.sigma_u = sigma_u
         self.gps_data_cov[0] = sigma_e ** 2  # sigma_x (east)
         self.gps_data_cov[7] = sigma_n ** 2  # sigma_y (north)
         self.gps_data_cov[14] = sigma_u ** 2  # sigma_z (up)
@@ -212,7 +289,10 @@ class GpsNode(Node):
     def gps_to_coords(self, lat, lat_direction, lon, lon_direction):
         lon = self.nmea_to_decimal(lon, lon_direction)
         lat = self.nmea_to_decimal(lat, lat_direction)
-           
+
+        self.lat = lat
+        self.lon = lon
+
         #  An approx from earth global circ. to x, y
         R = 6_371_000
         self.gps_data_pos[0] = R * math.radians(lon - self.origin_lon) * math.cos(math.radians(self.origin_lat))
@@ -236,17 +316,41 @@ class GpsNode(Node):
 
     def _rtcm_loop(self):
         while rclpy.ok():
+            s = None
             try:
                 s = socket.create_connection(("localhost", 9195), timeout=5)
+                self._rtcm_sock = s
                 self.logger.info("RTCM connected")
                 while rclpy.ok():
                     data = s.recv(4096)
                     if not data:
                         break
                     self.ser.write(data)
+                    self.rtcm_bytes_total += len(data)
+                    self.rtcm_last_t = time.time()
             except Exception as e:
                 self.logger.warning(f"RTCM: {e}, retry 2s")
                 time.sleep(2)
+            finally:
+                self._rtcm_sock = None
+                if s is not None:
+                    try:
+                        s.close()
+                    except OSError:
+                        pass
+
+    def _relay_gga(self, gga: str):
+        sock = self._rtcm_sock
+        if sock is None:
+            return
+        now = time.time()
+        if now - self._last_gga_relay_t < 1.0:
+            return
+        self._last_gga_relay_t = now
+        try:
+            sock.sendall((gga + "\r\n").encode("ascii"))
+        except OSError:
+            self._rtcm_sock = None
 
 
 def main(args=None):

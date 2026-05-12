@@ -106,6 +106,13 @@ def e_comms():
     return jsonify(master_node.get_e_comms())
 
 
+@app.route("/gps", methods=["GET"])
+def gps_status():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify(master_node.get_gps_status())
+
+
 @app.route("/imu/calibrate", methods=["POST"])
 def imu_calibrate():
     if not master_node:

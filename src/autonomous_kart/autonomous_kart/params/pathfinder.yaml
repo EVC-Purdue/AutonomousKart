@@ -20,7 +20,7 @@ pathfinder_node:
     max_lookahead_m: 8.0                 # Nav2: max_lookahead_dist (m)
     
     use_curvature_regulation: true       # Nav2: use_regulated_linear_velocity_scaling
-    min_radius_m: 12.0                    # Nav2: regulated_linear_scaling_min_radius (m)
+    min_radius_m: 10.0                    # Nav2: regulated_linear_scaling_min_radius (m)
     min_reg_speed_pct: 0.20              # like regulated_linear_scaling_min_speed / v_max
     
     approach_dist_m: 1.0                 # Nav2: approach_velocity_scaling_dist (m)

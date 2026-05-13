@@ -142,7 +142,7 @@ class ECommsNode(Node):
             steering = self.min_steering
         elif steering > self.max_steering:
             steering = self.max_steering
-        return steering * 3, throttle * 1
+        return steering * 3, throttle * 1.5
     #--------------------------------------------------------------------------#
 
     # CAN TX ------------------------------------------------------------------#

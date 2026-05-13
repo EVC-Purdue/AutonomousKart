@@ -2,7 +2,7 @@
 
 /**:
   ros__parameters:
-    v_max_mps: 15.0            # kart max speed (m/s)
+    v_max_mps: 25.0            # kart max speed (m/s)
     wheelbase_m: 1.05          # kart wheelbase in meters (rear axle -> front axle)
     steer_max_deg: 25.0        # physical max front-wheel steering angle (degrees)
 

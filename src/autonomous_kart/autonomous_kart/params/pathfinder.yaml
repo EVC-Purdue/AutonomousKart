@@ -2,9 +2,9 @@
 
 /**:
   ros__parameters:
-    v_max_mps: 75.0            # kart max speed (m/s)
+    v_max_mps: 0.0            # kart max speed (m/s) 125.0
     wheelbase_m: 1.05          # kart wheelbase in meters (rear axle -> front axle)
-    steer_max_deg: 75.0        # physical max front-wheel steering angle (degrees)
+    steer_max_deg: 100.0        # physical max front-wheel steering angle (degrees)
 
 pathfinder_node:
   ros__parameters:

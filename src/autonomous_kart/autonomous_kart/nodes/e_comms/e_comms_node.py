@@ -132,17 +132,18 @@ class ECommsNode(Node):
 
     def convert(self, steering: float, throttle: float) -> tuple:
         """Clamp + unit-convert (steering, throttle) for the CAN control frame."""
+        throttle = throttle * 1.5
         if throttle < self.min_speed:
             throttle = self.min_speed
         elif throttle > self.max_speed:
             throttle = self.max_speed
 
-        steering = (steering / self.steer_max_deg) * 100.0
+        steering = (steering / self.steer_max_deg) * 100.0 * 3.0
         if steering < self.min_steering:
             steering = self.min_steering
         elif steering > self.max_steering:
             steering = self.max_steering
-        return steering * 3, throttle * 1.5
+        return steering, throttle
     #--------------------------------------------------------------------------#
 
     # CAN TX ------------------------------------------------------------------#

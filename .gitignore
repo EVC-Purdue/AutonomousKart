@@ -177,6 +177,3 @@ cython_debug/
 install
 log
 build
-
-# Working docs (specs, audits, plans) — never committed per global rules
-docs/superpowers/

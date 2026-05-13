@@ -42,7 +42,8 @@ class LocalizationEKF:
               P: np.ndarray | None = None) -> None:
         self.x[:] = (px, py, _wrap(yaw), v)
         if P is not None:
-            assert P.shape == (4, 4)
+            if P.shape != (4, 4):
+                raise ValueError(f"P must be 4x4, got {P.shape}")
             self.P = np.array(P, dtype=np.float64, copy=True)
         else:
             self.P = np.diag([0.25, 0.25, 0.25, 1.0])
@@ -124,7 +125,8 @@ class LocalizationEKF:
         if innovation is None:
             innovation = z - H @ self.x
         S = H @ self.P @ H.T + R
-        K = self.P @ H.T @ np.linalg.inv(S)
+        # Solve S K^T = H P for K (S is symmetric PD, P symmetric).
+        K = np.linalg.solve(S, H @ self.P).T
         self.x = self.x + K @ innovation
         self.x[2] = _wrap(self.x[2])
         I = np.eye(self.P.shape[0])

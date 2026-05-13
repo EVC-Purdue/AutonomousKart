@@ -1,11 +1,14 @@
 import threading
 import os, csv
+import logging
 
 import rclpy
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from .master_node import MasterNode, STATES
+
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 app = Flask(__name__)
 CORS(app)

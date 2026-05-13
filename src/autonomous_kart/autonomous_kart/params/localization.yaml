@@ -7,7 +7,7 @@ localization_node:
 
     # GPS pseudo-measurement gates (both must pass)
     pseudo_speed_gate:  0.2      # m/s
-    pseudo_disp_gate:   0.10     # m
+    pseudo_disp_gate:   0.02     # m
 
     init_disp_min:      0.30     # m
     gps_max_age:        0.5      # s

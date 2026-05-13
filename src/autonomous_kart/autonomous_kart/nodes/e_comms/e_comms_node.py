@@ -37,6 +37,7 @@ class ECommsNode(Node):
         v_max_mps: float = float(self.get_parameter("v_max_mps").value)
         self.max_speed: float = v_max_mps
         self.pct_to_mps: float = v_max_mps / 100.0
+        self.steer_max_deg: float = float(self.get_parameter("steer_max_deg").value)
 
         # Inputs
         self.throttle_percent: float = 0.0
@@ -136,6 +137,7 @@ class ECommsNode(Node):
         elif throttle > self.max_speed:
             throttle = self.max_speed
 
+        steering = (steering / self.steer_max_deg) * 100.0
         if steering < self.min_steering:
             steering = self.min_steering
         elif steering > self.max_steering:

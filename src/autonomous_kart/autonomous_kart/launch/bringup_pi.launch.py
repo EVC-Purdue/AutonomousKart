@@ -17,6 +17,7 @@ def generate_launch_description():
     imu_yaml = os.path.join(pkg_share, "params", "imu.yaml")
     e_comms_yaml = os.path.join(pkg_share, "params", "e_comms.yaml")
     actuators_yaml = os.path.join(pkg_share, "params", "actuators.yaml")
+    localization_yaml = os.path.join(pkg_share, "params", "localization.yaml")
 
     sim_mode = LaunchConfiguration("simulation_mode")
 
@@ -60,7 +61,7 @@ def generate_launch_description():
                         package="autonomous_kart",
                         executable="localization_node",
                         name="localization_node",
-                        parameters=[pathfinder_yaml],
+                        parameters=[pathfinder_yaml, localization_yaml],
                     ),
                     Node(
                         package="autonomous_kart",

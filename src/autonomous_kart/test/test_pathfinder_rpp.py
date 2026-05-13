@@ -95,9 +95,9 @@ def test_target_behind_vehicle_returns_crawl_speed():
         target=(-2.0, 0.5),
         desired_speed_pct=1.0,
     )
-    # Code path: x_v <= 0  →  return min(10%, desired) * 100, 0
+    # Code path: x_v <= 0  →  crawl forward, full lock toward target side.
     assert throttle == pytest.approx(10.0, abs=1e-6)
-    assert steer == 0
+    assert steer == pytest.approx(25.0, abs=1e-6)
 
 
 def test_approach_distance_ramps_speed_down_near_end():

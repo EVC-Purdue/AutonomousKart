@@ -2,9 +2,9 @@
 
 /**:
   ros__parameters:
-    v_max_mps: 125.0            # kart max speed (m/s)
+    v_max_mps: 15.0            # kart max speed (m/s)
     wheelbase_m: 1.05          # kart wheelbase in meters (rear axle -> front axle)
-    steer_max_deg: 100.0        # physical max front-wheel steering angle (degrees)
+    steer_max_deg: 25.0        # physical max front-wheel steering angle (degrees)
 
 pathfinder_node:
   ros__parameters:
@@ -15,9 +15,9 @@ pathfinder_node:
     steering_accel: 5.0
     
     use_velocity_scaled_lookahead: true  # Nav2: use_velocity_scaled_lookahead_dist
-    lookahead_time_s: 0.5                # Nav2: lookahead_time (s)
-    min_lookahead_m: 2.5                 # Nav2: min_lookahead_dist (m)
-    max_lookahead_m: 6.0                 # Nav2: max_lookahead_dist (m)
+    lookahead_time_s: 0.6                # Nav2: lookahead_time (s)
+    min_lookahead_m: 3.0                 # Nav2: min_lookahead_dist (m)
+    max_lookahead_m: 8.0                 # Nav2: max_lookahead_dist (m)
     
     use_curvature_regulation: true       # Nav2: use_regulated_linear_velocity_scaling
     min_radius_m: 10.0                    # Nav2: regulated_linear_scaling_min_radius (m)

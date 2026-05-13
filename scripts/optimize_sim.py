@@ -31,10 +31,13 @@ def load_line(path):
     return line
 
 
-def closest_idx_wrap(line, x, y, hint, window=300):
+def closest_idx_wrap(line, x, y, hint, window=80):
+    # Forward-only narrow window, like pathfinder_node._nearest_idx_forward.
+    # A wide bidirectional search snaps to the wrong side on tracks that
+    # double back, which makes closest_idx oscillate and lap detection fail.
     n = len(line)
     best_i, best_d2 = hint, float("inf")
-    for off in range(-50, window):
+    for off in range(window):
         i = (hint + off) % n
         dx = line[i][1] - x
         dy = line[i][2] - y
@@ -175,10 +178,10 @@ def main():
 
     # Sweep these
     sweep = {
-        "lookahead_time_s":  [0.6, 0.8, 1.0, 1.2],
-        "min_lookahead_m":   [3.0, 5.0, 7.0],
-        "max_lookahead_m":   [8.0, 10.0, 12.0, 15.0],
-        "min_radius_m":      [3.0, 5.0, 8.0, 12.0],
+        "lookahead_time_s":  [0.2, 0.3, 0.5, 0.7],
+        "min_lookahead_m":   [0.5, 1.0, 1.5, 2.0],
+        "max_lookahead_m":   [1.5, 2.0, 2.5, 3.0, 4.0, 6.0, 8.0],
+        "min_radius_m":      [10.0],
     }
 
     keys = list(sweep.keys())

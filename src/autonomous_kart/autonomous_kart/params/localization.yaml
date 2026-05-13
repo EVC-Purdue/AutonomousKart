@@ -6,7 +6,7 @@ localization_node:
     accel_noise:        4.0      # (m/s^2)^2/s
 
     # GPS pseudo-measurement gates (both must pass)
-    pseudo_speed_gate:  0.5      # m/s
+    pseudo_speed_gate:  0.2      # m/s
     pseudo_disp_gate:   0.10     # m
 
     init_disp_min:      0.30     # m

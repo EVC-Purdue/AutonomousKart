@@ -105,13 +105,13 @@ class LocalizationNode(Node):
         hz = float(self.get_parameter("system_frequency").value)
         self.dt = 1.0 / hz
 
-        self.ekf = LocalizationEKF(wheelbase_m=wheelbase, steer_max_rad=steer_max_rad)
-
-        # Pull tunables from localization.yaml. Fall back to the class defaults
-        # if a key is missing (lets the node run even without the yaml).
-        self.ekf.q_pos = float(self._param("pos_noise", self.ekf.q_pos))
-        self.ekf.q_yaw_rate = float(self._param("yaw_noise", self.ekf.q_yaw_rate))
-        self.ekf.q_accel = float(self._param("accel_noise", self.ekf.q_accel))
+        self.ekf = LocalizationEKF(
+            wheelbase_m=wheelbase,
+            steer_max_rad=steer_max_rad,
+            pos_noise=float(self.get_parameter("pos_noise").value),
+            yaw_noise=float(self.get_parameter("yaw_noise").value),
+            accel_noise=float(self.get_parameter("accel_noise").value),
+        )
 
         self.pseudo_speed_gate = float(self._param("pseudo_speed_gate", 0.5))
         self.pseudo_disp_gate = float(self._param("pseudo_disp_gate", 0.10))

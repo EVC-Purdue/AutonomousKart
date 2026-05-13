@@ -20,20 +20,23 @@ def _wrap(a: float) -> float:
 
 
 class LocalizationEKF:
-    def __init__(self, wheelbase_m: float, steer_max_rad: float):
+    def __init__(
+        self,
+        wheelbase_m: float,
+        steer_max_rad: float,
+        pos_noise: float,
+        yaw_noise: float,
+        accel_noise: float,
+    ):
         self.L = float(wheelbase_m)
         self.steer_max = float(steer_max_rad)
+        self.pos_noise = float(pos_noise)
+        self.yaw_noise = float(yaw_noise)
+        self.accel_noise = float(accel_noise)
 
-        # State [px, py, yaw, v]
         self.x = np.zeros(4, dtype=np.float64)
-        # Huge covariance until reset() is called
         self.P = np.eye(4, dtype=np.float64) * 1e6
         self.initialized = False
-
-        # Process-noise spectral densities (overridable by the node from YAML)
-        self.q_pos = 0.01       # m²/s
-        self.q_yaw_rate = 0.05  # rad²/s
-        self.q_accel = 4.0      # (m/s²)²·s
 
     def reset(self, px: float, py: float, yaw: float, v: float,
               P: np.ndarray | None = None) -> None:
@@ -76,10 +79,10 @@ class LocalizationEKF:
             F[2, 3] = math.tan(delta) * dt / self.L
 
         Q = np.diag([
-            self.q_pos * dt,
-            self.q_pos * dt,
-            self.q_yaw_rate * dt,
-            self.q_accel * dt,
+            self.pos_noise * dt,
+            self.pos_noise * dt,
+            self.yaw_noise * dt,
+            self.accel_noise * dt,
         ])
 
         self.P = F @ self.P @ F.T + Q

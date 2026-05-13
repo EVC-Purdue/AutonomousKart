@@ -8,7 +8,13 @@ from autonomous_kart.nodes.localization.ekf import LocalizationEKF
 
 
 def _mk(**kw):
-    defaults = dict(wheelbase_m=1.05, steer_max_rad=math.radians(25.0))
+    defaults = dict(
+        wheelbase_m=1.05,
+        steer_max_rad=math.radians(25.0),
+        pos_noise=0.01,
+        yaw_noise=0.05,
+        accel_noise=4.0,
+    )
     defaults.update(kw)
     return LocalizationEKF(**defaults)
 
@@ -124,12 +130,10 @@ def test_predict_covariance_is_symmetric():
     np.testing.assert_allclose(f.P, f.P.T, atol=1e-12)
 
 
-def test_predict_q_accel_scales_v_variance():
-    f_small = _mk()
-    f_small.q_accel = 0.1
+def test_predict_accel_noise_scales_v_variance():
+    f_small = _mk(accel_noise=0.1)
     f_small.reset(0.0, 0.0, 0.0, 0.0)
-    f_big = _mk()
-    f_big.q_accel = 10.0
+    f_big = _mk(accel_noise=10.0)
     f_big.reset(0.0, 0.0, 0.0, 0.0)
     for _ in range(60):
         f_small.predict(1 / 60.0, steer_rad=0.0)

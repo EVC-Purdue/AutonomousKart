@@ -142,7 +142,8 @@ class PathfinderNode(Node):
             # Set speed to zero on state change
             self.speed = 0.0
             self.expected_speed = 0.0
-            self.drive_publisher.publish(Float32MultiArray(data=[0.0, self.steering]))
+            steering_deg = (self.steering / 100.0) * self.steer_max_deg
+            self.drive_publisher.publish(Float32MultiArray(data=[0.0, steering_deg]))
         if msg.data not in [s.value for s in STATES]:
             self.logger.error(f"State {msg.data} not recognized")
             return
@@ -337,7 +338,8 @@ class PathfinderNode(Node):
 
     def publish_commands(self):
         """Publishes commands from params to steering & motor"""
-        self.drive_publisher.publish(Float32MultiArray(data=[self.speed, self.steering]))
+        steering_deg = (self.steering / 100.0) * self.steer_max_deg
+        self.drive_publisher.publish(Float32MultiArray(data=[self.speed, steering_deg]))
 
         time = self.get_clock().now().nanoseconds
 

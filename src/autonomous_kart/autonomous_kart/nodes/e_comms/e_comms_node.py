@@ -138,7 +138,7 @@ class ECommsNode(Node):
         elif throttle > self.max_speed:
             throttle = self.max_speed
 
-        steering = (steering / self.steer_max_deg) * 100.0 * 6.0
+        steering = (steering / self.steer_max_deg) * 100.0 * 3.0
         if steering < self.min_steering:
             steering = self.min_steering
         elif steering > self.max_steering:

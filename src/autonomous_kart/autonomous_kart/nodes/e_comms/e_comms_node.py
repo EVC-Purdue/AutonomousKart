@@ -99,7 +99,6 @@ class ECommsNode(Node):
     # CAN RX ------------------------------------------------------------------#
     def _on_can_msg(self, msg: can.Message):
         """Called by can.Notifier in a background thread for each received message."""
-        self.logger.info(f"Can message RX")
         if msg.arbitration_id == STATUS_ID:
             data = bytes(msg.data)  # copy, don't hold a reference
             # Add to executor to handle in main thread because ros publishers are not thread safe
@@ -164,7 +163,6 @@ class ECommsNode(Node):
             )
             try:
                 self.bus.send(msg)
-                # self.logger.info(f"Printed message: #{self.hb_counter}")
             except can.CanError as e:
                 self.logger.error(f"Failed to send CAN heartbeat message: {e}")
 
@@ -182,7 +180,6 @@ class ECommsNode(Node):
             )
             try:
                 self.bus.send(msg)
-                self.logger.info("Sent control tx")
             except can.CanError as e:
                 self.logger.error(f"Failed to send CAN message: {e}")
     #--------------------------------------------------------------------------#

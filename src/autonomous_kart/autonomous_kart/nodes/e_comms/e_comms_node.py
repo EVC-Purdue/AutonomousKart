@@ -163,6 +163,7 @@ class ECommsNode(Node):
             )
             try:
                 self.bus.send(msg)
+                self.logger.info(f"Printed message: #{self.hb_counter}")
             except can.CanError as e:
                 self.logger.error(f"Failed to send CAN heartbeat message: {e}")
 

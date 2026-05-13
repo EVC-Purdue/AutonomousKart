@@ -1,0 +1,16 @@
+localization_node:
+  ros__parameters:
+    # EKF process-noise spectral densities
+    pos_noise:          0.01     # m^2/s
+    yaw_noise:          0.05     # rad^2/s
+    accel_noise:        4.0      # (m/s^2)^2/s
+
+    # GPS pseudo-measurement gates (both must pass)
+    pseudo_speed_gate:  0.5      # m/s
+    pseudo_disp_gate:   0.10     # m
+
+    init_disp_min:      0.30     # m
+    gps_max_age:        0.5      # s
+    cmd_drive_max_age:  1.0      # s
+    gps_dropout_warn:   2.0      # s
+    sigma_xy_floor:     0.02     # m

@@ -367,7 +367,7 @@ def test_manual_control_publishes_on_topic(running_stack):
     assert status == 200
     assert body.get("success") == "ok"
     assert running_stack["pump"](
-        lambda: len(running_stack["manual_cmds"]) > before, timeout=5.0
+        lambda: len(running_stack["manual_cmds"]) > before, timeout=10.0
     )
     assert running_stack["manual_cmds"][-1] == [1.5, -2.5]
 

@@ -8,6 +8,10 @@ class KartConstants:
     v_max_mps: float
     wheelbase_m: float
     steer_max_deg: float
+    steer_rate_max_degps: float
+    a_max_mps2: float
+    a_min_mps2: float
+    a_lat_max_mps2: float
 
 
 @dataclass(frozen=True)
@@ -29,11 +33,12 @@ class Planner(ABC):
 
     name: ClassVar[str]
 
-    def __init__(self, params: dict, kart: KartConstants, racing_line: list, logger=None):
+    def __init__(self, params: dict, kart: KartConstants, racing_line: list, logger=None, node=None):
         self.params = params
         self.kart = kart
         self.racing_line = racing_line
         self.logger = logger
+        self.node = node # To publish mpc/status
 
     @abstractmethod
     def plan(self, inputs: PlannerInputs) -> Optional[Tuple[float, float]]:

@@ -53,6 +53,10 @@ class PathfinderNode(Node):
             v_max_mps=float(self.get_parameter("v_max_mps").value),
             wheelbase_m=float(self.get_parameter("wheelbase_m").value),
             steer_max_deg=float(self.get_parameter("steer_max_deg").value),
+            steer_rate_max_degps=float(self.get_parameter("steer_rate_max_degps").value),
+            a_max_mps2=float(self.get_parameter("a_max_mps2").value),
+            a_min_mps2=float(self.get_parameter("a_min_mps2").value),
+            a_lat_max_mps2=float(self.get_parameter("a_lat_max_mps2").value),
         )
 
         # Racing line
@@ -84,7 +88,7 @@ class PathfinderNode(Node):
             k: p.value for k, p in self.get_parameters_by_prefix(planner_name).items()
         }
         self.planner = PLANNERS[planner_name](
-            planner_params, self.kart, self.racing_line, logger=self.logger
+            planner_params, self.kart, self.racing_line, logger=self.logger, node=self
         )
         self.logger.info(f"Pathfinder using planner '{planner_name}'")
 

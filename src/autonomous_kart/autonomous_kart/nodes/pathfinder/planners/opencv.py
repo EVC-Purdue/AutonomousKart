@@ -9,8 +9,8 @@ class OpenCVPlanner(Planner):
 
     name = "opencv"
 
-    def __init__(self, params: dict, kart: KartConstants, racing_line: list, logger=None):
-        super().__init__(params, kart, racing_line, logger)
+    def __init__(self, params: dict, kart: KartConstants, racing_line: list, logger=None, node=None):
+        super().__init__(params, kart, racing_line, logger, node=node)
         raise NotImplementedError("OpenCVPlanner is not implemented yet")
 
     def plan(self, inputs: PlannerInputs) -> Optional[Tuple[float, float]]:

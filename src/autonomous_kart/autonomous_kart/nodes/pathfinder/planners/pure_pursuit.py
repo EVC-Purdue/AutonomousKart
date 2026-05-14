@@ -14,8 +14,8 @@ class PurePursuitPlanner(Planner):
 
     name = "pure_pursuit"
 
-    def __init__(self, params: dict, kart: KartConstants, racing_line: list, logger=None):
-        super().__init__(params, kart, racing_line, logger)
+    def __init__(self, params: dict, kart: KartConstants, racing_line: list, logger=None, node=None):
+        super().__init__(params, kart, racing_line, logger, node=node)
 
         self.use_velocity_scaled_lookahead = bool(params.get("use_velocity_scaled_lookahead", True))
         self.lookahead_time_s = float(params.get("lookahead_time_s", 1.0))

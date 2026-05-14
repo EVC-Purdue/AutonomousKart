@@ -32,28 +32,3 @@ source /opt/ros/humble/setup.bash
 colcon build
 source install/setup.bash
 ```
-
-## Teams
-
-### ROS Team:
-1) Hot loop runs too slow!!!
-2) Need to optimize for distribution of nodes in cluster.
-
-### OpenCV Team:
-1) Implement solution in `autonomous_kart/nodes/opencv_pathfinder/angle_calculator.py`
-2) Add efficient error checking for pathfinding
-
-Note: Ensure this code is efficient as it is in the hot loop
-
-### Pathfinding Team:
-1) Build optimal line
-2) Update line dynamically when off
-3) Add efficient error checking
-
-Note: Ensure this is efficient as it is in the hot loop
-
-
-## Info
-
-1) Hot loop runs at ~60 Hz
-2) Error checking not implemented (**YET!**)

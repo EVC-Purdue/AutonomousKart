@@ -5,6 +5,10 @@
     v_max_mps: 20.0            # kart max speed (m/s)
     wheelbase_m: 1.05          # kart wheelbase in meters (rear axle -> front axle)
     steer_max_deg: 25.0        # physical max front-wheel steering angle (degrees)
+    steer_rate_max_degps: 180.0 # max steering slew rate (degrees/second)
+    a_max_mps2: 2.0            # max forward acceleration (m/s^2)
+    a_min_mps2: -3.0           # max braking deceleration (m/s^2, negative)
+    a_lat_max_mps2: 4.0        # max lateral acceleration before tires let go (m/s^2)
 
 pathfinder_node:
   ros__parameters:
@@ -40,9 +44,57 @@ pathfinder_node:
       rejoin_cte_deactivate: 1.0
       rejoin_merge_lookahead_m: 15.0
 
-    opencv: {}
+    opencv: { }
 
-    mpc: {}
+    mpc:
+      # Solve
+      horizon_steps: 20
+      dt_s: 0.05 # rollout step
+
+      # Sampling MPC
+      num_samples: 48
+      steer_sigma_deg: 6.0
+      accel_sigma_mps2: 1.0
+      proj_window_back: 5
+      proj_window_fwd: 60
+
+      # MPC-only speed shaping
+      target_speed_pct: 0.30 # cruise as fraction of v_max_mps
+
+      # Track corridor (centerline = racing line)
+      track_half_width_m: 2.5
+      safety_margin_m: 0.5
+      kart_half_width_m: 0.5025
+
+      # Costs
+      w_d: 100.0
+      w_heading: 30.0
+      w_speed: 5.0
+      w_delta: 5.0
+      w_delta_rate: 50.0
+      w_accel: 2.0
+      w_boundary: 1000.0
+      w_progress: 1.0
+      w_terminal_d: 200.0
+      w_terminal_heading: 100.0
+      w_a_lat: 50.0                    # soft penalty on |a_lat| > lateral_accel_max_mps2
+
+      # Rejoin mode (kart outside corridor)
+      rejoin_activate_d_m: 2.5
+      rejoin_deactivate_d_m: 1.0
+      rejoin_v_max_mps: 2.0
+
+      # Failsafe
+      max_consecutive_solver_failures: 3
+
+      # Shadow residual learning (RLS linear) — never affects control unless mode=apply
+      residual:
+        mode: shadow                   # off | shadow | apply
+        target_horizon_s: 0.5
+        forgetting_factor: 0.99
+        initial_cov: 1000.0
+        min_train_speed_mps: 0.5
+        error_window: 200              # rolling window for nominal vs corrected error
 
     safety:
       enabled: true

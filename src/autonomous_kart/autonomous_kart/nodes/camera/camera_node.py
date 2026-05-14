@@ -1,10 +1,9 @@
 import threading
 import time
 import traceback
-
 import cv2
-import numpy as np
 import rclpy
+
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -41,28 +40,33 @@ class CameraNode(Node):
         )
         self.image_pub = self.create_publisher(Image, "camera/image_raw", qos)
 
+        self.latest_frame = None
+        self.running = True
+        self.frame_lock = threading.Lock()
+
         if self.sim_mode:
             video_path = "/ws/data/EVC_test_footage/video.mp4"
             self.cap = cv2.VideoCapture(video_path)
-            if not self.cap.isOpened():
-                self.logger.info(f"Failed to open video: {video_path}")
             self.video_fps = self.cap.get(cv2.CAP_PROP_FPS)
 
-            self.latest_frame = None
-            self.running = True
-            self.frame_lock = threading.Lock()
-
-            self.reader_thread = threading.Thread(target=self.read_frames, daemon=True)
-            self.reader_thread.start()
+            if not self.cap.isOpened():
+                self.logger.error(f"Failed to open video: {video_path}")
+                raise RuntimeError(f"Failed to open video: {video_path}")
 
         else:
-            # self.cap = cv2.VideoCapture(0)  # Real camera not plugged in yet
-            self.dummy_frame = np.zeros((202, 360, 3), dtype=np.uint8)
+            self.cap = cv2.VideoCapture(0) 
             self.video_fps = self.fps
+
+            if not self.cap.isOpened():
+                self.logger.error("Failed to open video")
+                raise RuntimeError("Failed to open video")
+
+        self.reader_thread = threading.Thread(target=self.read_frames, daemon=True)
+        self.reader_thread.start()
 
         self.logger.info(f"Video FPS: {self.video_fps}, Given FPS: {self.fps}")
         self.timer = self.create_timer(1.0 / self.fps, self.timer_callback)
-
+        
         self.logger.info(
             f"Camera Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}"
         )
@@ -71,13 +75,14 @@ class CameraNode(Node):
         """
         Publishes the next frame
         """
-        if self.sim_mode:
-            with self.frame_lock:
+        with self.frame_lock:
+            if self.sim_mode:
                 if self.latest_frame is not None:
                     self.image_pub.publish(self.latest_frame)
                     self.frame_counter += 1
                 else:
                     self.logger.warning("Too slow frames - skipping")
+
                 if self.frame_counter % self.fps == 0:
                     now = time.time()
                     try:
@@ -89,15 +94,14 @@ class CameraNode(Node):
                         f"Published {self.frame_counter} frames, actual rate: {actual_rate:.1f} fps"
                     )
                     self.last_callback_time = now
-        else:
-            # TODO: Send real frame
-            msg = self.bridge.cv2_to_imgmsg(self.dummy_frame, "bgr8")
-            msg.header.stamp = self.get_clock().now().to_msg()
-            msg.header.frame_id = "camera"
-            self.image_pub.publish(msg)
-            self.frame_counter += 1
+            else:
+                if self.latest_frame is not None:
+                    self.image_pub.publish(self.latest_frame)
+                    self.frame_counter += 1
+                else:
+                    self.logger.info("No Frame available")
 
-def read_frames(self):
+    def read_frames(self):
         """
         Background thread to read frames for efficiency
         """
@@ -111,7 +115,8 @@ def read_frames(self):
             if not ret:
                 self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ret, frame = self.cap.read()
-            else:
+            
+            if ret:
                 height, width = frame.shape[:2]
                 # 360x202 BGR image optimized for jetson communication
                 target_width = (
@@ -146,6 +151,7 @@ def main(args=None):
         node.get_logger().error(traceback.format_exc())
     finally:
         node.running = False
+        node.cap.release()
         executor.shutdown(timeout_sec=1.0)
         node.destroy_node()
         if rclpy.ok():

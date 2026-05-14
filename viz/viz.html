@@ -97,6 +97,7 @@ const MAX_TRAIL = 3000;
 let odom = { x:0, y:0, yaw:0, speed:0, motor:0, steer:0, state:'IDLE' };
 let connected = false;
 let mpcStatus = null;
+let dynamicLine = null;  // {active, strategy, merge_idx, points: [[x,y], ...]}
 
 // ── Camera ──
 let cam = { x:0, y:0, zoom:4, targetZoom:4 };
@@ -238,6 +239,14 @@ async function fetchMpcStatus() {
   renderCosts();
 }
 
+async function fetchLines() {
+  try {
+    const r = await fetch(API + '/lines');
+    const d = await r.json();
+    dynamicLine = d.dynamic || null;
+  } catch(e) { dynamicLine = null; }
+}
+
 // Display order roughly groups: line-tracking, speed, control, safety, reward.
 const COST_ROWS = [
   ['d',                'lateral d',     '#60a5fa'],
@@ -337,6 +346,20 @@ function draw() {
     ctx.closePath();
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  // Bezier rejoin overlay (when active — this is what MPC is actually tracking)
+  if (dynamicLine && dynamicLine.active && dynamicLine.points && dynamicLine.points.length > 1) {
+    ctx.beginPath();
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = Math.max(2, 2.5 * cam.zoom);
+    let [bx, by] = w2s(dynamicLine.points[0][0], dynamicLine.points[0][1]);
+    ctx.moveTo(bx, by);
+    for (let i = 1; i < dynamicLine.points.length; i++) {
+      [bx, by] = w2s(dynamicLine.points[i][0], dynamicLine.points[i][1]);
+      ctx.lineTo(bx, by);
+    }
+    ctx.stroke();
   }
 
   // Trail (gradient fade)
@@ -439,6 +462,7 @@ fetchLine();
 setInterval(fetchOdom, 50);          // 20Hz polling
 setInterval(fetchLine, 5000);        // refresh line occasionally
 setInterval(fetchMpcStatus, 100);    // 10Hz MPC cost breakdown
+setInterval(fetchLines, 200);        // 5Hz dynamic-line (bezier rejoin) overlay
 draw();
 </script>
 </body>

@@ -92,6 +92,14 @@ class MPCPlanner(Planner):
         self.w_term_h = float(g("w_terminal_heading", 100.0))
         self.w_a_lat = float(g("w_a_lat", 50.0))
 
+        # Inner-corridor "stay centered" barrier: zero inside
+        # edge_inner_frac * corridor_half of the line, quadratic outward.
+        # Separate from w_d (flat quadratic everywhere) so the planner can be
+        # gently centered without being whipped to the centerline in corners.
+        self.w_edge = float(g("w_edge", 200.0))
+        self.edge_inner_frac = float(g("edge_inner_frac", 0.5))
+        self.edge_inner = self.corridor_half * self.edge_inner_frac
+
         # Failsafe / feasibility sentinels
         self.max_failures = int(g("max_consecutive_solver_failures", 3))
         self.infeasible_cost = float(g("infeasible_cost", 1.0e9))
@@ -461,12 +469,12 @@ class MPCPlanner(Planner):
         d_diff = np.diff(delta_seq, axis=1, prepend=self.delta_prev)
 
         boundary = np.maximum(0.0, np.abs(d) - self.corridor_half)
-        hard_violation = np.any(boundary > 0.0, axis=1)
 
         progress = s[:, -1] - s[:, 0]
 
         # Named cost components — also exported for diagnostics.
         a_lat = tv * tv * np.tan(delta_seq) / self.wheelbase
+        edge_excess = np.maximum(0.0, np.abs(d) - self.edge_inner)
         c_d = self.w_d * np.sum(d * d, axis=1)
         c_h = self.w_heading * np.sum(psi_err * psi_err, axis=1)
         c_v = self.w_speed * np.sum(v_err * v_err, axis=1)
@@ -474,6 +482,7 @@ class MPCPlanner(Planner):
         c_drate = self.w_drate * np.sum(d_diff * d_diff, axis=1)
         c_accel = self.w_accel * np.sum(accel_seq * accel_seq, axis=1)
         c_bnd = self.w_boundary * np.sum(boundary * boundary, axis=1)
+        c_edge = self.w_edge * np.sum(edge_excess * edge_excess, axis=1)
         c_prog = -self.w_progress * progress
         c_term_d = self.w_term_d * d[:, -1] ** 2
         c_term_h = self.w_term_h * psi_err[:, -1] ** 2
@@ -481,12 +490,15 @@ class MPCPlanner(Planner):
             np.maximum(0.0, np.abs(a_lat) - self.a_lat_max) ** 2, axis=1,
         )
         cost = (c_d + c_h + c_v + c_delta + c_drate + c_accel
-                + c_bnd + c_prog + c_term_d + c_term_h + c_alat)
+                + c_bnd + c_edge + c_prog + c_term_d + c_term_h + c_alat)
 
-        # Corridor (around the active reference) is hard; rejoin is handled
-        # upstream by swapping the reference to a bezier whose corridor
-        # naturally encloses the kart.
-        cost = np.where(hard_violation, self.infeasible_cost, cost)
+        # Corridor enforcement is a soft quadratic penalty (c_bnd above) — no
+        # hard infeasibility cliff. The hard-cliff version created a dead zone
+        # when the kart was outside the corridor but inside the bezier rejoin
+        # gate: every candidate trajectory started outside, so every plan was
+        # flagged infeasible and the planner returned (0, 0). The soft penalty
+        # still strongly pulls the kart back toward the line (w_boundary=1000
+        # by default) without freezing the planner.
 
         best = int(np.argmin(cost))
         best_cost = float(cost[best])
@@ -498,6 +510,7 @@ class MPCPlanner(Planner):
             float(c_delta[best]), float(c_drate[best]), float(c_accel[best]),
             float(c_bnd[best]), float(c_prog[best]),
             float(c_term_d[best]), float(c_term_h[best]), float(c_alat[best]),
+            float(c_edge[best]),
         )
         return u, best_cost, traj, feasible, breakdown
 

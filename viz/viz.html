@@ -63,9 +63,7 @@
 </div>
 
 <script>
-const API = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
-  ? `http://${location.hostname}:8000`
-  : 'http://localhost:8000';
+const API = `http://${location.hostname || 'localhost'}:8000`;
 
 const C = document.getElementById('c');
 const ctx = C.getContext('2d');

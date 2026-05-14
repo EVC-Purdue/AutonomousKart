@@ -3,6 +3,7 @@ import os, csv
 import logging
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
@@ -193,7 +194,13 @@ def lines_endpoint():
 
 
 def start(node: MasterNode) -> None:
-    rclpy.spin(node)
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        # Take the whole process down so Flask doesn't keep serving stale ROS state.
+        os._exit(0)
 
 
 def main():

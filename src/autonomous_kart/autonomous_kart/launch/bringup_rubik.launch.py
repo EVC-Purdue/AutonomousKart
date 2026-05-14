@@ -10,9 +10,11 @@ import os
 def generate_launch_description():
     pkg_share = get_package_share_directory("autonomous_kart")
     system_yaml = os.path.join(pkg_share, "params", "system.yaml")
+    sim_mode = LaunchConfiguration("simulation_mode")
+
+    # rosbag recording 
     run_name = datetime.now().strftime("run_%Y%m%d_%H%M%S")
     bag_output_path = os.path.join("/ws/logs", run_name)
-    sim_mode = LaunchConfiguration("simulation_mode")
     rosbag_recorder = ExecuteProcess(
             cmd=[
                 'ros2', 'bag', 'record', '-a',
@@ -26,6 +28,24 @@ def generate_launch_description():
             respawn=True,
             respawn_delay=1.0
         )
+    
+    # remote launch on jetson 
+    jetson_ip = "0.0.0.0" # have to set static ip on jetson 
+    jetson_user = "evc" # jetson username 
+    
+    # pull --> build --> launch
+    remote_command = (
+        "git pull && "
+        "source /opt/ros/humble/setup.bash &&"
+        "colcon build && "
+        "ros2 launch autonomous_kart jetson_bringup.launch.py"
+    )
+
+    launch_jetson = ExecuteProcess(
+        cmd=['ssh', f'{jetson_user}@{jetson_ip}', f'bash -l -c "{remote_command}"'],
+        output='screen',
+        shell=True
+    )
 
     return LaunchDescription(
         [
@@ -44,5 +64,6 @@ def generate_launch_description():
                     ),
                 ]
             ),
+            launch_jetson,
         ]
     )

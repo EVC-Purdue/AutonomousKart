@@ -56,6 +56,11 @@ class ECommsNode(Node):
             throttle_pwm=0,
             steering_pwm=0,
         )
+        self.vesc_status_1: e_comms.VescCanStatus1 = e_comms.VescCanStatus1(
+            erpm=0,
+            current=0,
+            duty_cycle=0,
+        )
 
         # CAN bus
         if not self.simulation_mode:
@@ -130,8 +135,8 @@ class ECommsNode(Node):
 
     def handle_vesc_status_1_msg(self, msg_data: bytes):
         try:
-            vesc_status_1 = e_comms.unpack_vesc_status_1_message(msg_data, self.logger)
-            speed_m_per_s = powertrain.erpm_to_speed(vesc_status_1.erpm)
+            self.vesc_status_1 = e_comms.unpack_vesc_status_1_message(msg_data, self.logger)
+            speed_m_per_s = powertrain.erpm_to_speed(self.vesc_status_1.erpm)
             self.speed_pub.publish(Float32(data=speed_m_per_s))
         except Exception as e:
             self.logger.error(f"Failed to parse VESC status message: {e}")

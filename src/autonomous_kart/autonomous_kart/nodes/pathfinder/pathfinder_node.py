@@ -9,8 +9,18 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, String
 
 from autonomous_kart.nodes.master.master_node import STATES
-from autonomous_kart.nodes.pathfinder.planners import PLANNERS, KartConstants, PlannerInputs
+from autonomous_kart.nodes.pathfinder.planners.base import KartConstants, PlannerInputs
+from autonomous_kart.nodes.pathfinder.planners.mpc import MPCPlanner
+from autonomous_kart.nodes.pathfinder.planners.opencv import OpenCVPlanner
+from autonomous_kart.nodes.pathfinder.planners.pure_pursuit import PurePursuitPlanner
 from autonomous_kart.nodes.pathfinder.safety_checker import SafetyChecker
+
+# Adding a planner: import the class above, add an entry here.
+PLANNERS = {
+    OpenCVPlanner.name: OpenCVPlanner,
+    PurePursuitPlanner.name: PurePursuitPlanner,
+    MPCPlanner.name: MPCPlanner,
+}
 
 
 class PathfinderNode(Node):

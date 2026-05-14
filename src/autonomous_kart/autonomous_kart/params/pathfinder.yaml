@@ -66,6 +66,10 @@ pathfinder_node:
     mpc.w_terminal_d: 200.0
     mpc.w_terminal_heading: 100.0
     mpc.w_a_lat: 50.0
+    # Inner-corridor "stay-centered" barrier: zero inside the inner zone,
+    # quadratic out to the corridor wall.
+    mpc.w_edge: 200.0
+    mpc.edge_inner_frac: 0.5
     #  mpc rejoin (bezier overlay via DynamicLineManager + RejoinStrategy)
     mpc.rejoin_cte_activate: 2.5
     mpc.rejoin_cte_deactivate: 1.0

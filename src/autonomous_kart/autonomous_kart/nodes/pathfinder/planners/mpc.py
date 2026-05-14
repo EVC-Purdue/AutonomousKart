@@ -214,7 +214,7 @@ class MPCPlanner(Planner):
         v_cap = self.v_max
 
         # Build candidate trajectories, evaluate, pick best
-        zeros_breakdown = (0.0,) * 11
+        zeros_breakdown = (0.0,) * 12
         try:
             best_u, best_cost, traj, feasible, breakdown = self._solve(
                 x, y, yaw, v, j_now, v_target, v_cap,
@@ -520,12 +520,13 @@ class MPCPlanner(Planner):
     #   0..18  : mode, success, solve_ms, s, d, psi_track, v, v_target,
     #            delta_cmd_deg, accel_cmd, cost_total, margin_min,
     #            res_s, res_d, nom_s, nom_d, res_es, res_ed, samples_trained
-    #   19..29 : cost breakdown for the WINNING sample, in this order:
+    #   19..30 : cost breakdown for the WINNING sample, in this order:
     #            c_d, c_heading, c_speed, c_delta, c_drate, c_accel,
-    #            c_boundary, c_progress, c_terminal_d, c_terminal_heading, c_a_lat
+    #            c_boundary, c_progress, c_terminal_d, c_terminal_heading,
+    #            c_a_lat, c_edge
     def _publish_status(self, mode, success, t0, s, d, psi_track, v, v_target,
                         delta_cmd, accel_cmd, cost, margin_min,
-                        res_s=0.0, res_d=0.0, breakdown=(0.0,) * 11):
+                        res_s=0.0, res_d=0.0, breakdown=(0.0,) * 12):
         if self.status_pub is None:
             return
         solve_ms = (time.perf_counter() - t0) * 1000.0

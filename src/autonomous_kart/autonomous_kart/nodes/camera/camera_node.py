@@ -75,31 +75,29 @@ class CameraNode(Node):
         """
         Publishes the next frame
         """
+        publish_frame = None
+
         with self.frame_lock:
-            if self.sim_mode:
-                if self.latest_frame is not None:
-                    self.image_pub.publish(self.latest_frame)
-                    self.frame_counter += 1
-                else:
-                    self.logger.warning("Too slow frames - skipping")
-
-                if self.frame_counter % self.fps == 0:
-                    now = time.time()
-                    try:
-                        actual_rate = self.fps / (now - self.last_callback_time)
-                    except ZeroDivisionError:
-                        actual_rate = 0
-
-                    self.logger.info(
-                        f"Published {self.frame_counter} frames, actual rate: {actual_rate:.1f} fps"
-                    )
-                    self.last_callback_time = now
+            if self.latest_frame is not None:
+                publish_frame = self.latest_frame
             else:
-                if self.latest_frame is not None:
-                    self.image_pub.publish(self.latest_frame)
-                    self.frame_counter += 1
-                else:
-                    self.logger.info("No Frame available")
+                self.logger.warning("No frame available")
+
+        if publish_frame is not None:
+            self.image_pub.publish(publish_frame)
+            self.frame_counter += 1
+
+            if self.sim_mode and self.frame_counter % self.fps == 0:
+                now = time.time()
+                try:
+                    actual_rate = self.fps / (now - self.last_callback_time)
+                except ZeroDivisionError:
+                    actual_rate = 0
+
+                self.logger.info(
+                    f"Published {self.frame_counter} frames, actual rate: {actual_rate:.1f} fps"
+                )
+                self.last_callback_time = now
 
     def read_frames(self):
         """
@@ -113,8 +111,19 @@ class CameraNode(Node):
 
             # Loop video
             if not ret:
-                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                ret, frame = self.cap.read()
+                self.logger.warn("Failed to read a frame in background thread")
+
+                if self.sim_mode:
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, frame = self.cap.read()
+
+                else:
+                    elapsed = time.time() - start
+                    sleep_time = frame_time - elapsed
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+
+                    continue
             
             if ret:
                 height, width = frame.shape[:2]

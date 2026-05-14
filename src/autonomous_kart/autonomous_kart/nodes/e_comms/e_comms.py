@@ -138,8 +138,8 @@ def unpack_vesc_status_1_message(data: bytes, logger: RcutilsLogger) -> VescCanS
         logger.error(f"VESC status message data length invalid: expected 8, got {len(data)}")
         raise ValueError(f"VESC status message data length invalid: expected 8, got {len(data)}")
     
-    erpm = (int(data[0]) << 24) | (int(data[1]) << 16) | (int(data[2]) << 8) | int(data[3])
-    current = (int(data[4]) << 8) | int(data[5])
-    duty_cycle = (int(data[6]) << 8) | int(data[7])
+    erpm = int.from_bytes(data[0:4], byteorder="big", signed=True)
+    current = int.from_bytes(data[4:6], byteorder="big", signed=True)
+    duty_cycle = int.from_bytes(data[6:8], byteorder="big", signed=True)
 
     return VescCanStatus1(erpm, current, duty_cycle)

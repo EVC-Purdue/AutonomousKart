@@ -22,7 +22,7 @@ class AngleFinder:
     # @param pixel_range: Range of pixels to check around previous pixel for O(1) lookup
     # @param pic_offset: Pixel offset from edge of image
     # @ret image angles or None when cannot find angles/coords
-    def get_img_angles(self, img, log_folder="logs", debug=False, percent=0.0, pixel_range=3, pic_offset=5,capture_frequency=100):
+    def get_img_angles(self, img, log_folder="logs", debug=False, percent=0.0, pixel_range=3, pic_offset=5, capture_frequency=100):
         image, right, left = self.get_img_mask(img, percent=percent, pixel_range=pixel_range, pic_offset=pic_offset)
         
         if image is None or right is None or left is None:

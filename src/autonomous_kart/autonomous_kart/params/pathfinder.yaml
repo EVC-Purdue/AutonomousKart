@@ -89,14 +89,14 @@ pathfinder_node:
       rejoin_terminal_penalty: 1.0e5   # added to plans that end outside the corridor in REJOIN
       feasibility_threshold: 5.0e8     # best_cost above this -> not feasible -> failsafe path
 
-      # Residual learning
-      residual:
-        mode: shadow                   # off | shadow | apply
-        target_horizon_s: 0.5
-        forgetting_factor: 0.99
-        initial_cov: 1000.0
-        min_train_speed_mps: 0.5
-        error_window: 200              # rolling window for nominal vs corrected error
+      # Residual learning — dotted keys (not a nested map) because the rcl
+      # YAML parser rejects nested maps alongside scalar values at this depth.
+      residual.mode: shadow                   # off | shadow | apply
+      residual.target_horizon_s: 0.5
+      residual.forgetting_factor: 0.99
+      residual.initial_cov: 1000.0
+      residual.min_train_speed_mps: 0.5
+      residual.error_window: 200              # rolling window for nominal vs corrected error
 
     safety:
       enabled: true

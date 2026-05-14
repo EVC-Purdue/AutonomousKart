@@ -264,13 +264,39 @@ class MPCPlanner(Planner):
 
     # helpers
     def _frenet(self, x: float, y: float, hint: int):
-        """Returns (s, d, idx, psi_track, kappa). d is signed (left positive)."""
+        """Returns (s, d, idx, psi_track, kappa). d is signed (left positive).
+
+        Windowed search around `hint`, with a full-line resync when the
+        windowed match is unreliable: at a window edge (kart crossed past the
+        slice — including the seam of a closed-loop racing line) or far away
+        in Euclidean terms (kart was teleported / drifted off). The full
+        search is ~O(line_n) numpy ops, cheap enough to run every tick when
+        triggered."""
         lo = max(0, hint - self.proj_back)
         hi = min(self.line_n, hint + self.proj_fwd)
         dx = self.l_x[lo:hi] - x
         dy = self.l_y[lo:hi] - y
-        j_rel = int(np.argmin(dx * dx + dy * dy))
+        d2 = dx * dx + dy * dy
+        j_rel = int(np.argmin(d2))
         j = lo + j_rel
+        best_d2 = float(d2[j_rel])
+
+        at_lo_edge = (j == lo and lo > 0)
+        at_hi_edge = (j == hi - 1 and hi < self.line_n)
+        # On a closed loop, the natural "window edge" near the seam is the
+        # last index of the array — windowed search there can't see the wrap
+        # to index 0. Force a full resync in that zone.
+        near_seam = self.line_closed and (
+            hint <= self.proj_back or hint >= self.line_n - self.proj_back
+        )
+        if at_lo_edge or at_hi_edge or near_seam or best_d2 > self._resync_dist2:
+            all_dx = self.l_x - x
+            all_dy = self.l_y - y
+            all_d2 = all_dx * all_dx + all_dy * all_dy
+            j_full = int(np.argmin(all_d2))
+            if float(all_d2[j_full]) + 1e-6 < best_d2:
+                j = j_full
+
         psi_j = self.l_psi[j]
         cpsi, spsi = math.cos(psi_j), math.sin(psi_j)
         ex, ey = x - self.l_x[j], y - self.l_y[j]
@@ -305,7 +331,16 @@ class MPCPlanner(Planner):
         dx[-1] = l_x[-1] - l_x[-2]
         dy[-1] = l_y[-1] - l_y[-2]
         l_psi = np.arctan2(dy, dx)
-        return {"n": n, "s": l_s, "x": l_x, "y": l_y, "vx": l_vx, "psi": l_psi}
+        # Closed if first and last waypoints sit on top of each other (within
+        # 2 m). Used by _frenet to force a full-line resync near the seam.
+        closed = bool(
+            n >= 4
+            and math.hypot(float(l_x[0] - l_x[-1]), float(l_y[0] - l_y[-1])) < 2.0
+        )
+        return {
+            "n": n, "s": l_s, "x": l_x, "y": l_y, "vx": l_vx, "psi": l_psi,
+            "closed": closed,
+        }
 
     def _set_active_line(self, arrays: dict) -> None:
         self.line_n = arrays["n"]
@@ -314,6 +349,7 @@ class MPCPlanner(Planner):
         self.l_y = arrays["y"]
         self.l_vx = arrays["vx"]
         self.l_psi = arrays["psi"]
+        self.line_closed = bool(arrays.get("closed", False))
 
     def _reset_warm_start(self) -> None:
         self.u_mean[:] = 0.0

@@ -48,21 +48,16 @@ class PathfinderNode(Node):
             a_lat_max_mps2=self._param("a_lat_max_mps2", 4.0, float),
         )
 
-        # Manual-mode state
-        self.steering = 0.0
-        self.speed = 0.0
-        self.expected_steering = 0.0
-        self.expected_speed = 0.0
-        self.max_speed = 100.0  # full % of v_max_mps
-        self.max_steering = 100.0  # full % of steer_max_deg (each side)
-        dt = 1.0 / self.system_frequency
-        # Per-tick deltas expressed as %-of-max units (same unit as self.speed).
-        self.acceleration = (
-                self.kart.a_max_mps2 / self.kart.v_max_mps * dt * 100.0
-        )
-        self.steering_accel = (
-                self.kart.steer_rate_max_degps / self.kart.steer_max_deg * dt * 100.0
-        )
+        # Manual-mode state. /manual_commands is cached here and re-published
+        # on cmd_drive at system_frequency by _manual_tick. If no command has
+        # arrived within manual_timeout_s the tick falls back to [0, 0] for
+        # safety, so a dropped HTTP / ROS connection brings the kart to rest.
+        self._manual_speed_pct = 0.0   # 0..100 % of v_max_mps
+        self._manual_steer_pct = 0.0   # -100..100 % of steer_max_deg
+        self._last_manual_ns = 0
+        self.manual_timeout_s = self._param("manual_timeout_s", 0.5, float)
+        self.manual_speed_max = 100.0
+        self.manual_steer_max = 100.0
 
         # Racing line
         self.line_path = self._param("line_path", "", str)
@@ -125,6 +120,7 @@ class PathfinderNode(Node):
 
         # Timers
         self.create_timer(1.0 / self.system_frequency, self._autonomous_tick)
+        self.create_timer(1.0 / self.system_frequency, self._manual_tick)
         self.create_timer(0.5, self.publish_dynamic_line)  # 2 Hz telemetry
         self.create_timer(5.0, self.log_command_rate)
 
@@ -144,10 +140,12 @@ class PathfinderNode(Node):
 
     def update_state(self, msg: String):
         if msg.data != self.state:
-            self.speed = 0.0
-            self.expected_speed = 0.0
-            steering_deg = (self.steering / 100.0) * self.kart.steer_max_deg
-            self.drive_publisher.publish(Float32MultiArray(data=[0.0, steering_deg]))
+            # Any state transition: zero throttle immediately and drop the
+            # cached manual command so a stale value can't replay on re-entry.
+            self._manual_speed_pct = 0.0
+            self._manual_steer_pct = 0.0
+            self._last_manual_ns = 0
+            self.drive_publisher.publish(Float32MultiArray(data=[0.0, 0.0]))
         if msg.data not in [s.value for s in STATES]:
             self.logger.error(f"State {msg.data} not recognized")
             return
@@ -182,87 +180,57 @@ class PathfinderNode(Node):
         )
 
     # Manual mode
+    #
+    # manual_loop just caches the most recent /manual_commands message; the
+    # actual cmd_drive publish happens on a 60 Hz timer (_manual_tick) so the
+    # rate matches autonomous mode and a stale-command timeout can step in if
+    # the client stops sending.
 
     def manual_loop(self, msg: Float32MultiArray):
-        self.cmd_count += 1
-        if self.state == STATES.MANUAL.value:
-            if len(msg.data) < 2:
-                self.logger.error(
-                    f"Message length of manual loop is {len(msg.data)}: {msg.data}"
-                )
-            motor_speed, steering = msg.data[0], msg.data[1]
-            self.set_manual_speeds(motor_speed, steering)
-
-    def set_manual_speeds(self, speed: float = 0.0, steering: float = 0.0):
-        target_speed = min(self.max_speed, max(0.0, speed))
-        target_steering = min(self.max_steering, max(-1 * self.max_steering, steering))
-
-        tolerance = 0.1
-        speed_ok = abs(target_speed - self.speed) > tolerance
-        steering_ok = abs(target_steering - self.steering) > tolerance
-
-        while speed_ok or steering_ok:
-            self.manual_speed_helper(target_speed, target_steering)
-
-            speed_ok = abs(target_speed - self.speed) > tolerance
-            steering_ok = abs(target_steering - self.steering) > tolerance
-
-    def manual_speed_helper(self, speed: float = 0.0, steering: float = 0.0):
-        """Updates absolute speed & steering params from given values"""
-        self.cmd_count += 1
-
-        if speed < 0:
-            speed = 0.0
-
-        if speed > self.max_speed:
-            speed = self.max_speed
-        if abs(steering) > self.max_steering:
-            steering = self.max_steering if steering > 0 else -1 * self.max_steering
-
-        self.expected_speed = speed
-        self.expected_steering = steering
-
-        d_speed = self.expected_speed - self.speed
-        d_steer = self.expected_steering - self.steering
-
-        # Update speed by difference or acceleration, whichever abs value is smaller
-        if d_speed != 0:
-            self.speed += (
-                d_speed
-                if abs(d_speed) < self.acceleration
-                else (d_speed / abs(d_speed)) * self.acceleration
+        if len(msg.data) < 2:
+            self.logger.error(
+                f"manual_commands payload too short: {list(msg.data)}"
             )
-        if d_steer != 0:
-            self.steering += (
-                d_steer
-                if abs(d_steer) < self.steering_accel
-                else (d_steer / abs(d_steer)) * self.steering_accel
+            return
+        self._manual_speed_pct = float(msg.data[0])
+        self._manual_steer_pct = float(msg.data[1])
+        self._last_manual_ns = self.get_clock().now().nanoseconds
+
+    def _manual_tick(self):
+        if self.state != STATES.MANUAL.value:
+            return
+        now_ns = self.get_clock().now().nanoseconds
+        fresh = (
+            self._last_manual_ns > 0
+            and (now_ns - self._last_manual_ns) <= int(self.manual_timeout_s * 1e9)
+        )
+        if fresh:
+            speed_pct = max(
+                0.0, min(self.manual_speed_max, self._manual_speed_pct)
             )
-        self.publish_commands()
+            steer_pct = max(
+                -self.manual_steer_max,
+                min(self.manual_steer_max, self._manual_steer_pct),
+            )
+        else:
+            speed_pct = 0.0
+            steer_pct = 0.0
 
-    def publish_commands(self):
-        """Publishes commands from params to steering & motor"""
-        steering_deg = (self.steering / 100.0) * self.kart.steer_max_deg
-        self.drive_publisher.publish(Float32MultiArray(data=[self.speed, steering_deg]))
-
-        time = self.get_clock().now().nanoseconds
-
+        steering_deg = (steer_pct / 100.0) * self.kart.steer_max_deg
+        self.cmd_count += 1
+        self.drive_publisher.publish(
+            Float32MultiArray(data=[float(speed_pct), float(steering_deg)])
+        )
         self.metrics_publisher.publish(
             Float32MultiArray(
                 data=[
-                    self.speed,
-                    self.expected_speed,
-                    self.acceleration,
-                    self.max_speed,
-                    self.steering,
-                    self.expected_steering,
-                    self.steering_accel,
-                    self.max_steering,
-                    time - self.last_log_time,
+                    float(speed_pct),
+                    float(steer_pct),
+                    float(steering_deg),
+                    1.0 if fresh else 0.0,
                 ]
             )
         )
-        self.last_log_time = time
 
     # Telemetry
 

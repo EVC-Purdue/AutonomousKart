@@ -81,7 +81,7 @@
     <button onclick="setState('AUTONOMOUS')" style="background:#1a2a4a;color:#60a5fa;">AUTO</button>
     <button onclick="setState('STOPPED')" style="background:#3a1a1a;color:#f87171;">STOP</button>
   </div>
-  scroll: zoom · drag: pan · R: reset view
+  scroll: zoom · drag: pan · R: reset view · WASD/arrows: drive in MANUAL
 </div>
 
 <script>
@@ -125,10 +125,76 @@ addEventListener('mousemove', e => {
   cam.y = camStart.y - (e.clientY - dragStart.y) / cam.zoom;
 });
 addEventListener('mouseup', () => dragging = false);
+
+// ── Manual driving (WASD / arrow keys, active in MANUAL state) ──
+const MANUAL_SPEED_PCT = 30;   // forward throttle %
+const MANUAL_STEER_PCT = 60;   // L/R steer %
+const heldDriveKeys = new Set();
+let manualSendInterval = null;
+
+function isDriveKey(key) {
+  return ['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(key);
+}
+
+async function sendManual(speed, steer) {
+  try {
+    await fetch(API + '/manual_control', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({speed, steering: steer}),
+    });
+  } catch(e) {}
+}
+
+function computeManualCmd() {
+  let speed = 0, steer = 0;
+  if (heldDriveKeys.has('w') || heldDriveKeys.has('arrowup'))    speed += MANUAL_SPEED_PCT;
+  if (heldDriveKeys.has('a') || heldDriveKeys.has('arrowleft'))  steer -= MANUAL_STEER_PCT;
+  if (heldDriveKeys.has('d') || heldDriveKeys.has('arrowright')) steer += MANUAL_STEER_PCT;
+  // 's' / down stops (no reverse on the kart side).
+  return { speed, steer };
+}
+
+function startManualSending() {
+  if (manualSendInterval) return;
+  manualSendInterval = setInterval(() => {
+    if (odom.state !== 'MANUAL') return;
+    const { speed, steer } = computeManualCmd();
+    sendManual(speed, steer);
+  }, 50);  // 20 Hz — well under the 0.5 s server timeout
+}
+function stopManualSending() {
+  if (!manualSendInterval) return;
+  clearInterval(manualSendInterval);
+  manualSendInterval = null;
+  // Final stop frame so the kart doesn't coast on the last cached value.
+  sendManual(0, 0);
+}
+
 addEventListener('keydown', e => {
   if (e.key === 'r' || e.key === 'R') {
     cam.x = odom.x; cam.y = odom.y; cam.targetZoom = 4;
+    return;
   }
+  const k = e.key.toLowerCase();
+  if (isDriveKey(k)) {
+    if (e.repeat) return;     // ignore OS auto-repeat
+    heldDriveKeys.add(k);
+    startManualSending();
+    e.preventDefault();
+  }
+});
+addEventListener('keyup', e => {
+  const k = e.key.toLowerCase();
+  if (isDriveKey(k)) {
+    heldDriveKeys.delete(k);
+    if (heldDriveKeys.size === 0) stopManualSending();
+    e.preventDefault();
+  }
+});
+addEventListener('blur', () => {
+  heldDriveKeys.clear();
+  stopManualSending();
 });
 
 // ── World → Screen ──

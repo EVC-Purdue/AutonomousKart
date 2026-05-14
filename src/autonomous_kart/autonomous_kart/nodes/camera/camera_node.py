@@ -97,7 +97,7 @@ class CameraNode(Node):
             self.image_pub.publish(msg)
             self.frame_counter += 1
 
-def read_frames(self):
+    def read_frames(self):
         """
         Background thread to read frames for efficiency
         """

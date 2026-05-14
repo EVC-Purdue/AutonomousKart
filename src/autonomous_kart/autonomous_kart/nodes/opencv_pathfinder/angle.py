@@ -1,5 +1,6 @@
 import cv2 as cv
 import numpy as np
+import os
 
 from autonomous_kart.nodes.opencv_pathfinder import utils
 
@@ -11,22 +12,30 @@ class AngleFinder:
     def __init__(self, logger):
         self.prev_right = None
         self.prev_left = None
+        self.frame_counter = 0
         self.logger = logger
 
     # @param img: Normal image
+    # @param log_folder: Directory for write debug info
     # @param debug: Draws lines on image
     # @param percent: Percent of the road to cutoff (top down)
     # @param pixel_range: Range of pixels to check around previous pixel for O(1) lookup
     # @param pic_offset: Pixel offset from edge of image
     # @ret image angles or None when cannot find angles/coords
-    def get_img_angles(self, img, debug=False, percent=0.0, pixel_range=3, pic_offset=5):
-        image, right, left = self.get_img_mask(img, debug=debug, percent=percent, pixel_range=pixel_range, pic_offset=pic_offset)
-
+    def get_img_angles(self, img, log_folder="logs", debug=False, percent=0.0, pixel_range=3, pic_offset=5, capture_frequency=100):
+        image, right, left = self.get_img_mask(img, percent=percent, pixel_range=pixel_range, pic_offset=pic_offset)
+        
         if image is None or right is None or left is None:
             return (None, None)
         
-        if image is not None and debug is True:
-            cv.imwrite("debug_mask.png", image)
+        if debug and self.frame_counter % capture_frequency == 0:
+            self.logger.info("Wrote Debug Frames To Disk")
+            os.makedirs(log_folder, exist_ok=True)
+            cv.imwrite(f"{log_folder}/normal_frame_{self.frame_counter}.jpg", img)
+            utils.draw_lines(image, right, left)
+            cv.imwrite(f"{log_folder}/debug_frame_{self.frame_counter}.jpg", image)
+    
+        self.frame_counter += 1
 
         w = img.shape[1]
         width = w - 1 - pic_offset
@@ -46,7 +55,7 @@ class AngleFinder:
     # @param pixel_range: Range of pixels to check around previous pixel for O(1) lookup
     # @param pic_offset: Pixel offset from edge of image
     # @ret Masked image & right/left divide between road & grass or None when image doesn't exist
-    def get_img_mask(self, img: np.ndarray, debug=False, percent=0.0, pixel_range=3, pic_offset=5):
+    def get_img_mask(self, img: np.ndarray, percent=0.0, pixel_range=3, pic_offset=5):
         if img is None:
             self.logger.error('Error opening image!')
             return None, None, None
@@ -69,25 +78,22 @@ class AngleFinder:
         if self.prev_left is None:
             self.prev_left = (pic_offset, height)
         
-        right = self.lookup_road_coord(result, self.prev_right, True, pic_offset=pic_offset, pixel_range=pixel_range)
-        left = self.lookup_road_coord(result, self.prev_left, False, pic_offset=pic_offset, pixel_range=pixel_range)
+        right = self.lookup_road_coord(result, self.prev_right, right_side=True, pic_offset=pic_offset, pixel_range=pixel_range)
+        left = self.lookup_road_coord(result, self.prev_left, right_side=False, pic_offset=pic_offset, pixel_range=pixel_range)
+
+        if not right or not left:
+            right = self.vectorized_road_coord(result, right_side=True)
+            left = self. vectorized_road_coord(result, right_side=False)
 
         self.prev_right = right
         self.prev_left = left
-
-        if not right or not left:
-            right = self.vectorized_road_coord(result, True)
-            left = self. vectorized_road_coord(result, False)
-        
-        if debug:
-            utils.draw_lines(result, right, left)
         
         return (result, right, left)
 
     # Vectorized road lookup
     # @param right_side: Determine what side of image
     # @param pic_offset: Offset from edge of photo
-    def vectorized_road_coord(self, img, right_side, pic_offset=5):
+    def vectorized_road_coord(self, img, right_side=True, pic_offset=5):
         h, w = img.shape[:2]
         height, width = h - 1 - pic_offset, w - 1 - pic_offset
 
@@ -118,7 +124,7 @@ class AngleFinder:
     # param pixel_range: Number of neighbor pixels to check
     # param pic_offset: Offset from edge of image
     # ret: Pixel road coords otherwise None
-    def lookup_road_coord(self, img, prev_pixel, right_side, pixel_range=6, pic_offset=5):
+    def lookup_road_coord(self, img, prev_pixel, right_side=True, pixel_range=6, pic_offset=5):
         h, w = img.shape[:2]
         height, width = h - 1 - pic_offset, w - 1 - pic_offset
         prev_width, prev_height, = prev_pixel[:2]

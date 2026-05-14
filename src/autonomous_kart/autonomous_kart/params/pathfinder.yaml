@@ -8,13 +8,13 @@
 /**:
   ros__parameters:
     # Kart-wide physical limits (shared by every node)
-    v_max_mps: 20.0              # max kart speed (m/s)
-    wheelbase_m: 1.05            # rear-axle → front-axle (m)
-    steer_max_deg: 25.0          # physical front-wheel steering limit (deg)
-    steer_rate_max_degps: 180.0  # max steering slew rate (deg/s)
-    a_max_mps2: 2.0              # max forward acceleration (m/s^2)
-    a_min_mps2: -3.0             # max braking deceleration (m/s^2, negative)
-    a_lat_max_mps2: 4.0          # tire-grip lateral accel cap (m/s^2)
+    v_max_mps: 20.0 # max kart speed (m/s)
+    wheelbase_m: 1.05 # rear-axle → front-axle (m)
+    steer_max_deg: 25.0 # physical front-wheel steering limit (deg)
+    steer_rate_max_degps: 180.0 # max steering slew rate (deg/s)
+    a_max_mps2: 2.0 # max forward acceleration (m/s^2)
+    a_min_mps2: -3.0 # max braking deceleration (m/s^2, negative)
+    a_lat_max_mps2: 4.0 # tire-grip lateral accel cap (m/s^2)
 
 pathfinder_node:
   ros__parameters:
@@ -54,7 +54,7 @@ pathfinder_node:
     mpc.track_half_width_m: 2.5
     mpc.safety_margin_m: 0.5
     mpc.kart_half_width_m: 0.5025
-    #  mpc costs 
+    #  mpc costs
     mpc.w_d: 100.0
     mpc.w_heading: 30.0
     mpc.w_speed: 5.0
@@ -66,11 +66,11 @@ pathfinder_node:
     mpc.w_terminal_d: 200.0
     mpc.w_terminal_heading: 100.0
     mpc.w_a_lat: 50.0
-    #  mpc rejoin 
+    #  mpc rejoin
     mpc.rejoin_activate_d_m: 2.5
     mpc.rejoin_deactivate_d_m: 1.0
     mpc.rejoin_v_max_mps: 2.0
-    #  mpc failsafe / feasibility sentinels 
+    #  mpc failsafe / feasibility sentinels
     mpc.max_consecutive_solver_failures: 3
     mpc.infeasible_cost: 1000000000.0
     mpc.rejoin_terminal_penalty: 100000.0
@@ -83,5 +83,5 @@ pathfinder_node:
     mpc.residual.min_train_speed_mps: 0.5
     mpc.residual.error_window: 200
 
-    #  safety wrapper 
+    #  safety wrapper
     safety.enabled: true

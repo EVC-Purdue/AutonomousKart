@@ -50,7 +50,7 @@ pathfinder_node:
     mpc.proj_window_back: 5
     mpc.proj_window_fwd: 60
     mpc.frenet_v_window_s: 0.3
-    mpc.target_speed_pct: 0.30
+    mpc.target_speed_pct: 1
     mpc.track_half_width_m: 2.5
     mpc.safety_margin_m: 0.5
     mpc.kart_half_width_m: 0.5025

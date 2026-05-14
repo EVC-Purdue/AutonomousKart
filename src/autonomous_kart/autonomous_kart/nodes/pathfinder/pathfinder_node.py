@@ -67,13 +67,16 @@ class PathfinderNode(Node):
         # Racing line
         self.line_path = self._param("line_path", "", str)
         self.racing_line: List[Tuple[float, ...]] = []
-        with open(self.line_path, "r") as f:
-            for line in f:
-                try:
-                    row = tuple(float(x) for x in line.strip().split(","))
-                except ValueError:
-                    continue
-                self.racing_line.append(row)
+        try:
+            with open(self.line_path, "r") as f:
+                for line in f:
+                    try:
+                        row = tuple(float(x) for x in line.strip().split(","))
+                    except ValueError:
+                        continue
+                    self.racing_line.append(row)
+        except OSError as e:
+            self.logger.error(f"Racing line not loadable at {self.line_path}: {e}")
 
         # Cached inputs to planners
         self.state = self._param("system_state", "IDLE", str)
@@ -89,13 +92,19 @@ class PathfinderNode(Node):
             raise ValueError(
                 f"Unknown planner '{planner_name}'. Available: {list(PLANNERS)}"
             )
-        planner_params = {
-            k: p.value for k, p in self.get_parameters_by_prefix(planner_name).items()
-        }
-        self.planner = PLANNERS[planner_name](
-            planner_params, self.kart, self.racing_line, logger=self.logger, node=self
-        )
-        self.logger.info(f"Pathfinder using planner '{planner_name}'")
+        self.planner = None
+        if self.racing_line:
+            planner_params = {
+                k: p.value for k, p in self.get_parameters_by_prefix(planner_name).items()
+            }
+            self.planner = PLANNERS[planner_name](
+                planner_params, self.kart, self.racing_line, logger=self.logger, node=self
+            )
+            self.logger.info(f"Pathfinder using planner '{planner_name}'")
+        else:
+            self.logger.error(
+                "Pathfinder disabled: racing line is empty (planner not constructed)"
+            )
 
         # Safety wrapper (single chokepoint for every planner)
         safety_params = {
@@ -149,7 +158,7 @@ class PathfinderNode(Node):
     def _autonomous_tick(self):
         if self.state != STATES.AUTONOMOUS.value:
             return
-        if not self.pose_ready:
+        if not self.pose_ready or self.planner is None:
             return
         inputs = PlannerInputs(
             pose_xy=self.current_xy,

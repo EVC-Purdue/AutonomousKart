@@ -14,9 +14,14 @@ import autonomous_kart.nodes.e_comms.e_comms as e_comms
 CAN_CHANNEL = "/dev/ttyACM0"
 CAN_BITRATE = 500000
 
+VESC_ID = 7
+VESC_STATUS_1_MSG_NUM = 9
+VESC_MSG_NUM_TO_EXT_ID = lambda msg_num: ((msg_num << 8) | VESC_ID)
+
 CONTROL_ID = 0x100
 STATUS_ID = 0x101
 HEARTBEAT_ID = 0x102
+VESC_STATUS_1_ID = VESC_MSG_NUM_TO_EXT_ID(VESC_STATUS_1_MSG_NUM)
 
 
 class ECommsNode(Node):

@@ -103,7 +103,7 @@ class ECommsNode(Node):
         self.rc_mode_pub = self.create_publisher(Bool, "e_comms/rc_mode", 1)
         self.throttle_pwm_pub = self.create_publisher(UInt16, "e_comms/throttle_pwm", 1)
         self.steering_pwm_pub = self.create_publisher(UInt16, "e_comms/steering_pwm", 1)
-        self.speed_pub = self.create_publisher(Float32, "e_comms/wheel_speed", 1)
+        self.speed_pub = self.create_publisher(Float32, "e_comms/kart_speed_m_per_s", 1)
 
         # Init finished
         self.logger.info("Initialized EComms Node")

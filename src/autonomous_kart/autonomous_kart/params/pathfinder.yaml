@@ -14,7 +14,7 @@
     steer_rate_max_degps: 180.0  # max steering slew rate (deg/s)
     a_max_mps2: 2.0              # max forward acceleration (m/s^2)
     a_min_mps2: -3.0             # max braking deceleration (m/s^2, negative)
-    a_lat_max_mps2: 3.0          # tire-grip lateral accel cap (m/s^2)
+    a_lat_max_mps2: 4.0          # tire-grip lateral accel cap (m/s^2)
 
 pathfinder_node:
   ros__parameters:
@@ -63,17 +63,17 @@ pathfinder_node:
     mpc.w_accel: 2.0
     mpc.w_boundary: 1000.0
     mpc.w_progress: 1.0
-    mpc.w_terminal_d: 500.0
+    mpc.w_terminal_d: 200.0
     mpc.w_terminal_heading: 100.0
     mpc.w_a_lat: 50.0
-    #  mpc rejoin 
-    mpc.rejoin_activate_d_m: 2.5
-    mpc.rejoin_deactivate_d_m: 1.0
-    mpc.rejoin_v_max_mps: 2.0
-    #  mpc failsafe / feasibility sentinels 
+    #  mpc rejoin (bezier overlay via DynamicLineManager + RejoinStrategy)
+    mpc.rejoin_cte_activate: 2.5
+    mpc.rejoin_cte_deactivate: 1.0
+    mpc.rejoin_merge_lookahead_m: 15.0
+    mpc.rejoin_min_turning_radius: 3.0
+    #  mpc failsafe / feasibility sentinels
     mpc.max_consecutive_solver_failures: 3
     mpc.infeasible_cost: 1000000000.0
-    mpc.rejoin_terminal_penalty: 100000.0
     mpc.feasibility_threshold: 500000000.0
     #  mpc residual learner
     mpc.residual.mode: shadow

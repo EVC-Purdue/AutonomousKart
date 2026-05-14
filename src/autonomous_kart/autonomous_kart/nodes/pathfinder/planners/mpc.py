@@ -41,17 +41,20 @@ class MPCPlanner(Planner):
         if not racing_line:
             raise ValueError("MPCPlanner requires a non-empty racing line")
 
-        # Horizon / sampling
-        self.N = int(params["horizon_steps"])
-        self.dt = float(params["dt_s"])
-        self.K = int(params["num_samples"])
-        self.steer_sigma = math.radians(float(params["steer_sigma_deg"]))
-        self.accel_sigma = float(params["accel_sigma_mps2"])
-        self.proj_back = int(params["proj_window_back"])
-        self.proj_fwd = int(params["proj_window_fwd"])
-        self.v_window_s = float(params["frenet_v_window_s"])
+        g = params.get  # canonical yaml -> code; defaults below are fallbacks only
 
-        # Physical limits pulled from kart constants (kart-wide /**: block)
+        # Horizon / sampling
+        self.N = int(g("horizon_steps", 20))
+        self.dt = float(g("dt_s", 0.05))
+        self.K = int(g("num_samples", 48))
+        self.steer_sigma = math.radians(float(g("steer_sigma_deg", 6.0)))
+        self.accel_sigma = float(g("accel_sigma_mps2", 1.0))
+        self.proj_back = int(g("proj_window_back", 5))
+        self.proj_fwd = int(g("proj_window_fwd", 60))
+        self.v_window_s = float(g("frenet_v_window_s", 0.3))
+
+        # Physical limits pulled from kart constants (kart-wide /**: block —
+        # no duplicates lurking in the mpc block).
         self.steer_max = math.radians(kart.steer_max_deg)
         self.steer_rate_max = math.radians(kart.steer_rate_max_degps)
         self.v_max = kart.v_max_mps
@@ -59,37 +62,37 @@ class MPCPlanner(Planner):
         self.a_min = kart.a_min_mps2
         self.a_max = kart.a_max_mps2
         self.a_lat_max = kart.a_lat_max_mps2
-        self.target_speed = float(params["target_speed_pct"]) * self.v_max
+        self.target_speed = float(g("target_speed_pct", 0.30)) * self.v_max
 
         # Corridor (centerline = racing line)
-        tw = float(params["track_half_width_m"])
-        sm = float(params["safety_margin_m"])
-        kw = float(params["kart_half_width_m"])
+        tw = float(g("track_half_width_m", 2.5))
+        sm = float(g("safety_margin_m", 0.5))
+        kw = float(g("kart_half_width_m", 0.5025))
         self.corridor_half = tw - sm - kw
 
         # Costs
-        self.w_d = float(params["w_d"])
-        self.w_heading = float(params["w_heading"])
-        self.w_speed = float(params["w_speed"])
-        self.w_delta = float(params["w_delta"])
-        self.w_drate = float(params["w_delta_rate"])
-        self.w_accel = float(params["w_accel"])
-        self.w_boundary = float(params["w_boundary"])
-        self.w_progress = float(params["w_progress"])
-        self.w_term_d = float(params["w_terminal_d"])
-        self.w_term_h = float(params["w_terminal_heading"])
-        self.w_a_lat = float(params["w_a_lat"])
+        self.w_d = float(g("w_d", 100.0))
+        self.w_heading = float(g("w_heading", 30.0))
+        self.w_speed = float(g("w_speed", 5.0))
+        self.w_delta = float(g("w_delta", 5.0))
+        self.w_drate = float(g("w_delta_rate", 50.0))
+        self.w_accel = float(g("w_accel", 2.0))
+        self.w_boundary = float(g("w_boundary", 1000.0))
+        self.w_progress = float(g("w_progress", 1.0))
+        self.w_term_d = float(g("w_terminal_d", 200.0))
+        self.w_term_h = float(g("w_terminal_heading", 100.0))
+        self.w_a_lat = float(g("w_a_lat", 50.0))
 
         # Rejoin
-        self.rejoin_in = float(params["rejoin_activate_d_m"])
-        self.rejoin_out = float(params["rejoin_deactivate_d_m"])
-        self.rejoin_v = float(params["rejoin_v_max_mps"])
-        self.max_failures = int(params["max_consecutive_solver_failures"])
+        self.rejoin_in = float(g("rejoin_activate_d_m", 2.5))
+        self.rejoin_out = float(g("rejoin_deactivate_d_m", 1.0))
+        self.rejoin_v = float(g("rejoin_v_max_mps", 2.0))
+        self.max_failures = int(g("max_consecutive_solver_failures", 3))
 
         # Feasibility sentinels
-        self.infeasible_cost = float(params["infeasible_cost"])
-        self.rejoin_terminal_penalty = float(params["rejoin_terminal_penalty"])
-        self.feasibility_threshold = float(params["feasibility_threshold"])
+        self.infeasible_cost = float(g("infeasible_cost", 1.0e9))
+        self.rejoin_terminal_penalty = float(g("rejoin_terminal_penalty", 1.0e5))
+        self.feasibility_threshold = float(g("feasibility_threshold", 5.0e8))
 
         # Racing line as flat numpy arrays with derived tangent for Frenet
         L = np.asarray([list(r[:6]) for r in racing_line], dtype=np.float64)

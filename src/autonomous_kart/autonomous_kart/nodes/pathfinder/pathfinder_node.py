@@ -35,32 +35,37 @@ class PathfinderNode(Node):
         self.cmd_count = 0
         self.last_log_time = self.get_clock().now().nanoseconds
 
-        self.system_frequency = float(self.get_parameter("system_frequency").value)
-        self.sim_mode = self.get_parameter("simulation_mode").value
+        self.system_frequency = self._param("system_frequency", 60.0, float)
+        self.sim_mode = self._param("simulation_mode", False, bool)
 
-        # Manual mode params
+        self.kart = KartConstants(
+            v_max_mps=self._param("v_max_mps", 20.0, float),
+            wheelbase_m=self._param("wheelbase_m", 1.05, float),
+            steer_max_deg=self._param("steer_max_deg", 25.0, float),
+            steer_rate_max_degps=self._param("steer_rate_max_degps", 180.0, float),
+            a_max_mps2=self._param("a_max_mps2", 2.0, float),
+            a_min_mps2=self._param("a_min_mps2", -3.0, float),
+            a_lat_max_mps2=self._param("a_lat_max_mps2", 4.0, float),
+        )
+
+        # Manual-mode state
         self.steering = 0.0
         self.speed = 0.0
         self.expected_steering = 0.0
         self.expected_speed = 0.0
-        self.max_speed = self.get_parameter("max_speed").value
-        self.acceleration = self.get_parameter("acceleration").value
-        self.max_steering = self.get_parameter("max_steering").value
-        self.steering_accel = self.get_parameter("steering_accel").value
-
-        # Kart constants (shared via /**: wildcard)
-        self.kart = KartConstants(
-            v_max_mps=float(self.get_parameter("v_max_mps").value),
-            wheelbase_m=float(self.get_parameter("wheelbase_m").value),
-            steer_max_deg=float(self.get_parameter("steer_max_deg").value),
-            steer_rate_max_degps=float(self.get_parameter("steer_rate_max_degps").value),
-            a_max_mps2=float(self.get_parameter("a_max_mps2").value),
-            a_min_mps2=float(self.get_parameter("a_min_mps2").value),
-            a_lat_max_mps2=float(self.get_parameter("a_lat_max_mps2").value),
+        self.max_speed = 100.0  # full % of v_max_mps
+        self.max_steering = 100.0  # full % of steer_max_deg (each side)
+        dt = 1.0 / self.system_frequency
+        # Per-tick deltas expressed as %-of-max units (same unit as self.speed).
+        self.acceleration = (
+                self.kart.a_max_mps2 / self.kart.v_max_mps * dt * 100.0
+        )
+        self.steering_accel = (
+                self.kart.steer_rate_max_degps / self.kart.steer_max_deg * dt * 100.0
         )
 
         # Racing line
-        self.line_path = self.get_parameter("line_path").value
+        self.line_path = self._param("line_path", "", str)
         self.racing_line: List[Tuple[float, ...]] = []
         with open(self.line_path, "r") as f:
             for line in f:
@@ -71,7 +76,7 @@ class PathfinderNode(Node):
                 self.racing_line.append(row)
 
         # Cached inputs to planners
-        self.state = self.get_parameter("system_state").value
+        self.state = self._param("system_state", "IDLE", str)
         self.pose_ready = False
         self.current_xy: Tuple[float, float] = (0.0, 0.0)
         self.current_yaw = 0.0
@@ -79,7 +84,7 @@ class PathfinderNode(Node):
         self._latest_track_angles: Optional[Tuple[float, ...]] = None
 
         # Active planner
-        planner_name = self.get_parameter("planner").value
+        planner_name = self._param("planner", "pure_pursuit", str)
         if planner_name not in PLANNERS:
             raise ValueError(
                 f"Unknown planner '{planner_name}'. Available: {list(PLANNERS)}"
@@ -116,7 +121,7 @@ class PathfinderNode(Node):
 
         self.logger.info("Initialize Pathfinder Node")
 
-# Subscriptions
+    # Subscriptions
 
     def _on_odom(self, msg: Odometry):
         p = msg.pose.pose.position
@@ -139,7 +144,7 @@ class PathfinderNode(Node):
             return
         self.state = msg.data
 
-# Autonomous tick
+    # Autonomous tick
 
     def _autonomous_tick(self):
         if self.state != STATES.AUTONOMOUS.value:
@@ -167,7 +172,7 @@ class PathfinderNode(Node):
             Float32MultiArray(data=[float(motor_pct), float(steering_pct)])
         )
 
-# Manual mode
+    # Manual mode
 
     def manual_loop(self, msg: Float32MultiArray):
         self.cmd_count += 1
@@ -250,7 +255,7 @@ class PathfinderNode(Node):
         )
         self.last_log_time = time
 
-# Telemetry
+    # Telemetry
 
     def publish_dynamic_line(self):
         state = self.planner.dynamic_line_state()
@@ -276,7 +281,23 @@ class PathfinderNode(Node):
         self.cmd_count = 0
         self.last_log_time = current_time
 
-# Helpers
+    # Helpers
+
+    def _param(self, name, default, cast=None):
+        """Read a ROS param with a code-side default if the override is missing
+        or NOT_SET. Defaults are a resilience layer; yaml is still canonical."""
+        try:
+            v = self.get_parameter(name).value
+        except Exception:
+            v = None
+        if v is None:
+            v = default
+        if cast is not None and v is not None:
+            try:
+                v = cast(v)
+            except (TypeError, ValueError):
+                v = default
+        return v
 
     @staticmethod
     def _yaw_from_quaternion(q) -> float:

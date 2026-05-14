@@ -15,11 +15,9 @@ pathfinder_node:
     # Options: mpc, opencv, pure_pursuit
     planner: pure_pursuit
 
-    # Manual mode
-    max_speed: 50
-    acceleration: 0.2
-    max_steering: 100
-    steering_accel: 5.0
+    # Manual-mode caps and ramp rates are derived from the kart-wide
+    # constants (v_max_mps, a_max_mps2, steer_max_deg, steer_rate_max_degps)
+    # in pathfinder_node.__init__ — no duplicate knobs here.
 
     pure_pursuit:
       use_velocity_scaled_lookahead: true  # Nav2: use_velocity_scaled_lookahead_dist

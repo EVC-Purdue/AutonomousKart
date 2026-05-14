@@ -18,6 +18,7 @@ setup(
         'autonomous_kart.nodes.master',
         'autonomous_kart.nodes.localization',
         'autonomous_kart.nodes.pathfinder.strategies',
+        'autonomous_kart.nodes.pathfinder.planners',
         'autonomous_kart.nodes.imu',
     ],
     data_files=[

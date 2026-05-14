@@ -104,15 +104,18 @@ class ECommsNode(Node):
     # CAN RX ------------------------------------------------------------------#
     def _on_can_msg(self, msg: can.Message):
         """Called by can.Notifier in a background thread for each received message."""
+        if self.executor is None:
+            self.logger.warning("CAN message received before executor ready, dropping frame")
+            return
+        
+        data = bytes(msg.data)  # copy, don't hold a reference
+        
         if msg.arbitration_id == STATUS_ID:
-            data = bytes(msg.data)  # copy, don't hold a reference
-            # Add to executor to handle in main thread because ros publishers are not thread safe
-            if self.executor is not None:
-                self.executor.create_task(lambda: self.handle_status_msg(data))
-            else:
-                self.logger.warning("CAN message received before executor ready, dropping frame")
+            self.executor.create_task(lambda: self.handle_adcb_status_msg(data))
+        elif msg.arbitration_id == VESC_STATUS_1_ID:
+            self.executor.create_task(lambda: self.handle_vesc_status_1_msg(data))
 
-    def handle_status_msg(self, msg_data: bytes):
+    def handle_adcb_status_msg(self, msg_data: bytes):
         try:
             self.adcb_status = e_comms.unpack_adcb_status_message(msg_data, self.logger)
 
@@ -122,6 +125,11 @@ class ECommsNode(Node):
             self.steering_pwm_pub.publish(UInt16(data=self.adcb_status.steering_pwm))
         except Exception as e:
             self.logger.error(f"Failed to parse CAN message: {e}")
+
+    def handle_vesc_status_1_msg(self, msg_data: bytes):
+        try:
+        except Exception as e:
+            self.logger.error(f"Failed to parse VESC status message: {e}")
     #--------------------------------------------------------------------------#
 
     # Command Callbacks -------------------------------------------------------#

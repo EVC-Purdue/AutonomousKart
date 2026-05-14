@@ -40,7 +40,7 @@ _TINY_LINE_CSV = textwrap.dedent(
 
 @pytest.fixture
 def tiny_racing_line(tmp_path):
-    path = tmp_path / "line.csv"
+    path = tmp_path / "line14.csv"
     path.write_text(_TINY_LINE_CSV)
     return str(path)
 

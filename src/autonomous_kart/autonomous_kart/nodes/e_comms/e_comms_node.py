@@ -6,10 +6,11 @@ import can
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from std_msgs.msg import Float32MultiArray, UInt16, Bool, String
+from std_msgs.msg import Float32MultiArray, UInt16, Bool, String, Float32
 from rclpy.impl.rcutils_logger import RcutilsLogger
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms
+import autonomous_kart.nodes.e_comms.powertrain as powertrain
 
 CAN_CHANNEL = "/dev/ttyACM0"
 CAN_BITRATE = 500000
@@ -97,6 +98,7 @@ class ECommsNode(Node):
         self.rc_mode_pub = self.create_publisher(Bool, "e_comms/rc_mode", 1)
         self.throttle_pwm_pub = self.create_publisher(UInt16, "e_comms/throttle_pwm", 1)
         self.steering_pwm_pub = self.create_publisher(UInt16, "e_comms/steering_pwm", 1)
+        self.speed_pub = self.create_publisher(Float32, "e_comms/wheel_speed", 1)
 
         # Init finished
         self.logger.info("Initialized EComms Node")
@@ -130,6 +132,7 @@ class ECommsNode(Node):
         try:
             vesc_status_1 = e_comms.unpack_vesc_status_1_message(msg_data, self.logger)
             speed_m_per_s = powertrain.erpm_to_speed(vesc_status_1.erpm)
+            self.speed_pub.publish(Float32(data=speed_m_per_s))
         except Exception as e:
             self.logger.error(f"Failed to parse VESC status message: {e}")
     #--------------------------------------------------------------------------#
@@ -247,3 +250,4 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
+

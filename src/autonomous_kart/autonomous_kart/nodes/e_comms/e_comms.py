@@ -30,6 +30,12 @@ class AdcbStatus:
     throttle_pwm: int # Integer value of the throttle PWM (1000-2000)
     steering_pwm: int # Integer value of the steering PWM (1000-2000)
 
+@dataclass
+class VescCanStatus1:
+    erpm: int         # ERPM of the motor
+    current: int      # Motor current in 0.1A (e.g., 100 = 10A)
+    duty_cycle: int   # Duty cycle in 0.001 (e.g., 1000 = 100%)
+
 
 def pack_control_message(throttle_percent: float, steering_angle: float) -> bytes:
     """

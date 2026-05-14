@@ -15,34 +15,36 @@ from typing import Deque, Optional, Tuple
 
 import numpy as np
 
+# Feature-vector layout
+NUM_STEER_HIST = 4
+NUM_THROTTLE_HIST = 3
+NUM_FEATURES = 1 + 4 + NUM_STEER_HIST + NUM_THROTTLE_HIST + 2  # bias, (d,v_s,v_d,k), hist, (nom_ds,nom_dd)
+
 
 def _features(d: float, v_s: float, v_d: float, kappa: float,
-              steer_hist: Tuple[float, float, float, float],
-              throttle_hist: Tuple[float, float, float],
+              steer_hist: Tuple[float, ...],
+              throttle_hist: Tuple[float, ...],
               nom_ds: float, nom_dd: float) -> np.ndarray:
     return np.array([
         1.0, d, v_s, v_d, kappa,
-        steer_hist[0], steer_hist[1], steer_hist[2], steer_hist[3],
-        throttle_hist[0], throttle_hist[1], throttle_hist[2],
+        *steer_hist,  # NUM_STEER_HIST entries
+        *throttle_hist,  # NUM_THROTTLE_HIST entries
         nom_ds, nom_dd,
     ], dtype=np.float64)
-
-
-NUM_FEATURES = 14
 
 
 class ResidualLearner:
     def __init__(self, params: dict, solve_dt: float):
         """solve_dt is the wall-time between successive plan() calls
         (= 1/system_frequency), used to size the push/step delay."""
-        self.mode = str(params.get("mode", "shadow")).lower()  # off | shadow | apply
-        self.target_horizon_s = float(params.get("target_horizon_s", 0.5))
-        self.horizon_steps = max(1, int(round(self.target_horizon_s / max(solve_dt, 1e-3))))
-        self.lam = float(params.get("forgetting_factor", 0.99))
-        self.min_speed = float(params.get("min_train_speed_mps", 0.5))
-        self.err_window = int(params.get("error_window", 200))
+        self.mode = str(params["mode"]).lower()  # off | shadow | apply
+        self.target_horizon_s = float(params["target_horizon_s"])
+        self.horizon_steps = max(1, int(round(self.target_horizon_s / solve_dt)))
+        self.lam = float(params["forgetting_factor"])
+        self.min_speed = float(params["min_train_speed_mps"])
+        self.err_window = int(params["error_window"])
 
-        p0 = float(params.get("initial_cov", 1000.0))
+        p0 = float(params["initial_cov"])
         self.theta_s = np.zeros(NUM_FEATURES)
         self.theta_d = np.zeros(NUM_FEATURES)
         self.P = np.eye(NUM_FEATURES) * p0

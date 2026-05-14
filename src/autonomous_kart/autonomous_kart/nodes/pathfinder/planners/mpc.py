@@ -20,7 +20,7 @@ from autonomous_kart.nodes.pathfinder.planners.base import (
     KartConstants, Planner, PlannerInputs,
 )
 from autonomous_kart.nodes.pathfinder.planners.mpc_residual import (
-    NUM_FEATURES, ResidualLearner, _features,
+    NUM_STEER_HIST, NUM_THROTTLE_HIST, ResidualLearner, _features,
 )
 
 MODE_NORMAL, MODE_REJOIN, MODE_FAILSAFE = 0, 1, 2
@@ -42,13 +42,14 @@ class MPCPlanner(Planner):
             raise ValueError("MPCPlanner requires a non-empty racing line")
 
         # Horizon / sampling
-        self.N = int(params.get("horizon_steps", 20))
-        self.dt = float(params.get("dt_s", 0.05))
-        self.K = int(params.get("num_samples", 48))
-        self.steer_sigma = math.radians(float(params.get("steer_sigma_deg", 6.0)))
-        self.accel_sigma = float(params.get("accel_sigma_mps2", 1.0))
-        self.proj_back = int(params.get("proj_window_back", 5))
-        self.proj_fwd = int(params.get("proj_window_fwd", 60))
+        self.N = int(params["horizon_steps"])
+        self.dt = float(params["dt_s"])
+        self.K = int(params["num_samples"])
+        self.steer_sigma = math.radians(float(params["steer_sigma_deg"]))
+        self.accel_sigma = float(params["accel_sigma_mps2"])
+        self.proj_back = int(params["proj_window_back"])
+        self.proj_fwd = int(params["proj_window_fwd"])
+        self.v_window_s = float(params["frenet_v_window_s"])
 
         # Physical limits pulled from kart constants (kart-wide /**: block)
         self.steer_max = math.radians(kart.steer_max_deg)
@@ -58,32 +59,37 @@ class MPCPlanner(Planner):
         self.a_min = kart.a_min_mps2
         self.a_max = kart.a_max_mps2
         self.a_lat_max = kart.a_lat_max_mps2
-        self.target_speed = float(params.get("target_speed_pct", 0.30)) * self.v_max
+        self.target_speed = float(params["target_speed_pct"]) * self.v_max
 
         # Corridor (centerline = racing line)
-        tw = float(params.get("track_half_width_m", 3.5))
-        sm = float(params.get("safety_margin_m", 0.5))
-        kw = float(params.get("kart_half_width_m", 0.45))
-        self.corridor_half = max(0.1, tw - sm - kw)
+        tw = float(params["track_half_width_m"])
+        sm = float(params["safety_margin_m"])
+        kw = float(params["kart_half_width_m"])
+        self.corridor_half = tw - sm - kw
 
         # Costs
-        self.w_d = float(params.get("w_d", 100.0))
-        self.w_heading = float(params.get("w_heading", 30.0))
-        self.w_speed = float(params.get("w_speed", 5.0))
-        self.w_delta = float(params.get("w_delta", 5.0))
-        self.w_drate = float(params.get("w_delta_rate", 50.0))
-        self.w_accel = float(params.get("w_accel", 2.0))
-        self.w_boundary = float(params.get("w_boundary", 1000.0))
-        self.w_progress = float(params.get("w_progress", 1.0))
-        self.w_term_d = float(params.get("w_terminal_d", 200.0))
-        self.w_term_h = float(params.get("w_terminal_heading", 100.0))
-        self.w_a_lat = float(params.get("w_a_lat", 50.0))
+        self.w_d = float(params["w_d"])
+        self.w_heading = float(params["w_heading"])
+        self.w_speed = float(params["w_speed"])
+        self.w_delta = float(params["w_delta"])
+        self.w_drate = float(params["w_delta_rate"])
+        self.w_accel = float(params["w_accel"])
+        self.w_boundary = float(params["w_boundary"])
+        self.w_progress = float(params["w_progress"])
+        self.w_term_d = float(params["w_terminal_d"])
+        self.w_term_h = float(params["w_terminal_heading"])
+        self.w_a_lat = float(params["w_a_lat"])
 
         # Rejoin
-        self.rejoin_in = float(params.get("rejoin_activate_d_m", 2.5))
-        self.rejoin_out = float(params.get("rejoin_deactivate_d_m", 1.0))
-        self.rejoin_v = float(params.get("rejoin_v_max_mps", 2.0))
-        self.max_failures = int(params.get("max_consecutive_solver_failures", 3))
+        self.rejoin_in = float(params["rejoin_activate_d_m"])
+        self.rejoin_out = float(params["rejoin_deactivate_d_m"])
+        self.rejoin_v = float(params["rejoin_v_max_mps"])
+        self.max_failures = int(params["max_consecutive_solver_failures"])
+
+        # Feasibility sentinels
+        self.infeasible_cost = float(params["infeasible_cost"])
+        self.rejoin_terminal_penalty = float(params["rejoin_terminal_penalty"])
+        self.feasibility_threshold = float(params["feasibility_threshold"])
 
         # Racing line as flat numpy arrays with derived tangent for Frenet
         L = np.asarray([list(r[:6]) for r in racing_line], dtype=np.float64)
@@ -119,9 +125,11 @@ class MPCPlanner(Planner):
         }
         self.residual = ResidualLearner(residual_params, solve_dt)
         self._nom_steps = max(1, int(round(self.residual.target_horizon_s / self.dt)))
-        self._steer_hist = deque([0.0, 0.0, 0.0, 0.0], maxlen=4)
-        self._throttle_hist = deque([0.0, 0.0, 0.0], maxlen=3)
-        self._pose_hist = deque(maxlen=40)  # (now_ns, s, d) for velocity diff
+        self._steer_hist = deque([0.0] * NUM_STEER_HIST, maxlen=NUM_STEER_HIST)
+        self._throttle_hist = deque([0.0] * NUM_THROTTLE_HIST, maxlen=NUM_THROTTLE_HIST)
+        # Pose history covers v_window_s of past samples at the solve cadence.
+        pose_hist_len = max(2, int(round(self.v_window_s / solve_dt)) + 2)
+        self._pose_hist = deque(maxlen=pose_hist_len)  # (now_ns, s, d)
 
         # Telemetry publisher
         self.status_pub = None
@@ -235,18 +243,18 @@ class MPCPlanner(Planner):
         return 0.0
 
     def _frenet_velocity(self) -> Tuple[float, float]:
-        """Finite-difference (s, d) over ~0.3 s of pose history."""
+        """Finite-difference (s, d) over `v_window_s` of pose history."""
         if len(self._pose_hist) < 2:
             return 0.0, 0.0
         now_ns, s_now, d_now = self._pose_hist[-1]
-        target = now_ns - int(0.3 * 1e9)
+        target = now_ns - int(self.v_window_s * 1e9)
         ref = self._pose_hist[0]
         for entry in self._pose_hist:
             if entry[0] >= target:
                 ref = entry
                 break
         dt = (now_ns - ref[0]) / 1e9
-        if dt < 1e-3:
+        if dt <= 0.0:
             return 0.0, 0.0
         return (s_now - ref[1]) / dt, (d_now - ref[2]) / dt
 
@@ -359,14 +367,14 @@ class MPCPlanner(Planner):
 
         # In rejoin mode allow corridor violations
         if self.mode == MODE_NORMAL:
-            cost = np.where(hard_violation, 1e9, cost)
+            cost = np.where(hard_violation, self.infeasible_cost, cost)
         else:
             terminal_outside = np.abs(d[:, -1]) > self.corridor_half
-            cost = np.where(terminal_outside, cost + 1e5, cost)
+            cost = np.where(terminal_outside, cost + self.rejoin_terminal_penalty, cost)
 
         best = int(np.argmin(cost))
         best_cost = float(cost[best])
-        feasible = best_cost < 5e8
+        feasible = best_cost < self.feasibility_threshold
         u = np.stack([delta_seq[best], accel_seq[best]], axis=0)
         traj = {"d": d[best], "s": s[best]}
         return u, best_cost, traj, feasible

@@ -57,6 +57,7 @@ pathfinder_node:
       accel_sigma_mps2: 1.0
       proj_window_back: 5
       proj_window_fwd: 60
+      frenet_v_window_s: 0.3 # finite-diff window for (v_s, v_d) from pose history
 
       # MPC-only speed shaping
       target_speed_pct: 0.30 # cruise as fraction of v_max_mps
@@ -84,10 +85,13 @@ pathfinder_node:
       rejoin_deactivate_d_m: 1.0
       rejoin_v_max_mps: 2.0
 
-      # Failsafe
+      # Failsafe / feasibility
       max_consecutive_solver_failures: 3
+      infeasible_cost: 1.0e9           # sentinel cost for corridor-violating rollouts (NORMAL mode)
+      rejoin_terminal_penalty: 1.0e5   # added to plans that end outside the corridor in REJOIN
+      feasibility_threshold: 5.0e8     # best_cost above this -> not feasible -> failsafe path
 
-      # Shadow residual learning (RLS linear) — never affects control unless mode=apply
+      # Residual learning
       residual:
         mode: shadow                   # off | shadow | apply
         target_horizon_s: 0.5

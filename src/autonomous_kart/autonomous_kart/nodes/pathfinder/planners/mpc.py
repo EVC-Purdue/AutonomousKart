@@ -58,6 +58,9 @@ class MPCPlanner(Planner):
         self.proj_back = int(g("proj_window_back", 5))
         self.proj_fwd = int(g("proj_window_fwd", 60))
         self.v_window_s = float(g("frenet_v_window_s", 0.3))
+        # Threshold (m^2) above which the windowed Frenet match is considered
+        # unreliable and _frenet falls back to a full-line nearest search.
+        self._resync_dist2 = float(g("frenet_resync_m", 5.0)) ** 2
 
         # Physical limits pulled from kart constants (kart-wide /**: block —
         # no duplicates lurking in the mpc block).

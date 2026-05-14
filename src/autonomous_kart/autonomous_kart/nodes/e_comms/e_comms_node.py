@@ -46,8 +46,8 @@ class ECommsNode(Node):
         self.steer_max_deg: float = float(self.get_parameter("steer_max_deg").value)
 
         # Inputs
-        self.throttle_percent: float = 0.0
-        self.steering_angle: float = 0.0
+        self.throttle_erpm: float = 0.0
+        self.steering_percent: float = 0.0
 
         # Outputs
         self.adcb_status: e_comms.AdcbStatus = e_comms.AdcbStatus(
@@ -148,25 +148,19 @@ class ECommsNode(Node):
         if len(msg.data) < 2:
             self.logger.error(f"cmd_drive payload too short: {list(msg.data)}")
             return
-        self.steering_angle, self.throttle_percent = self.convert(
-            float(msg.data[1]), float(msg.data[0]),
-        )
+        throttle_cmd = msg.data[0] # m/s
+        steering_cmd = msg.data[1] # degrees (negative = left, positive = right)
+        self.throttle_erpm, self.steering_percent = self.convert(throttle_cmd, steering_cmd)
         self.can_control_tx()  # Send updated command immediately on CAN bus
 
-    def convert(self, steering: float, throttle: float) -> tuple:
+    def convert(self, throttle_m_per_s: float, steering_deg: float) -> tuple[float, float]:
         """Clamp + unit-convert (steering, throttle) for the CAN control frame."""
-        throttle = throttle * 3
-        if throttle < self.min_speed:
-            throttle = self.min_speed
-        elif throttle > self.max_speed:
-            throttle = self.max_speed
+        clamped_throttle_m_per_s = max(self.min_speed, min(self.max_speed, throttle_m_per_s))
+        throttle_erpm = powertrain.speed_to_erpm(clamped_throttle_m_per_s)
 
-        steering = (steering / self.steer_max_deg) * 100.0 * 2.0
-        if steering < self.min_steering:
-            steering = self.min_steering
-        elif steering > self.max_steering:
-            steering = self.max_steering
-        return steering, throttle
+        clamped_steering_deg = max(self.min_steering, min(self.steer_max_deg, steering_deg))
+        steering_percent = (clamped_steering_deg / self.steer_max_deg) * 100.0
+        return throttle_erpm, steering_percent
     #--------------------------------------------------------------------------#
 
     # CAN TX ------------------------------------------------------------------#

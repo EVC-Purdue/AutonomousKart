@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+import subprocess
 from enum import Enum
 
 import math
@@ -35,6 +36,8 @@ class MasterNode(Node):
         self.yaw_cal_tick_dt = self.get_parameter("yaw_cal_tick_dt").value
         self.yaw_cal_accel_floor = self.get_parameter("yaw_cal_accel_floor").value
         self.yaw_cal_min_samples = self.get_parameter("yaw_cal_min_samples").value
+        self.jetson_ip = self.get_parameter("jetson_ip").value
+        self.jetson_user = self.get_parameter("jetson_username").value
 
         assert self.state in [s.value for s in STATES]
 
@@ -331,6 +334,24 @@ class MasterNode(Node):
         with self._lock:
             return dict(self.gps_status_data)
 
+    def start_jetson(self):
+        with self._lock:
+            remote_command = (
+                "bash ~/run_remote.sh --update"
+            )
+
+            ssh_command = [
+                "ssh",
+                "-t",
+                f"{self.jetson_user}@{self.jetson_ip}",
+                remote_command,
+            ]
+
+            self.logger.info("Starting Jetson bringup...")
+
+            subprocess.Popen([
+                ssh_command,
+            ])
 
 def main(args=None):
     rclpy.init(args=args)

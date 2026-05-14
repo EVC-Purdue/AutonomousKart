@@ -191,6 +191,15 @@ def lines_endpoint():
         "static": static_xy,
         "dynamic": master_node.get_dynamic_line(),
     })
+    
+@app.route("/jetson/start", methods=["POST"])
+def jetson_start():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+
+    master_node.start_jetson()
+
+    return True, "jetson launch started" 
 
 
 def start(node: MasterNode) -> None:

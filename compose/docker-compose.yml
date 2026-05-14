@@ -7,11 +7,12 @@ services:
     volumes:
       - ../:/ws
       - ros_cache:/root/.cache
-      - ../data/kart_logs:/ws/logs  # logs location
+      - /data/kart_logs:/ws/logs  # logs location
     environment:
       - ROS_DISTRO=humble
       - ROS_DOMAIN_ID=42
       - ROS_LOCALHOST_ONLY=0
+      - TARGET_DEVICE=jetson # set target device for build (ex: jetson, rubik)
       - CYCLONEDDS_URI=file:///ws/docker/cyclonedds.xml
     ports:
       - "8000:8000"

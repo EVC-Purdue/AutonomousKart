@@ -75,8 +75,8 @@ class OpenCVPathfinderNode(Node):
             self.last_log_time = current_time
             self.frames_since_last_log = 0
 
-        right_angle, left_angle = self.angle_finder.get_img_angles(frame, log_folder=self.log_folder, capture_frequency=self.capture_frequency, debug=self.debug_mode, 
-                                                                   percent=self.percent_of_img, pixel_range=self.pixel_range, pic_offset=self.pic_offset)
+        right_angle, left_angle = self.angle_finder.get_img_angles(frame, log_folder=self.log_folder, frame_count=self.frame_count, capture_frequency=self.capture_frequency, 
+                                                                   debug=self.debug_mode, percent=self.percent_of_img, pixel_range=self.pixel_range, pic_offset=self.pic_offset)
 
         if right_angle is None or left_angle is None:
             self.logger.warn("Right or Left angle returned None")

@@ -12,7 +12,6 @@ class AngleFinder:
     def __init__(self, logger):
         self.prev_right = None
         self.prev_left = None
-        self.frame_counter = 0
         self.logger = logger
 
     # @param img: Normal image
@@ -22,20 +21,22 @@ class AngleFinder:
     # @param pixel_range: Range of pixels to check around previous pixel for O(1) lookup
     # @param pic_offset: Pixel offset from edge of image
     # @ret image angles or None when cannot find angles/coords
-    def get_img_angles(self, img, log_folder="logs", debug=False, percent=0.0, pixel_range=3, pic_offset=5, capture_frequency=100):
+    def get_img_angles(self, img, frame_count=-1, log_folder="logs", debug=False, percent=0.0, pixel_range=3, pic_offset=5, capture_frequency=100):
         image, right, left = self.get_img_mask(img, percent=percent, pixel_range=pixel_range, pic_offset=pic_offset)
         
         if image is None or right is None or left is None:
             return (None, None)
         
-        if debug and self.frame_counter % capture_frequency == 0:
+        if debug and frame_count % capture_frequency == 0:
             self.logger.info("Wrote Debug Frames To Disk")
+
             os.makedirs(log_folder, exist_ok=True)
-            cv.imwrite(f"{log_folder}/normal_frame_{self.frame_counter}.jpg", img)
+            os.makedirs(f"{log_folder}/normal_frames", exist_ok=True)
+            os.makedirs(f"{log_folder}/debug_frames", exist_ok=True)
+
+            cv.imwrite(f"{log_folder}/normal_frames/frame_{frame_count}.jpg", img)
             utils.draw_lines(image, right, left)
-            cv.imwrite(f"{log_folder}/debug_frame_{self.frame_counter}.jpg", image)
-    
-        self.frame_counter += 1
+            cv.imwrite(f"{log_folder}/debug_frames/frame_{frame_count}.jpg", image)
 
         w = img.shape[1]
         width = w - 1 - pic_offset
@@ -57,8 +58,8 @@ class AngleFinder:
     # @ret Masked image & right/left divide between road & grass or None when image doesn't exist
     def get_img_mask(self, img: np.ndarray, percent=0.0, pixel_range=3, pic_offset=5):
         if img is None:
-            self.logger.error('Error opening image!')
-            return None, None, None
+            self.logger.error("No Image Provided as Input to get_img_mask")
+            return (None, None, None)
         
         # Roi mask for a portion of image
         h, w = img.shape[:2]
@@ -81,8 +82,10 @@ class AngleFinder:
         right = self.lookup_road_coord(result, self.prev_right, right_side=True, pic_offset=pic_offset, pixel_range=pixel_range)
         left = self.lookup_road_coord(result, self.prev_left, right_side=False, pic_offset=pic_offset, pixel_range=pixel_range)
 
-        if not right or not left:
+        if not right:
             right = self.vectorized_road_coord(result, right_side=True)
+        
+        if not left:
             left = self. vectorized_road_coord(result, right_side=False)
 
         self.prev_right = right

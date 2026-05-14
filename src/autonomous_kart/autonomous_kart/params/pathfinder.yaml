@@ -1,33 +1,87 @@
-# Planner configs including perception thresholds, toggles, etc.
+# Planner / pathfinder configuration.
+#
+# The rcl YAML parser rejects nested maps alongside scalar values under
+# `ros__parameters`, so EVERY planner-specific param is written as a flat
+# dotted key here (e.g. `mpc.horizon_steps: 20`) and Python reads them via
+# `node.get_parameters_by_prefix("mpc")`.
 
 /**:
   ros__parameters:
-    v_max_mps: 20.0            # kart max speed (m/s)
-    wheelbase_m: 1.05          # kart wheelbase in meters (rear axle -> front axle)
-    steer_max_deg: 25.0        # physical max front-wheel steering angle (degrees)
+    # Kart-wide physical limits (shared by every node)
+    v_max_mps: 20.0              # max kart speed (m/s)
+    wheelbase_m: 1.05            # rear-axle → front-axle (m)
+    steer_max_deg: 25.0          # physical front-wheel steering limit (deg)
+    steer_rate_max_degps: 180.0  # max steering slew rate (deg/s)
+    a_max_mps2: 2.0              # max forward acceleration (m/s^2)
+    a_min_mps2: -3.0             # max braking deceleration (m/s^2, negative)
+    a_lat_max_mps2: 4.0          # tire-grip lateral accel cap (m/s^2)
 
 pathfinder_node:
   ros__parameters:
-    # Manual mode
-    max_speed: 50
-    acceleration: 0.2
-    max_steering: 100
-    steering_accel: 5.0
-    
-    use_velocity_scaled_lookahead: true  # Nav2: use_velocity_scaled_lookahead_dist
-    lookahead_time_s: 0.6                # Nav2: lookahead_time (s)
-    min_lookahead_m: 3.0                 # Nav2: min_lookahead_dist (m)
-    max_lookahead_m: 8.0                 # Nav2: max_lookahead_dist (m)
-    
-    use_curvature_regulation: true       # Nav2: use_regulated_linear_velocity_scaling
-    min_radius_m: 10.0                    # Nav2: regulated_linear_scaling_min_radius (m)
-    min_reg_speed_pct: 0.20              # like regulated_linear_scaling_min_speed / v_max
-    
-    approach_dist_m: 1.0                 # Nav2: approach_velocity_scaling_dist (m)
-    min_approach_speed_pct: 0.05         # like min_approach_linear_velocity / v_max
+    # Active planner: mpc | opencv | pure_pursuit
+    planner: pure_pursuit
 
-    search_window: 80                    # Bounded forward search window (number of waypoints)
-    initial_sync_done: false             # First autonomous tick after pose_ready does an O(n) full-line nearest
-    max_resync_dist: 80                  # Max allowed distance to race line (m) before falling back to a full O(n) search
-    max_closed_dist: 2                   # Max distance between start and end for track to be considered closed (m)
-    
+    # pure_pursuit
+    pure_pursuit.use_velocity_scaled_lookahead: true
+    pure_pursuit.lookahead_time_s: 0.6
+    pure_pursuit.min_lookahead_m: 3.0
+    pure_pursuit.max_lookahead_m: 8.0
+    pure_pursuit.use_curvature_regulation: true
+    pure_pursuit.min_radius_m: 10.0
+    pure_pursuit.min_reg_speed_pct: 0.20
+    pure_pursuit.approach_dist_m: 1.0
+    pure_pursuit.min_approach_speed_pct: 0.05
+    pure_pursuit.search_window: 80
+    pure_pursuit.initial_sync_done: false
+    pure_pursuit.max_resync_dist: 80
+    pure_pursuit.max_closed_dist: 2
+    pure_pursuit.rejoin_cte_activate: 3.0
+    pure_pursuit.rejoin_cte_deactivate: 1.0
+    pure_pursuit.rejoin_merge_lookahead_m: 15.0
+
+    # opencv
+
+    # mpc: sampling MPC
+    mpc.horizon_steps: 20
+    mpc.dt_s: 0.05
+    mpc.num_samples: 48
+    mpc.steer_sigma_deg: 6.0
+    mpc.accel_sigma_mps2: 1.0
+    mpc.proj_window_back: 5
+    mpc.proj_window_fwd: 60
+    mpc.frenet_v_window_s: 0.3
+    mpc.target_speed_pct: 0.30
+    mpc.track_half_width_m: 2.5
+    mpc.safety_margin_m: 0.5
+    mpc.kart_half_width_m: 0.5025
+    #  mpc costs 
+    mpc.w_d: 100.0
+    mpc.w_heading: 30.0
+    mpc.w_speed: 5.0
+    mpc.w_delta: 5.0
+    mpc.w_delta_rate: 50.0
+    mpc.w_accel: 2.0
+    mpc.w_boundary: 1000.0
+    mpc.w_progress: 1.0
+    mpc.w_terminal_d: 200.0
+    mpc.w_terminal_heading: 100.0
+    mpc.w_a_lat: 50.0
+    #  mpc rejoin 
+    mpc.rejoin_activate_d_m: 2.5
+    mpc.rejoin_deactivate_d_m: 1.0
+    mpc.rejoin_v_max_mps: 2.0
+    #  mpc failsafe / feasibility sentinels 
+    mpc.max_consecutive_solver_failures: 3
+    mpc.infeasible_cost: 1000000000.0
+    mpc.rejoin_terminal_penalty: 100000.0
+    mpc.feasibility_threshold: 500000000.0
+    #  mpc residual learner
+    mpc.residual.mode: shadow
+    mpc.residual.target_horizon_s: 0.5
+    mpc.residual.forgetting_factor: 0.99
+    mpc.residual.initial_cov: 1000.0
+    mpc.residual.min_train_speed_mps: 0.5
+    mpc.residual.error_window: 200
+
+    #  safety wrapper 
+    safety.enabled: true

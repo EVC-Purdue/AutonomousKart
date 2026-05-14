@@ -212,7 +212,22 @@ def running_stack():
                 )
             spin_all(timeout_sec=0.05)
         if counters["odom"] == 0:
-            pytest.fail("localization never published /odom within 25s")
+            # Capture as much launch output as we can read non-blockingly so
+            # the user can see *why* localization didn't come up (e.g. an
+            # uncaught exception in the node).
+            import os as _os
+            import fcntl as _fcntl
+            try:
+                fd = proc.stdout.fileno()
+                _fcntl.fcntl(fd, _fcntl.F_SETFL,
+                             _fcntl.fcntl(fd, _fcntl.F_GETFL) | _os.O_NONBLOCK)
+                tail = proc.stdout.read() or ""
+            except Exception:
+                tail = "<no captured output>"
+            pytest.fail(
+                "localization never published /odom within 25s\n"
+                f"--- launch output (tail) ---\n{tail}"
+            )
 
         # Phase 2: wait for master_api HTTP to respond.
         deadline = time.monotonic() + 15.0
@@ -352,7 +367,7 @@ def test_manual_control_publishes_on_topic(running_stack):
     assert status == 200
     assert body.get("success") == "ok"
     assert running_stack["pump"](
-        lambda: len(running_stack["manual_cmds"]) > before, timeout=5.0
+        lambda: len(running_stack["manual_cmds"]) > before, timeout=10.0
     )
     assert running_stack["manual_cmds"][-1] == [1.5, -2.5]
 

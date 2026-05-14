@@ -9,4 +9,4 @@ python-can
 flask
 flask-cors
 pyserial
-smbus2
+smbus2==0.6.1

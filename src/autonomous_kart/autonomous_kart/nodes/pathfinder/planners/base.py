@@ -1,0 +1,50 @@
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import ClassVar, Optional, Tuple
+
+
+@dataclass(frozen=True)
+class KartConstants:
+    v_max_mps: float
+    wheelbase_m: float
+    steer_max_deg: float
+    steer_rate_max_degps: float
+    a_max_mps2: float
+    a_min_mps2: float
+    a_lat_max_mps2: float
+
+
+@dataclass(frozen=True)
+class PlannerInputs:
+    pose_xy: Tuple[float, float]
+    yaw_rad: float
+    speed_mps: float
+    track_angles: Optional[Tuple[float, ...]]
+    now_ns: int
+
+
+class Planner(ABC):
+    """Base class for top-level driving planners.
+
+    Each planner gets the same inputs (PlannerInputs) plus its own param block
+    from pathfinder.yaml. The node calls plan() each tick and wraps the result
+    in the SafetyChecker before publishing on cmd_drive.
+    """
+
+    name: ClassVar[str]
+
+    def __init__(self, params: dict, kart: KartConstants, racing_line: list, logger=None, node=None):
+        self.params = params
+        self.kart = kart
+        self.racing_line = racing_line
+        self.logger = logger
+        self.node = node # To publish mpc/status
+
+    @abstractmethod
+    def plan(self, inputs: PlannerInputs) -> Optional[Tuple[float, float]]:
+        """Return (throttle_pct, steering) or None to skip publishing this tick."""
+        ...
+
+    def dynamic_line_state(self) -> Optional[dict]:
+        """Optional telemetry hook for planners for the dynamic line overlay in frontend"""
+        return None

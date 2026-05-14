@@ -18,6 +18,7 @@ def generate_launch_description():
     e_comms_yaml = os.path.join(pkg_share, "params", "e_comms.yaml")
     actuators_yaml = os.path.join(pkg_share, "params", "actuators.yaml")
     localization_yaml = os.path.join(pkg_share, "params", "localization.yaml")
+    opencv_yaml = os.path.join(pkg_share, "params", "opencv_pathfinder.yaml")
 
     sim_mode = LaunchConfiguration("simulation_mode")
 
@@ -44,7 +45,7 @@ def generate_launch_description():
                         package="autonomous_kart",
                         executable="opencv_pathfinder_node",
                         name="opencv_pathfinder_node",
-                        parameters=[gps_yaml],
+                        parameters=[gps_yaml, system_yaml, opencv_yaml],
                     ),
                     Node(
                         package="autonomous_kart",

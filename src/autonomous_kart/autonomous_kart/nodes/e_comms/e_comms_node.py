@@ -128,6 +128,8 @@ class ECommsNode(Node):
 
     def handle_vesc_status_1_msg(self, msg_data: bytes):
         try:
+            vesc_status_1 = e_comms.unpack_vesc_status_1_message(msg_data, self.logger)
+            speed_m_per_s = powertrain.erpm_to_speed(vesc_status_1.erpm)
         except Exception as e:
             self.logger.error(f"Failed to parse VESC status message: {e}")
     #--------------------------------------------------------------------------#

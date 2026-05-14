@@ -116,4 +116,25 @@ def unpack_adcb_status_message(data: bytes, logger: RcutilsLogger) -> AdcbStatus
 
     return AdcbStatus(logic_mode_str, rc_mode_bool, throttle_pwm, steering_pwm)
 
+def unpack_vesc_status_1_message(data: bytes, logger: RcutilsLogger) -> VescCanStatus1:
+    """
+    Unpack the VESC status message 1 received from the CAN bus.
+
+    - ID = `CAN_VESC_MSG_NUM_TO_EXT_ID(9 = CAN_VESC_STATUS_1_MSG_NUM)` (ext id) - **VESC status 1** (RX)
+        - Byte 0-3: VESC ERPM (BE)
+        - Byte 4-5: VESC current (in 0.1A, so 100 = 10A) (BE)
+        - Byte 6-7: VESC duty cycle (in 0.001, so 1000 = 100%) (BE)
+
+    :param data: byte array of length 8 received from CAN message
+    :param logger: Logger for logging errors
+    :return: A VescCanStatus1 object containing the unpacked data
+    """
+    if len(data) != 8:
+        logger.error(f"VESC status message data length invalid: expected 8, got {len(data)}")
+        raise ValueError(f"VESC status message data length invalid: expected 8, got {len(data)}")
     
+    erpm = (int(data[0]) << 24) | (int(data[1]) << 16) | (int(data[2]) << 8) | int(data[3])
+    current = (int(data[4]) << 8) | int(data[5])
+    duty_cycle = (int(data[6]) << 8) | int(data[7])
+
+    return VescCanStatus1(erpm, current, duty_cycle)

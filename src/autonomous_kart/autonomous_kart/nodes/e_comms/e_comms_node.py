@@ -159,7 +159,8 @@ class ECommsNode(Node):
         throttle_erpm = powertrain.speed_to_erpm(clamped_throttle_m_per_s)
 
         clamped_steering_deg = max(self.min_steering, min(self.steer_max_deg, steering_deg))
-        steering_percent = (clamped_steering_deg / self.steer_max_deg) * 100.0
+        max_one_direction_steering = max(abs(self.min_steering), abs(self.steer_max_deg))
+        steering_percent = (clamped_steering_deg / max_one_direction_steering) * 100.0
         return throttle_erpm, steering_percent
     #--------------------------------------------------------------------------#
 

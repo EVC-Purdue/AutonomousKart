@@ -1,8 +1,7 @@
 """
 Integration tests for PathfinderNode.
 
-Construction exercises CSV loading + DynamicLineManager wiring. Beyond
-that we verify:
+Construction exercises CSV loading + planner wiring. Beyond that we verify:
  - AUTONOMOUS mode: fake odom + fake track_angles → publishes on
    cmd_drive ([throttle, steering]).
  - IDLE mode: same inputs → silent.
@@ -22,27 +21,28 @@ def _params(line_path, system_state="AUTONOMOUS"):
         "simulation_mode": True,
         "system_frequency": 60,
         "system_state": system_state,
-        "max_speed": 50,
-        "acceleration": 0.2,
-        "max_steering": 10,
-        "steering_accel": 0.05,
         "line_path": line_path,
         "wheelbase_m": 1.05,
         "v_max_mps": 15.0,
         "steer_max_deg": 25.0,
-        "use_velocity_scaled_lookahead": True,
-        "lookahead_time_s": 0.6,
-        "min_lookahead_m": 3.0,
-        "max_lookahead_m": 8.0,
-        "use_curvature_regulation": True,
-        "min_radius_m": 12.0,
-        "min_reg_speed_pct": 0.20,
-        "approach_dist_m": 1.0,
-        "min_approach_speed_pct": 0.05,
-        "search_window": 80,
-        "initial_sync_done": False,
-        "max_resync_dist": 80.0,
-        "max_closed_dist": 2.0,
+        "steer_rate_max_degps": 180.0,
+        "a_max_mps2": 2.0,
+        "a_min_mps2": -3.0,
+        "a_lat_max_mps2": 4.0,
+        "planner": "pure_pursuit",
+        "pure_pursuit.use_velocity_scaled_lookahead": True,
+        "pure_pursuit.lookahead_time_s": 0.6,
+        "pure_pursuit.min_lookahead_m": 3.0,
+        "pure_pursuit.max_lookahead_m": 8.0,
+        "pure_pursuit.use_curvature_regulation": True,
+        "pure_pursuit.min_radius_m": 12.0,
+        "pure_pursuit.min_reg_speed_pct": 0.20,
+        "pure_pursuit.approach_dist_m": 1.0,
+        "pure_pursuit.min_approach_speed_pct": 0.05,
+        "pure_pursuit.search_window": 80,
+        "pure_pursuit.initial_sync_done": False,
+        "pure_pursuit.max_resync_dist": 80.0,
+        "pure_pursuit.max_closed_dist": 2.0,
     }
 
 
@@ -88,13 +88,15 @@ def test_pathfinder_issues_commands_in_autonomous_mode(
         exe.add_node(driver)
         try:
             spin_helper(exe, lambda: False, timeout=0.3)  # discovery
-            # Republish odom on every tick until the node flips pose_ready.
+            # Republish odom until the node flips pose_ready.
             deadline = time.monotonic() + 3.0
             while time.monotonic() < deadline and not node.pose_ready:
                 odom_pub.publish(_make_odom(0.0, 0.0))
                 exe.spin_once(timeout_sec=0.05)
             assert node.pose_ready
 
+            # Timer-driven now: publishing track_angles just refreshes the
+            # cached input; cmd_drive is emitted from the autonomous tick.
             deadline = time.monotonic() + 3.0
             while time.monotonic() < deadline and not drive:
                 angles_pub.publish(Float32MultiArray(data=[45.0, 45.0]))

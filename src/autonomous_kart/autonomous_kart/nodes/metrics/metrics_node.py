@@ -44,6 +44,7 @@ class MetricsNode(Node):
             "e_comms/throttle_pwm": UInt16,
             "e_comms/steering_pwm": UInt16,
             "pathfinder_params": Float32MultiArray,
+            "mpc/status": Float32MultiArray,
             "odom": Odometry,
         }
         for topic, msg_type in publishers.items():
@@ -87,7 +88,7 @@ class MetricsNode(Node):
             record["value"] = int(msg.data)
         elif isinstance(msg, Float32MultiArray):
             data_list = list(msg.data)
-            record["value"] = data_list[:10]  # Truncate
+            record["value"] = data_list[:24]  # Truncate
             record["len"] = len(data_list)
         elif isinstance(msg, Image):
             record["image_meta"] = {

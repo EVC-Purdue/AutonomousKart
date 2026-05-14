@@ -29,8 +29,14 @@ class LocalizationNode(Node):
             automatically_declare_parameters_from_overrides=True,
         )
         self.logger = self.get_logger()
-        self.sim_mode = self.get_parameter("simulation_mode").value
-        self.logger.info(f"E_COMMS mode: {self.sim_mode}")
+        # Defensive bool coercion: launch substitution may leak through as the
+        # string "true"/"false"; treat both the same way as a real bool.
+        raw_sim = self.get_parameter("simulation_mode").value
+        if isinstance(raw_sim, str):
+            self.sim_mode = raw_sim.strip().lower() in ("true", "1", "yes")
+        else:
+            self.sim_mode = bool(raw_sim)
+        self.logger.info(f"Localization mode: sim={self.sim_mode} (raw={raw_sim!r})")
 
         # Output
         self.odom_pub = self.create_publisher(Odometry, "odom", 10)
@@ -108,9 +114,9 @@ class LocalizationNode(Node):
         self.ekf = LocalizationEKF(
             wheelbase_m=wheelbase,
             steer_max_rad=steer_max_rad,
-            pos_noise=float(self.get_parameter("pos_noise").value),
-            yaw_noise=float(self.get_parameter("yaw_noise").value),
-            accel_noise=float(self.get_parameter("accel_noise").value),
+            pos_noise=float(self._param("pos_noise", 0.01)),
+            yaw_noise=float(self._param("yaw_noise", 0.05)),
+            accel_noise=float(self._param("accel_noise", 4.0)),
         )
 
         self.pseudo_speed_gate = float(self._param("pseudo_speed_gate", 0.5))

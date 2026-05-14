@@ -189,7 +189,7 @@ class ECommsNode(Node):
         Send the latest throttle and steering commands on the CAN bus.
         Uses internal state updated by the command callbacks.
         """
-        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
+        tx_data = e_comms.pack_control_message(self.throttle_erpm, self.steering_percent)
         if self.bus is not None:
             msg = can.Message(
                 arbitration_id=CONTROL_ID,

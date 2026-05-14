@@ -37,26 +37,25 @@ class VescCanStatus1:
     duty_cycle: int   # Duty cycle in 0.001 (e.g., 1000 = 100%)
 
 
-def pack_control_message(throttle_percent: float, steering_angle: float) -> bytes:
+def pack_control_message(throttle_erpm: int, steering_percent: float) -> bytes:
     """
     Pack the throttle and steering commands into a bytearray buffer for CAN
     Caller is responsible for ensuring values are within expected ranges.
 
     - ID = 0x100 - **Control commands**
-        - Byte 0-1: throttle (uint16_t, little endian), 0-1000, where 1000 = full throttle
-        - Byte 2-3: steering (uint16_t, little endian), 0-1000, where 500 = straight, 0 = full left, 1000 = full right
+        - Byte 0-1: throttle ERPM (uint16_t, little endian), 0-AUTONOMOUS_ERPM_MAX (0 = full stop, AUTONOMOUS_ERPM_MAX = max speed)
+        - Byte 2-3: steering representation (uint16_t, little endian), 0-1000, where 500 = straight, 0 = full left, 1000 = full right
         - Byte 4-7: reserved / future use
         
     :param throttle_percent: throttle command as a percentage (0 to 100)
     :param steering_angle: Steering command as percent steering (-100 to 100, 0 = center)
     :return: byte array of length 8.
     """
-    throttle = int(1000 * (throttle_percent / 100.0))  # 0-1000
-    steering = int(500 + 500 * (steering_angle / 100.0))  # -100..100 -> 0..1000
+    steering = int(500 + 500 * (steering_percent / 100.0))  # -100..100 -> 0..1000
 
     data = bytearray(8)
-    data[0] = throttle & 0xFF
-    data[1] = (throttle >> 8) & 0xFF
+    data[0] = throttle_erpm & 0xFF
+    data[1] = (throttle_erpm >> 8) & 0xFF
 
     data[2] = steering & 0xFF
     data[3] = (steering >> 8) & 0xFF

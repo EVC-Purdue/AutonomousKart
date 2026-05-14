@@ -85,9 +85,9 @@ def pack_hb_message(counter: int) -> bytes:
     return bytes(data)
 
 
-def unpack_status_message(data: bytes, logger: RcutilsLogger) -> AdcbStatus:
+def unpack_adcb_status_message(data: bytes, logger: RcutilsLogger) -> AdcbStatus:
     """
-    Unpack the throttle feedback from the received CAN buffer.
+    Unpack the Autonomous Distro/Control Board (ADCB) status message received from the CAN bus.
 
     - ID = 0x101 - **Status update** (TX)
         - Byte 0: state machine mode + rc mode

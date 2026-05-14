@@ -114,7 +114,7 @@ class ECommsNode(Node):
 
     def handle_status_msg(self, msg_data: bytes):
         try:
-            self.adcb_status = e_comms.unpack_status_message(msg_data, self.logger)
+            self.adcb_status = e_comms.unpack_adcb_status_message(msg_data, self.logger)
 
             self.adcb_state_pub.publish(String(data=self.adcb_status.logic_mode))
             self.rc_mode_pub.publish(Bool(data=self.adcb_status.rc_mode))

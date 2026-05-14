@@ -187,10 +187,20 @@ def running_stack():
             lambda m: manual_cmds.append(list(m.data)), 10,
         )
 
-        executor = rclpy.executors.SingleThreadedExecutor()
-        executor.add_node(listener)
-        executor.add_node(cmd_listener)
-        executor.add_node(odom_listener)
+        # One executor per node so /odom's 60 Hz traffic can't starve the
+        # rare /manual_commands or /cmd_drive callbacks. Each executor's
+        # spin_once is independent.
+        exec_listener = rclpy.executors.SingleThreadedExecutor()
+        exec_listener.add_node(listener)
+        exec_cmd = rclpy.executors.SingleThreadedExecutor()
+        exec_cmd.add_node(cmd_listener)
+        exec_odom = rclpy.executors.SingleThreadedExecutor()
+        exec_odom.add_node(odom_listener)
+
+        def spin_all(timeout_sec=0.0):
+            exec_listener.spin_once(timeout_sec=timeout_sec)
+            exec_cmd.spin_once(timeout_sec=timeout_sec)
+            exec_odom.spin_once(timeout_sec=timeout_sec)
 
         # Phase 1: wait for localization.
         deadline = time.monotonic() + 25.0
@@ -200,7 +210,7 @@ def running_stack():
                 pytest.fail(
                     f"bringup_sim exited early (rc={proc.returncode})\n--- output ---\n{out}"
                 )
-            executor.spin_once(timeout_sec=0.1)
+            spin_all(timeout_sec=0.05)
         if counters["odom"] == 0:
             pytest.fail("localization never published /odom within 25s")
 
@@ -217,28 +227,13 @@ def running_stack():
             pytest.fail("master_api never responded on :8000")
 
         def pump(predicate, timeout=3.0):
-            # Drain every ready callback on every node per iteration, not
-            # just one. spin_once picks a single ready callback; under load
-            # that lets a 60 Hz publisher starve a one-shot message.
+            # Round-robin across per-node executors so a high-rate topic
+            # cannot starve a rare one-shot message.
             t_end = time.monotonic() + timeout
             while time.monotonic() < t_end:
-                for _ in range(20):  # drain burst
-                    before = (
-                        counters["odom"],
-                        counters["cmd_drive"],
-                        len(manual_cmds),
-                    )
-                    executor.spin_once(timeout_sec=0.0)
-                    after = (
-                        counters["odom"],
-                        counters["cmd_drive"],
-                        len(manual_cmds),
-                    )
-                    if before == after:
-                        break  # nothing more ready, stop draining
+                spin_all(timeout_sec=0.01)
                 if predicate():
                     return True
-                executor.spin_once(timeout_sec=0.02)  # wait for new traffic
             return False
 
         yield {

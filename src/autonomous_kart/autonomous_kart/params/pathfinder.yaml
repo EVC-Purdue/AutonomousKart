@@ -28,9 +28,9 @@ pathfinder_node:
     pure_pursuit.max_lookahead_m: 8.0
     pure_pursuit.use_curvature_regulation: true
     pure_pursuit.min_radius_m: 10.0
-    pure_pursuit.min_reg_speed_pct: 0.20
+    pure_pursuit.min_reg_speed_mps: 4.0
     pure_pursuit.approach_dist_m: 1.0
-    pure_pursuit.min_approach_speed_pct: 0.05
+    pure_pursuit.min_approach_speed_mps: 1.0
     pure_pursuit.search_window: 80
     pure_pursuit.initial_sync_done: false
     pure_pursuit.max_resync_dist: 80
@@ -50,7 +50,7 @@ pathfinder_node:
     mpc.proj_window_back: 5
     mpc.proj_window_fwd: 37
     mpc.frenet_v_window_s: 0.3
-    mpc.target_speed_pct: 0.87
+    mpc.target_speed_mps: 17.4
     mpc.track_half_width_m: 2.0
     mpc.safety_margin_m: 0.5
     mpc.kart_half_width_m: 0.5025

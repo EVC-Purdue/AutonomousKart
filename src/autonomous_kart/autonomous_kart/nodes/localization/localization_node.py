@@ -2,7 +2,7 @@
 Localization node — publishes Odometry on /odom.
 
 Sim mode:  Integrates bicycle kinematics from cmd_drive [throttle, steering].
-Real mode: EKF over GPS xy + GPS-derived heading + GPS-derived speed,
+Real mode: EKF over GPS xy + GPS course + GPS speed
            predicted at system_frequency by the kinematic bicycle model
            driven by cmd_drive steering.
 """
@@ -71,7 +71,7 @@ class LocalizationNode(Node):
             return float(self._param(name, default))
 
         self._sim_delay_s = _np("sim_actuator_delay_s", 0.0)
-        self._sim_motor_std = _np("sim_cmd_motor_noise_pct", 0.0)
+        self._sim_motor_std = _np("sim_cmd_motor_noise_mps", 0.0)
         self._sim_steer_std = _np("sim_cmd_steer_noise_deg", 0.0)
         self._sim_pos_std = _np("sim_pos_noise_m", 0.0)
         self._sim_yaw_std_rad = math.radians(_np("sim_yaw_noise_deg", 0.0))
@@ -189,18 +189,14 @@ class LocalizationNode(Node):
             accel_noise=float(self._param("accel_noise", 4.0)),
         )
 
-        self.pseudo_speed_gate = float(self._param("pseudo_speed_gate", 0.5))
-        self.pseudo_disp_gate = float(self._param("pseudo_disp_gate", 0.10))
-        self.init_disp_min = float(self._param("init_disp_min", 0.30))
-        self.gps_max_age = float(self._param("gps_max_age", 0.5))
         self.cmd_drive_max_age = float(self._param("cmd_drive_max_age", 1.0))
         self.gps_dropout_warn = float(self._param("gps_dropout_warn", 2.0))
         self.sigma_xy_floor = float(self._param("sigma_xy_floor", 0.02))
+        self.vtg_yaw_var_max = float(self._param("vtg_yaw_var_max", 1.0))  # rad²
+        self.vtg_speed_var_max = float(self._param("vtg_speed_var_max", 100.0))  # (m/s)²
 
-        # Last GPS fix cache, for two-fix init and heading/speed pseudo-measurement.
-        self._last_gps_xy = None  # (x, y)
+        # Last GPS timestamp, for dropout warnings.
         self._last_gps_t = None  # float seconds
-        self._last_gps_sigma_xy = None  # float (m)
 
         # Cached cmd_drive steering (rad) + timestamp (seconds).
         self._steer_rad = 0.0
@@ -220,7 +216,6 @@ class LocalizationNode(Node):
     def _cb_drive_real(self, msg: Float32MultiArray):
         if len(msg.data) < 2:
             return
-        # cmd_drive[1] is currently degrees (see CLAUDE.md unit note).
         self._steer_rad = math.radians(float(msg.data[1]))
         self._steer_stamp = self._now_s()
 
@@ -284,75 +279,44 @@ class LocalizationNode(Node):
 
         sigma_xx = float(msg.pose.covariance[0])
         sigma_yy = float(msg.pose.covariance[7])
-        # Floor to avoid div-by-zero in heading variance.
         floor = self.sigma_xy_floor ** 2
         sigma_xx = max(sigma_xx, floor)
         sigma_yy = max(sigma_yy, floor)
-        sigma_xy_scalar = math.sqrt(0.5 * (sigma_xx + sigma_yy))
         R_xy = np.diag([sigma_xx, sigma_yy])
 
+        # VTG-derived course + speed travel inside the GPS Odometry:
+        # orientation carries yaw (ENU, rad) and twist.linear.x carries
+        # forward speed (m/s). Validity is signalled by the cov entries —
+        # the gps_node leaves them at 1e6 when no usable VTG arrived.
+        q = msg.pose.pose.orientation
+        yaw_meas = 2.0 * math.atan2(float(q.z), float(q.w))
+        var_yaw = float(msg.pose.covariance[35])
+        v_meas = float(msg.twist.twist.linear.x)
+        var_v = float(msg.twist.covariance[0])
+        have_yaw = var_yaw < self.vtg_yaw_var_max
+        have_speed = var_v < self.vtg_speed_var_max
+
         if not self.ekf.initialized:
-            # Two-fix initialization: cache, then on a sufficient-displacement
-            # second fix, seed state and let the predict timer start publishing.
-            if self._last_gps_xy is None:
-                self._last_gps_xy = (x, y)
-                self._last_gps_t = t
-                self._last_gps_sigma_xy = sigma_xy_scalar
-                return
-            dx = x - self._last_gps_xy[0]
-            dy = y - self._last_gps_xy[1]
-            d = math.hypot(dx, dy)
-            dt_gps = max(t - self._last_gps_t, 1e-3)
-            if d < self.init_disp_min or dt_gps > self.gps_max_age:
-                # Slide the cache forward and wait for more motion.
-                self._last_gps_xy = (x, y)
-                self._last_gps_t = t
-                self._last_gps_sigma_xy = sigma_xy_scalar
-                return
-            yaw0 = math.atan2(dy, dx)
-            v0 = d / dt_gps
-            sigma_yaw_init = sigma_xy_scalar / max(d, self.sigma_xy_floor)
-            sigma_v_init = sigma_xy_scalar * math.sqrt(2.0) / dt_gps
-            P0 = np.diag([
-                sigma_xx,
-                sigma_yy,
-                sigma_yaw_init ** 2,
-                sigma_v_init ** 2,
-            ])
-            self.ekf.reset(x, y, yaw0, v0, P=P0)
-            self.logger.info(
-                f"EKF init: pos=({x:.2f},{y:.2f}) yaw={math.degrees(yaw0):.1f}° v={v0:.2f} m/s"
-            )
-            self._last_gps_xy = (x, y)
+            # With VTG, we can seed on a single fix as soon as a heading is
+            # available. Speed defaults to 0 if the modem hasn't reported one.
+            if have_yaw:
+                v0 = v_meas if have_speed else 0.0
+                var_v0 = var_v if have_speed else 1.0
+                P0 = np.diag([sigma_xx, sigma_yy, var_yaw, var_v0])
+                self.ekf.reset(x, y, yaw_meas, v0, P=P0)
+                self.logger.info(
+                    f"EKF init: pos=({x:.2f},{y:.2f}) yaw={math.degrees(yaw_meas):.1f}° v={v0:.2f} m/s"
+                )
             self._last_gps_t = t
-            self._last_gps_sigma_xy = sigma_xy_scalar
             return
 
         # Already initialized: run corrections, do NOT publish
         self.ekf.update_gps_xy(x, y, R_xy)
-
-        if self._last_gps_xy is not None and self._last_gps_t is not None:
-            dx = x - self._last_gps_xy[0]
-            dy = y - self._last_gps_xy[1]
-            d = math.hypot(dx, dy)
-            dt_gps = max(t - self._last_gps_t, 1e-3)
-            v_meas = d / dt_gps
-            if (
-                    v_meas > self.pseudo_speed_gate
-                    and d > self.pseudo_disp_gate
-                    and dt_gps < self.gps_max_age
-            ):
-                yaw_meas = math.atan2(dy, dx)
-                sigma_xy = max(self._last_gps_sigma_xy or sigma_xy_scalar,
-                               self.sigma_xy_floor)
-                var_yaw = (sigma_xy / max(d, self.sigma_xy_floor)) ** 2
-                var_v = (sigma_xy * math.sqrt(2.0) / dt_gps) ** 2
-                self.ekf.update_heading(yaw_meas, var_yaw)
-                self.ekf.update_speed(v_meas, var_v)
-
-        self._last_gps_xy = (x, y)
+        if have_yaw:
+            self.ekf.update_heading(yaw_meas, var_yaw)
+        if have_speed:
+            self.ekf.update_speed(v_meas, var_v)
         self._last_gps_t = t
-        self._last_gps_sigma_xy = sigma_xy_scalar
 
     def _publish_odom(self, x: float, y: float, yaw: float, speed: float, cov=None):
         now = self.get_clock().now().to_msg()

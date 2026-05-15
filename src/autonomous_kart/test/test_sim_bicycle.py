@@ -29,7 +29,7 @@ def test_reset_places_pose_and_zeros_speed():
 def test_zero_motor_does_not_move():
     m = _mk()
     for _ in range(100):
-        m.step(motor_pct=0.0, steer_deg=0.0, dt=0.02)
+        m.step(target_mps=0.0, steer_deg=0.0, dt=0.02)
     assert m.x == pytest.approx(0.0, abs=1e-9)
     assert m.y == pytest.approx(0.0, abs=1e-9)
     assert m.speed == pytest.approx(0.0, abs=1e-9)

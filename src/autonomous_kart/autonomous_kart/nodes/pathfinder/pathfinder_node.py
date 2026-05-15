@@ -52,12 +52,12 @@ class PathfinderNode(Node):
         # on cmd_drive at system_frequency by _manual_tick. If no command has
         # arrived within manual_timeout_s the tick falls back to [0, 0] for
         # safety, so a dropped HTTP / ROS connection brings the kart to rest.
-        self._manual_speed_pct = 0.0   # 0..100 % of v_max_mps
-        self._manual_steer_pct = 0.0   # -100..100 % of steer_max_deg
+        self._manual_speed_mps = 0.0   # m/s
+        self._manual_steer_deg = 0.0   # degrees
         self._last_manual_ns = 0
         self.manual_timeout_s = self._param("manual_timeout_s", 0.5, float)
-        self.manual_speed_max = 100.0
-        self.manual_steer_max = 100.0
+        self.manual_speed_max = self.kart.v_max_mps
+        self.manual_steer_max = self.kart.steer_max_deg
 
         # Racing line
         self.line_path = self._param("line_path", "", str)
@@ -142,8 +142,8 @@ class PathfinderNode(Node):
         if msg.data != self.state:
             # Any state transition: zero throttle immediately and drop the
             # cached manual command so a stale value can't replay on re-entry.
-            self._manual_speed_pct = 0.0
-            self._manual_steer_pct = 0.0
+            self._manual_speed_mps = 0.0
+            self._manual_steer_deg = 0.0
             self._last_manual_ns = 0
             self.drive_publisher.publish(Float32MultiArray(data=[0.0, 0.0]))
         if msg.data not in [s.value for s in STATES]:
@@ -173,10 +173,10 @@ class PathfinderNode(Node):
         if proposed is None:
             return
         safe = self.safety.check(proposed, inputs)
-        motor_pct, steering_pct = safe
+        motor_mps, steering_deg = safe
         self.cmd_count += 1
         self.drive_publisher.publish(
-            Float32MultiArray(data=[float(motor_pct), float(steering_pct)])
+            Float32MultiArray(data=[float(motor_mps), float(steering_deg)])
         )
 
     # Manual mode
@@ -192,8 +192,8 @@ class PathfinderNode(Node):
                 f"manual_commands payload too short: {list(msg.data)}"
             )
             return
-        self._manual_speed_pct = float(msg.data[0])
-        self._manual_steer_pct = float(msg.data[1])
+        self._manual_speed_mps = float(msg.data[0])
+        self._manual_steer_deg = float(msg.data[1])
         self._last_manual_ns = self.get_clock().now().nanoseconds
 
     def _manual_tick(self):
@@ -205,28 +205,26 @@ class PathfinderNode(Node):
             and (now_ns - self._last_manual_ns) <= int(self.manual_timeout_s * 1e9)
         )
         if fresh:
-            speed_pct = max(
-                0.0, min(self.manual_speed_max, self._manual_speed_pct)
+            speed_mps = max(
+                0.0, min(self.manual_speed_max, self._manual_speed_mps)
             )
-            steer_pct = max(
+            steer_deg = max(
                 -self.manual_steer_max,
-                min(self.manual_steer_max, self._manual_steer_pct),
+                min(self.manual_steer_max, self._manual_steer_deg),
             )
         else:
-            speed_pct = 0.0
-            steer_pct = 0.0
+            speed_mps = 0.0
+            steer_deg = 0.0
 
-        steering_deg = (steer_pct / 100.0) * self.kart.steer_max_deg
         self.cmd_count += 1
         self.drive_publisher.publish(
-            Float32MultiArray(data=[float(speed_pct), float(steering_deg)])
+            Float32MultiArray(data=[float(speed_mps), float(steer_deg)])
         )
         self.metrics_publisher.publish(
             Float32MultiArray(
                 data=[
-                    float(speed_pct),
-                    float(steer_pct),
-                    float(steering_deg),
+                    float(speed_mps),
+                    float(steer_deg),
                     1.0 if fresh else 0.0,
                 ]
             )
@@ -261,8 +259,6 @@ class PathfinderNode(Node):
     # Helpers
 
     def _param(self, name, default, cast=None):
-        """Read a ROS param with a code-side default if the override is missing
-        or NOT_SET. Defaults are a resilience layer; yaml is still canonical."""
         try:
             v = self.get_parameter(name).value
         except Exception:

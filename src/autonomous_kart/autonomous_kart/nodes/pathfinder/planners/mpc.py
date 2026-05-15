@@ -71,7 +71,7 @@ class MPCPlanner(Planner):
         self.a_min = kart.a_min_mps2
         self.a_max = kart.a_max_mps2
         self.a_lat_max = kart.a_lat_max_mps2
-        self.target_speed = float(g("target_speed_pct", 0.30)) * self.v_max
+        self.target_speed = float(g("target_speed_mps", 6.0))
 
         # Corridor (centerline = racing line)
         tw = float(g("track_half_width_m", 2.5))
@@ -165,13 +165,13 @@ class MPCPlanner(Planner):
         yaw = inputs.yaw_rad
         v = max(0.0, inputs.speed_mps)
 
-        # 1) Frenet against the STATIC racing line so the rejoin gate uses
+        # Frenet against the STATIC racing line so the rejoin gate uses
         #    CTE-to-line, not CTE-to-overlay.
         self._set_active_line(self._static_arrays)
         _, d_static, j_static, _, _ = self._frenet(x, y, self.static_closest_idx)
         self.static_closest_idx = j_static
 
-        # 2) Drive overlay activation / deactivation off CTE-to-line.
+        # Drive overlay activation / deactivation off CTE-to-line.
         was_active = self.line_manager.is_active
         kart_state = KartState(
             xy=(x, y), yaw=yaw, speed_mps=v,
@@ -183,7 +183,7 @@ class MPCPlanner(Planner):
         self.static_closest_idx = kart_state.closest_idx
         now_active = self.line_manager.is_active
 
-        # 3) On state transitions: rebuild bezier arrays / reset warm-start.
+        # On state transitions: rebuild bezier arrays / reset warm-start.
         if now_active and not was_active:
             self._bezier_arrays = self._build_line_arrays(
                 self.line_manager.dynamic_line
@@ -195,7 +195,7 @@ class MPCPlanner(Planner):
             self._bezier_arrays = None
             self._reset_warm_start()
 
-        # 4) Point Frenet reference at the active line (bezier or static).
+        # Point Frenet reference at the active line (bezier or static).
         if now_active and self._bezier_arrays is not None:
             self._set_active_line(self._bezier_arrays)
         else:
@@ -239,7 +239,7 @@ class MPCPlanner(Planner):
 
         v_ref_now = min(float(self.l_vx[j_now]), self.target_speed)
         v_ref_now = max(0.0, min(self.v_max, v_ref_now))
-        throttle_pct = 100.0 * v_ref_now / self.v_max if self.v_max > 1e-6 else 0.0
+        throttle_mps = v_ref_now
         steering_deg = math.degrees(delta_cmd)
 
         # Update warm-start (shift by 1)
@@ -271,18 +271,13 @@ class MPCPlanner(Planner):
                              res_ps, res_pd,
                              breakdown=breakdown)
 
-        return throttle_pct, steering_deg
+        return throttle_mps, steering_deg
 
     # helpers
     def _frenet(self, x: float, y: float, hint: int):
         """Returns (s, d, idx, psi_track, kappa). d is signed (left positive).
 
-        Windowed search around `hint`, with a full-line resync when the
-        windowed match is unreliable: at a window edge (kart crossed past the
-        slice — including the seam of a closed-loop racing line) or far away
-        in Euclidean terms (kart was teleported / drifted off). The full
-        search is ~O(line_n) numpy ops, cheap enough to run every tick when
-        triggered."""
+        Windowed search around `hint`, with a full-line resync when the windowed match is unreliable"""
         lo = max(0, hint - self.proj_back)
         hi = min(self.line_n, hint + self.proj_fwd)
         dx = self.l_x[lo:hi] - x
@@ -294,9 +289,7 @@ class MPCPlanner(Planner):
 
         at_lo_edge = (j == lo and lo > 0)
         at_hi_edge = (j == hi - 1 and hi < self.line_n)
-        # On a closed loop, the natural "window edge" near the seam is the
-        # last index of the array — windowed search there can't see the wrap
-        # to index 0. Force a full resync in that zone.
+        # On a closed loop, the natural "window edge" near the seam is the last index of the array
         near_seam = self.line_closed and (
             hint <= self.proj_back or hint >= self.line_n - self.proj_back
         )
@@ -325,8 +318,7 @@ class MPCPlanner(Planner):
     @staticmethod
     def _build_line_arrays(line: list) -> dict:
         """Convert waypoint rows (s,x,y,psi,kappa,vx) into flat numpy arrays
-        with a finite-difference psi tangent recomputed from xy. Used for both
-        the static racing line and the dynamic bezier overlay."""
+        with a finite-difference psi tangent recomputed from xy."""
         L = np.asarray([list(r[:6]) for r in line], dtype=np.float64)
         n = L.shape[0]
         l_s = L[:, 0]
@@ -343,7 +335,7 @@ class MPCPlanner(Planner):
         dy[-1] = l_y[-1] - l_y[-2]
         l_psi = np.arctan2(dy, dx)
         # Closed if first and last waypoints sit on top of each other (within
-        # 2 m). Used by _frenet to force a full-line resync near the seam.
+        # 2m). Used by _frenet to force a full-line resync near the seam.
         closed = bool(
             n >= 4
             and math.hypot(float(l_x[0] - l_x[-1]), float(l_y[0] - l_y[-1])) < 2.0
@@ -492,14 +484,7 @@ class MPCPlanner(Planner):
         cost = (c_d + c_h + c_v + c_delta + c_drate + c_accel
                 + c_bnd + c_edge + c_prog + c_term_d + c_term_h + c_alat)
 
-        # Corridor enforcement is a soft quadratic penalty (c_bnd above) — no
-        # hard infeasibility cliff. The hard-cliff version created a dead zone
-        # when the kart was outside the corridor but inside the bezier rejoin
-        # gate: every candidate trajectory started outside, so every plan was
-        # flagged infeasible and the planner returned (0, 0). The soft penalty
-        # still strongly pulls the kart back toward the line (w_boundary=1000
-        # by default) without freezing the planner.
-
+        # Corridor enforcement is a soft quadratic penalty (c_bnd above)
         best = int(np.argmin(cost))
         best_cost = float(cost[best])
         feasible = best_cost < self.feasibility_threshold
@@ -515,15 +500,6 @@ class MPCPlanner(Planner):
         return u, best_cost, traj, feasible, breakdown
 
     #  telemetry
-    # Status payload layout (Float32MultiArray, indices fixed for downstream
-    # parsers — append-only):
-    #   0..18  : mode, success, solve_ms, s, d, psi_track, v, v_target,
-    #            delta_cmd_deg, accel_cmd, cost_total, margin_min,
-    #            res_s, res_d, nom_s, nom_d, res_es, res_ed, samples_trained
-    #   19..30 : cost breakdown for the WINNING sample, in this order:
-    #            c_d, c_heading, c_speed, c_delta, c_drate, c_accel,
-    #            c_boundary, c_progress, c_terminal_d, c_terminal_heading,
-    #            c_a_lat, c_edge
     def _publish_status(self, mode, success, t0, s, d, psi_track, v, v_target,
                         delta_cmd, accel_cmd, cost, margin_min,
                         res_s=0.0, res_d=0.0, breakdown=(0.0,) * 12):

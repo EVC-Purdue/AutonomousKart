@@ -25,7 +25,7 @@ imu_node:
 master_api:
   ros__parameters:
     # IMU yaw-calibration drive
-    yaw_cal_speed: 10.0
+    yaw_cal_speed: 2.0
     yaw_cal_duration_s: 5.0
     yaw_cal_tick_dt: 0.05    # seconds between manual_commands publishes / sample snapshots
     yaw_cal_accel_floor: 0.3 # m/s^2; only samples with horizontal accel above this are used

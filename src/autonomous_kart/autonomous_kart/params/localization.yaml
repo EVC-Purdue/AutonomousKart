@@ -5,12 +5,10 @@ localization_node:
     yaw_noise: 0.05     # rad^2/s
     accel_noise: 4.0      # (m/s^2)^2/s
 
-    # GPS pseudo-measurement gates (both must pass)
-    pseudo_speed_gate: 0.2      # m/s
-    pseudo_disp_gate: 0.02     # m
+    # VTG validity gates
+    vtg_yaw_var_max: 1.0       # rad^2
+    vtg_speed_var_max: 100.0   # (m/s)^2
 
-    init_disp_min: 0.30     # m
-    gps_max_age: 0.5      # s
     cmd_drive_max_age: 1.0      # s
     gps_dropout_warn: 2.0      # s
     sigma_xy_floor: 0.02     # m
@@ -19,7 +17,7 @@ localization_node:
     sim_odom_rate_hz: 10.0             # /odom publish rate (Hz) — matches real GPS cadence
     sim_noise_seed: 0                  # RNG seed (deterministic noise sequence)
     sim_actuator_delay_s: 0.08         # 80 ms
-    sim_cmd_motor_noise_pct: 1.5       # std on throttle command (%)
+    sim_cmd_motor_noise_mps: 0.3       # std on throttle command (m/s)
     sim_cmd_steer_noise_deg: 1.0       # std on steering command (deg)
     sim_pos_noise_m: 0.03              # std on x, y output (m)
     sim_yaw_noise_deg: 0.5             # std on yaw output (deg)

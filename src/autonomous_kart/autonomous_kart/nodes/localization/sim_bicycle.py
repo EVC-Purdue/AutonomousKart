@@ -2,7 +2,7 @@
 Kinematic bicycle model. Pure math, no ROS dependencies. Mostly borrowed from NAV2
 
 State: (x, y, yaw, speed)
-Input: (motor_pct 0-100, steer_deg)
+Input: (target_mps, steer_deg)
 """
 import math
 
@@ -33,10 +33,9 @@ class BicycleModel:
         self.yaw = yaw
         self.speed = 0.0
 
-    def step(self, motor_pct: float, steer_deg: float, dt: float):
+    def step(self, target_mps: float, steer_deg: float, dt: float):
         """Advance one timestep. Returns (x, y, yaw, speed)."""
-        # Target speed from motor %
-        target_v = max(0.0, min(self.v_max, (motor_pct / 100.0) * self.v_max))
+        target_v = max(0.0, min(self.v_max, target_mps))
 
         # 1st-order lag
         tau = self.accel_tau if target_v >= self.speed else self.brake_tau

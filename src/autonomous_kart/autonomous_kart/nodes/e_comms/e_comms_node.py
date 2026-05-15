@@ -99,7 +99,7 @@ class ECommsNode(Node):
         self.hb_timer = self.create_timer(self.hb_tx_period_ms / 1000.0, self.can_hb_tx)
 
         # Publishers
-        self.adcb_state_pub = self.create_publisher(String, "e_comms/logic_state", 1)
+        self.logic_state_pub = self.create_publisher(String, "e_comms/logic_state", 1)
         self.running_mode_pub = self.create_publisher(String, "e_comms/running_mode", 1)
         self.throttle_pwm_pub = self.create_publisher(UInt16, "e_comms/throttle_pwm", 1)
         self.steering_pwm_pub = self.create_publisher(UInt16, "e_comms/steering_pwm", 1)
@@ -126,7 +126,7 @@ class ECommsNode(Node):
         try:
             self.adcb_status = e_comms.unpack_adcb_status_message(msg_data, self.logger)
 
-            self.adcb_state_pub.publish(String(data=self.adcb_status.logic_state))
+            self.logic_state_pub.publish(String(data=self.adcb_status.logic_state))
             self.running_mode_pub.publish(String(data=self.adcb_status.running_mode))
             self.throttle_pwm_pub.publish(UInt16(data=self.adcb_status.throttle_pwm))
             self.steering_pwm_pub.publish(UInt16(data=self.adcb_status.steering_pwm))

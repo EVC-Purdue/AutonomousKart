@@ -2,9 +2,9 @@
 Integration tests for PathfinderNode.
 
 Construction exercises CSV loading + planner wiring. Beyond that we verify:
- - AUTONOMOUS mode: fake odom + fake track_angles → publishes on
+ - AUTONOMOUS mode: fake odom + fake track_angles -> publishes on
    cmd_drive ([throttle, steering]).
- - IDLE mode: same inputs → silent.
+ - IDLE mode: same inputs -> silent.
  - update_state accepts valid values and rejects garbage.
 """
 import time
@@ -104,7 +104,7 @@ def test_pathfinder_issues_commands_in_autonomous_mode(
 
             assert len(drive) >= 1, "pathfinder never published cmd_drive"
             # Tiny racing line is straight along +x, kart is at origin, yaw 0
-            # → steering should be small.
+            # -> steering should be small.
             assert abs(drive[-1][1]) < 5.0
         finally:
             exe.remove_node(driver)

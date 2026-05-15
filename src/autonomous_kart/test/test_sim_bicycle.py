@@ -61,7 +61,7 @@ def test_motor_is_clamped_to_nonnegative_and_v_max():
 def test_steering_clamped_to_physical_limit():
     m = _mk(steer_max_deg=25.0)
     m.speed = 5.0
-    # Command 90 deg but physical max is 25 deg → yaw rate should match 25 deg
+    # Command 90 deg but physical max is 25 deg -> yaw rate should match 25 deg
     m_ref = _mk(steer_max_deg=25.0)
     m_ref.speed = 5.0
     for _ in range(10):

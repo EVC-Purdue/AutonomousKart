@@ -3,10 +3,10 @@ Unit tests for the Nav2-style regulated pure-pursuit controller
 in `autonomous_kart.nodes.pathfinder.pathfinder`.
 
 Tests exercise the behaviours that actually matter on the kart:
- - straight-ahead target → zero steering
- - lateral offset → turn toward it, signed correctly
- - sharp corner → curvature regulation slows throttle
- - target behind vehicle → crawl forward, don't command negative speed
+ - straight-ahead target -> zero steering
+ - lateral offset -> turn toward it, signed correctly
+ - sharp corner -> curvature regulation slows throttle
+ - target behind vehicle -> crawl forward, don't command negative speed
  - approach slowdown near end of path
  - degenerate configs return (0, 0) instead of blowing up
  - clamping of speed_mps / desired_speed_mps inputs
@@ -71,7 +71,7 @@ def test_larger_lateral_offset_steers_harder_than_smaller():
 
 
 def test_curvature_regulation_slows_throttle_on_sharp_bend():
-    # Tight target → high curvature → regulated velocity scaling engages.
+    # Tight target -> high curvature -> regulated velocity scaling engages.
     kw_off = dict(use_curvature_regulation=False)
     kw_on = dict(use_curvature_regulation=True, min_radius_m=12.0)
     target = (3.0, 2.0)  # sharp
@@ -83,7 +83,7 @@ def test_curvature_regulation_slows_throttle_on_sharp_bend():
 
 
 def test_curvature_regulation_does_not_slow_gentle_bend():
-    # Large radius → regulation should be a no-op.
+    # Large radius -> regulation should be a no-op.
     t_off, _ = call(target=(10.0, 0.1), use_curvature_regulation=False)
     t_on, _ = call(target=(10.0, 0.1), use_curvature_regulation=True, min_radius_m=12.0)
     assert t_on == pytest.approx(t_off, rel=1e-6)
@@ -95,7 +95,7 @@ def test_target_behind_vehicle_returns_crawl_speed():
         target=(-2.0, 0.5),
         desired_speed_mps=15.0,
     )
-    # Code path: x_v <= 0  →  crawl forward, full lock toward target side.
+    # Code path: x_v <= 0  ->  crawl forward, full lock toward target side.
     assert throttle == pytest.approx(1.5, abs=1e-6)
     assert steer == pytest.approx(25.0, abs=1e-6)
 

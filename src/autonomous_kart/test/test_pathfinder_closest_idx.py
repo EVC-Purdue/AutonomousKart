@@ -257,7 +257,7 @@ def test_racing_line_closest_idx_advances_while_dynamic_line_active(
             cte = node.planner.line_manager.compute_cte(
                 node.current_xy, node.racing_line, node.planner.closest_idx
             )
-            assert cte < 1.0, f"CTE inflated ({cte:.2f}m) — closest_idx stale"
+            assert cte < 1.0, f"CTE inflated ({cte:.2f}m) closest_idx stale"
         finally:
             node.destroy_node()
 

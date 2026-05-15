@@ -14,7 +14,7 @@ localization_node:
     sigma_xy_floor: 0.02     # m
 
     # Sim-only noise + actuator delay
-    sim_odom_rate_hz: 10.0             # /odom publish rate (Hz) — matches real GPS cadence
+    sim_odom_rate_hz: 10.0             # /odom publish rate (Hz) matches real GPS cadence
     sim_noise_seed: 0                  # RNG seed (deterministic noise sequence)
     sim_actuator_delay_s: 0.08         # 80 ms
     sim_cmd_motor_noise_mps: 0.3       # std on throttle command (m/s)

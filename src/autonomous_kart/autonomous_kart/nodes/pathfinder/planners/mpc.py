@@ -33,7 +33,7 @@ MODE_NORMAL, MODE_FAILSAFE = 0, 2
 
 
 def _wrap(angle):
-    """Wrap to (-pi, pi] — works on scalars or numpy arrays."""
+    """Wrap to (-pi, pi] works on scalars or numpy arrays."""
     return (angle + math.pi) % (2.0 * math.pi) - math.pi
 
 
@@ -62,7 +62,7 @@ class MPCPlanner(Planner):
         # unreliable and _frenet falls back to a full-line nearest search.
         self._resync_dist2 = float(g("frenet_resync_m", 5.0)) ** 2
 
-        # Physical limits pulled from kart constants (kart-wide /**: block —
+        # Physical limits pulled from kart constants (kart-wide /**: block
         # no duplicates lurking in the mpc block).
         self.steer_max = math.radians(kart.steer_max_deg)
         self.steer_rate_max = math.radians(kart.steer_rate_max_degps)
@@ -135,7 +135,7 @@ class MPCPlanner(Planner):
         self.consec_failures = 0
         self.mode = MODE_NORMAL
 
-        # Residual learner (delay sized by 1/system_frequency) 
+        # Residual learner (delay sized by 1/system_frequency)
         solve_dt = 1.0 / float(node.get_parameter("system_frequency").value) \
             if node is not None else self.dt
         residual_params = {
@@ -250,7 +250,7 @@ class MPCPlanner(Planner):
         self._steer_hist.appendleft(delta_cmd)
         self._throttle_hist.appendleft(accel_cmd)
 
-        # Residual learner (shadow) 
+        # Residual learner (shadow)
         # nominal (held-command - straight line no acceleration) prediction over target_horizon_s of motion.
         nom_x, nom_y = self._hold_rollout(x, y, yaw, v, delta_cmd, accel_cmd, self._nom_steps)
         nom_s, nom_d, _, _, _ = self._frenet(nom_x, nom_y, j_now)
@@ -377,7 +377,7 @@ class MPCPlanner(Planner):
         return (s_now - ref[1]) / dt, (d_now - ref[2]) / dt
 
     def _hold_rollout(self, x, y, yaw, v, delta, a, n):
-        """Single-trajectory bicycle rollout — used by the residual learner."""
+        """Single-trajectory bicycle rollout used by the residual learner."""
         for _ in range(n):
             x += self.dt * v * math.cos(yaw)
             y += self.dt * v * math.sin(yaw)
@@ -464,7 +464,7 @@ class MPCPlanner(Planner):
 
         progress = s[:, -1] - s[:, 0]
 
-        # Named cost components — also exported for diagnostics.
+        # Named cost components also exported for diagnostics.
         a_lat = tv * tv * np.tan(delta_seq) / self.wheelbase
         edge_excess = np.maximum(0.0, np.abs(d) - self.edge_inner)
         c_d = self.w_d * np.sum(d * d, axis=1)

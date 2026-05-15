@@ -140,7 +140,7 @@ class DynamicLineManager:
                         if self.logger:
                             name = type(strategy).__name__
                             self.logger.warn(
-                                f"Dynamic line [{name}] activated — "
+                                f"Dynamic line [{name}] activated "
                                 f"CTE={state.cross_track_error:.2f}m, "
                                 f"merge_idx={self.merge_idx}"
                             )

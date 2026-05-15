@@ -62,7 +62,7 @@ class GpsNode(Node):
         self.logger = self.get_logger()
 
         self.gps_frequency = self.get_parameter("gps_frequency").value
-        
+
         self.gps_data_pos: list[float] = [0.0, 0.0, 0.0]
         self.gps_data_quaternion = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
         self.gps_data_cov: list[float] = [0.0] * 36
@@ -81,8 +81,8 @@ class GpsNode(Node):
         self.gps_data_twist_cov[21] = 1e6  # wx
         self.gps_data_twist_cov[28] = 1e6  # wy
         self.gps_data_twist_cov[35] = 1e6  # wz
-        # σ_v is the modem doppler-speed 1-sigma (spec value). σ_yaw is
-        # derived from it at runtime as σ_v / v.
+        # sigma_v is the modem doppler-speed 1-sigma (spec value). sigma_yaw is
+        # derived from it at runtime as sigma_v / v.
         self.vtg_speed_sigma = float(self.get_parameter("vtg_speed_sigma_mps").value)
         self.vtg_min_speed_for_yaw = float(self.get_parameter("vtg_min_speed_for_yaw").value)
 
@@ -110,7 +110,7 @@ class GpsNode(Node):
 
         self.timer = self.create_timer(1.0 / self.gps_frequency, self.publish_gps)
 
-        
+
     def publish_gps(self):
         """
         Publishes the 2D coordinates and error
@@ -267,7 +267,7 @@ class GpsNode(Node):
     def handle_gsa(self, fields):
         if not fields[16] or not fields[17]:
             return
-        
+
         hdop = float(fields[16]) ** 2 if fields[16] else 0.0
         vdop = float(fields[17]) ** 2 if fields[17] else 0.0
 
@@ -322,11 +322,11 @@ class GpsNode(Node):
         else:
             self.gps_data_twist_cov[0] = 1e6
 
-        # σ_yaw = σ_v / v — only meaningful once the kart is actually moving.
+        # sigma_yaw = sigma_v / v only meaningful once the kart is actually moving.
         if fields[1] and v is not None and v > self.vtg_min_speed_for_yaw:
             try:
                 track_true_deg = float(fields[1])
-                # Bearing (CW from north) → ENU yaw (CCW from east).
+                # Bearing (CW from north) -> ENU yaw (CCW from east).
                 raw = math.pi / 2.0 - math.radians(track_true_deg)
                 self.gps_yaw_rad = math.atan2(math.sin(raw), math.cos(raw))
                 self.gps_data_cov[35] = (self.vtg_speed_sigma / v) ** 2
@@ -363,17 +363,17 @@ class GpsNode(Node):
     def nmea_to_decimal(self, value: str, direction: str) -> float:
         d = float(value)
 
-        # nmea format is in ddmm.mmm or dddmm.mmm 
+        # nmea format is in ddmm.mmm or dddmm.mmm
         # where d is degrees and m is decimal minutes
 
-        degrees = int(d / 100)
+ degrees = int(d / 100)
         minutes = d - degrees * 100
 
         decimal = degrees + (minutes / 60.0)
 
         if direction in ('S', 'W'):
             decimal *= -1
-        
+
         return decimal
 
     def _rtcm_loop(self):

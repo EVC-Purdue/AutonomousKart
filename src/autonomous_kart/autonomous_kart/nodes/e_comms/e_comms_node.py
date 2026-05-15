@@ -77,7 +77,7 @@ class ECommsNode(Node):
         self.create_timer(5.0, self.log_command_rate)
 
         # Subscribe for combined [throttle, steering] commands. Both values must
-        # arrive together — the CAN control frame carries both, so it never makes
+        # arrive together the CAN control frame carries both, so it never makes
         # sense to update one half on its own. Each message updates internal state
         # and immediately fires can_control_tx.
         self.drive_sub = self.create_subscription(Float32MultiArray, "cmd_drive", self.cmd_drive, 5)

@@ -1,5 +1,5 @@
 """
-Localization node — publishes Odometry on /odom.
+Localization node publishes Odometry on /odom.
 
 Sim mode:  Integrates bicycle kinematics from cmd_drive [throttle, steering].
 Real mode: EKF over GPS xy + GPS course + GPS speed
@@ -31,14 +31,7 @@ class LocalizationNode(Node):
             automatically_declare_parameters_from_overrides=True,
         )
         self.logger = self.get_logger()
-        # Defensive bool coercion: launch substitution may leak through as the
-        # string "true"/"false"; treat both the same way as a real bool.
-        raw_sim = self.get_parameter("simulation_mode").value
-        if isinstance(raw_sim, str):
-            self.sim_mode = raw_sim.strip().lower() in ("true", "1", "yes")
-        else:
-            self.sim_mode = bool(raw_sim)
-        self.logger.info(f"Localization mode: sim={self.sim_mode} (raw={raw_sim!r})")
+        self.sim_mode = self.get_parameter("simulation_mode").value
 
         # Output
         self.odom_pub = self.create_publisher(Odometry, "odom", 10)
@@ -50,7 +43,7 @@ class LocalizationNode(Node):
             self._init_real()
 
         self.logger.info(
-            f"Localization Node started — Mode: {'SIM' if self.sim_mode else 'REAL'}"
+            f"Localization Node started Mode: {'SIM' if self.sim_mode else 'REAL'}"
         )
 
     def _init_sim(self):
@@ -65,8 +58,7 @@ class LocalizationNode(Node):
         # Spawn at racing line start if available
         self._auto_spawn()
 
-        # Sim noise + actuator delay. All default to 0 so the sim stays
-        # deterministic unless explicitly tuned via localization.yaml.
+        # Sim noise + actuator delay
         def _np(name, default):
             return float(self._param(name, default))
 
@@ -80,18 +72,14 @@ class LocalizationNode(Node):
             int(self._param("sim_noise_seed", 0))
         )
 
-        # Throttle /odom publish to GPS-like cadence even though the bicycle
-        # integrates at system_frequency for smooth physics. On hardware,
-        # localization gets fresh GPS at 10 Hz; mirror that here so MPC sees
-        # the same update rate.
+        # Throttle /odom publish to GPS frequency
         sim_odom_hz = _np("sim_odom_rate_hz", hz)
         if sim_odom_hz <= 0.0:
             sim_odom_hz = hz
         self._sim_publish_every = max(1, int(round(hz / sim_odom_hz)))
         self._sim_tick_count = 0
 
-        # Cached "currently-applied" cmd after delay queue dequeues. Starts at
-        # zero so the first ticks don't take whatever uninitialised value.
+        # Cached "currently-applied" cmd after delay queue dequeues
         self.cmd_motor = 0.0
         self.cmd_steer = 0.0
         self._cmd_queue: deque = deque()  # (apply_time_s, motor, steer)
@@ -119,11 +107,11 @@ class LocalizationNode(Node):
                     yaw0 = math.atan2(dy, dx)
                     self.model.reset(x0, y0, yaw0)
                     self.logger.info(
-                        f"Spawned at ({x0:.1f}, {y0:.1f}, {math.degrees(yaw0):.0f}°)"
+                        f"Spawned at ({x0:.1f}, {y0:.1f}, {math.degrees(yaw0):.0f} deg)"
                     )
         except Exception:
             self.logger.warning("line_path missing")
-            pass  # No line_path or file missing — start at origin
+            pass  # No line_path or file missing start at origin
 
     def _cb_drive(self, msg: Float32MultiArray):
         if len(msg.data) < 2:
@@ -140,26 +128,22 @@ class LocalizationNode(Node):
                 (self._now_s() + self._sim_delay_s, motor, steer)
             )
         else:
-            # No delay → take effect immediately.
+            # No delay -> take effect immediately.
             self.cmd_motor = motor
             self.cmd_steer = steer
 
     def _sim_step(self):
-        # Pop everything from the delay queue that has aged in; the latest
-        # popped command is the one the actuator is currently honoring.
+        # Pop everything from the delay queue that has aged in
         if self._cmd_queue:
             now = self._now_s()
             while self._cmd_queue and self._cmd_queue[0][0] <= now:
                 _, self.cmd_motor, self.cmd_steer = self._cmd_queue.popleft()
 
-        # Always step physics at system_frequency for smooth integration with
-        # the actuator delay buffer.
         x, y, yaw, speed = self.model.step(
             self.cmd_motor, self.cmd_steer, self.dt
         )
 
-        # Throttle /odom to GPS-like cadence — apply output noise + publish
-        # only on these ticks.
+        # Throttle /odom to GPS-like cadence apply output noise + publish
         self._sim_tick_count += 1
         if self._sim_tick_count % self._sim_publish_every != 0:
             return
@@ -192,8 +176,8 @@ class LocalizationNode(Node):
         self.cmd_drive_max_age = float(self._param("cmd_drive_max_age", 1.0))
         self.gps_dropout_warn = float(self._param("gps_dropout_warn", 2.0))
         self.sigma_xy_floor = float(self._param("sigma_xy_floor", 0.02))
-        self.vtg_yaw_var_max = float(self._param("vtg_yaw_var_max", 1.0))  # rad²
-        self.vtg_speed_var_max = float(self._param("vtg_speed_var_max", 100.0))  # (m/s)²
+        self.vtg_yaw_var_max = float(self._param("vtg_yaw_var_max", 1.0))  # rad^2
+        self.vtg_speed_var_max = float(self._param("vtg_speed_var_max", 100.0))  # (m/s)^2
 
         # Last GPS timestamp, for dropout warnings.
         self._last_gps_t = None  # float seconds
@@ -269,7 +253,7 @@ class LocalizationNode(Node):
         cov[11] = float(P[1, 2])
         cov[31] = float(P[2, 1])
         cov[35] = float(P[2, 2])
-        # Leave z/roll/pitch (indices 14, 21, 28) at 0 — unobserved.
+        # Leave z/roll/pitch (indices 14, 21, 28) at 0 unobserved.
         return cov
 
     def gps_callback(self, msg: Odometry):
@@ -286,7 +270,7 @@ class LocalizationNode(Node):
 
         # VTG-derived course + speed travel inside the GPS Odometry:
         # orientation carries yaw (ENU, rad) and twist.linear.x carries
-        # forward speed (m/s). Validity is signalled by the cov entries —
+        # forward speed (m/s). Validity is signalled by the cov entries
         # the gps_node leaves them at 1e6 when no usable VTG arrived.
         q = msg.pose.pose.orientation
         yaw_meas = 2.0 * math.atan2(float(q.z), float(q.w))
@@ -305,7 +289,7 @@ class LocalizationNode(Node):
                 P0 = np.diag([sigma_xx, sigma_yy, var_yaw, var_v0])
                 self.ekf.reset(x, y, yaw_meas, v0, P=P0)
                 self.logger.info(
-                    f"EKF init: pos=({x:.2f},{y:.2f}) yaw={math.degrees(yaw_meas):.1f}° v={v0:.2f} m/s"
+                    f"EKF init: pos=({x:.2f},{y:.2f}) yaw={math.degrees(yaw_meas):.1f} deg v={v0:.2f} m/s"
                 )
             self._last_gps_t = t
             return

@@ -172,6 +172,6 @@ def test_localization_real_mode_folds_vtg_updates(ros_ctx):
                           yaw_var=1e6, speed_var=0.01)
             )
             _, _, _, v_after = node.ekf.x
-            assert v_after > v, f"speed-only update should pull v up: {v}→{v_after}"
+            assert v_after > v, f"speed-only update should pull v up: {v}->{v_after}"
         finally:
             node.destroy_node()

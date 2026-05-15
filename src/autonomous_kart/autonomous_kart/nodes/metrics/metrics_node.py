@@ -6,7 +6,7 @@ from typing import Deque, Dict, Any
 import rclpy
 from sensor_msgs.msg import Image
 from rclpy.node import Node
-from std_msgs.msg import Float32, Float32MultiArray, Int16, String, Bool, UInt16
+from std_msgs.msg import Float32, Float32MultiArray, Int16, String,  UInt16
 from nav_msgs.msg import Odometry
 
 

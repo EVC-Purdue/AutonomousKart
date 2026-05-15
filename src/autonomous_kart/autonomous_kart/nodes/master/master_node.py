@@ -8,7 +8,7 @@ import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-from std_msgs.msg import String, Float32MultiArray, Float32, Bool, UInt16, Empty
+from std_msgs.msg import String, Float32MultiArray, Float32,  UInt16, Empty
 
 
 class STATES(Enum):

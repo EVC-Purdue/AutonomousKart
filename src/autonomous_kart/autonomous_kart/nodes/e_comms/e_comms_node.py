@@ -114,7 +114,7 @@ class ECommsNode(Node):
         if self.executor is None:
             self.logger.warning("CAN message received before executor ready, dropping frame")
             return
-        
+        self.logger.info(f"{msg.arbitration_id}")
         data = bytes(msg.data)  # copy, don't hold a reference
         
         if msg.arbitration_id == STATUS_ID:

@@ -97,6 +97,32 @@ class MasterNode(Node):
             String, "pathfinder/dynamic_line", self.dynamic_line_callback, 1
         )
 
+        # MPC status snapshot (cost breakdown for /mpc_status endpoint)
+        # Field layout matches mpc.py:_publish_status (append-only).
+        self.mpc_status_data = {
+            "received": False,
+            "mode": 0, "success": False, "solve_ms": 0.0,
+            "s": 0.0, "d": 0.0, "psi_track": 0.0,
+            "v": 0.0, "v_target": 0.0,
+            "delta_cmd_deg": 0.0, "accel_cmd": 0.0,
+            "cost_total": 0.0, "margin_min": 0.0,
+            "res_s": 0.0, "res_d": 0.0,
+            "nom_s": 0.0, "nom_d": 0.0,
+            "res_es": 0.0, "res_ed": 0.0,
+            "samples_trained": 0.0,
+            "costs": {
+                "d": 0.0, "heading": 0.0, "speed": 0.0,
+                "delta": 0.0, "drate": 0.0, "accel": 0.0,
+                "boundary": 0.0, "progress": 0.0,
+                "terminal_d": 0.0, "terminal_heading": 0.0,
+                "a_lat": 0.0,
+                "edge": 0.0,
+            },
+        }
+        self.create_subscription(
+            Float32MultiArray, "mpc/status", self._mpc_status_callback, 5
+        )
+
         # GPS status snapshot (fix quality, RTK, sigmas, RTCM stats)
         self.gps_status_data = {"fix_quality": 0, "fix_label": "INVALID"}
         self.create_subscription(String, "gps/status", self._gps_status_callback, 1)
@@ -132,6 +158,55 @@ class MasterNode(Node):
     def get_dynamic_line(self):
         with self._lock:
             return dict(self.dynamic_line_data)
+
+    def _mpc_status_callback(self, msg: Float32MultiArray):
+        data = list(msg.data)
+        if len(data) < 31:
+            return
+        snapshot = {
+            "received": True,
+            "mode": int(data[0]),
+            "success": bool(data[1] > 0.5),
+            "solve_ms": float(data[2]),
+            "s": float(data[3]),
+            "d": float(data[4]),
+            "psi_track": float(data[5]),
+            "v": float(data[6]),
+            "v_target": float(data[7]),
+            "delta_cmd_deg": float(data[8]),
+            "accel_cmd": float(data[9]),
+            "cost_total": float(data[10]),
+            "margin_min": float(data[11]),
+            "res_s": float(data[12]),
+            "res_d": float(data[13]),
+            "nom_s": float(data[14]),
+            "nom_d": float(data[15]),
+            "res_es": float(data[16]),
+            "res_ed": float(data[17]),
+            "samples_trained": float(data[18]),
+            "costs": {
+                "d": float(data[19]),
+                "heading": float(data[20]),
+                "speed": float(data[21]),
+                "delta": float(data[22]),
+                "drate": float(data[23]),
+                "accel": float(data[24]),
+                "boundary": float(data[25]),
+                "progress": float(data[26]),
+                "terminal_d": float(data[27]),
+                "terminal_heading": float(data[28]),
+                "a_lat": float(data[29]),
+                "edge": float(data[30]),
+            },
+        }
+        with self._lock:
+            self.mpc_status_data = snapshot
+
+    def get_mpc_status(self):
+        with self._lock:
+            snap = dict(self.mpc_status_data)
+            snap["costs"] = dict(snap["costs"])
+            return snap
 
     def logs_callback(self, msg):
         logs = json.loads(msg.data)

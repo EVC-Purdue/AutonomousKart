@@ -2,10 +2,10 @@
 Extended Kalman Filter for kart localization. Pure math, no ROS.
 
 State vector x:
-    x[0] = px   — x position (m)
-    x[1] = py   — y position (m)
-    x[2] = yaw  — heading (rad)
-    x[3] = v    — forward speed (m/s)
+    x[0] = px   x position (m)
+    x[1] = py   y position (m)
+    x[2] = yaw  heading (rad)
+    x[3] = v    forward speed (m/s)
 
 Predict rolls x forward using bicycle kinematics driven by commanded
 steering. Update folds in GPS xy directly, plus heading and speed
@@ -19,7 +19,7 @@ import numpy as np
 
 
 def _wrap(a: float) -> float:
-    """Wrap an angle into (-π, π]."""
+    """Wrap an angle into (-pi, pi]."""
     return math.atan2(math.sin(a), math.cos(a))
 
 
@@ -69,7 +69,7 @@ class LocalizationEKF:
         delta = max(-self.steer_max, min(self.steer_max, float(steer_rad)))
         sin_y, cos_y = math.sin(yaw), math.cos(yaw)
 
-        # Advance the mean. v is unchanged — only process noise drives it.
+        # Advance the mean. v is unchanged only process noise drives it.
         self.x[0] = px + v * cos_y * dt
         self.x[1] = py + v * sin_y * dt
         if self.L > 1e-6:
@@ -103,7 +103,7 @@ class LocalizationEKF:
         H = np.zeros((1, 4))
         H[0, 2] = 1.0
         z = np.array([float(yaw_meas)])
-        # Yaw is circular — wrap the innovation.
+        # Yaw is circular wrap the innovation.
         innovation = np.array([_wrap(float(yaw_meas) - self.x[2])])
         self._linear_update(H, z, np.array([[float(var)]]), innovation=innovation)
 

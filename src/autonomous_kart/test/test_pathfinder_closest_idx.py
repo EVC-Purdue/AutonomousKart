@@ -119,9 +119,9 @@ def test_pick_lookahead_point_is_pure(ros_ctx, tiny_racing_line):
             "pure_pursuit.max_lookahead_m": 8.0,
             "pure_pursuit.use_curvature_regulation": True,
             "pure_pursuit.min_radius_m": 12.0,
-            "pure_pursuit.min_reg_speed_pct": 0.20,
+            "pure_pursuit.min_reg_speed_mps": 3.0,
             "pure_pursuit.approach_dist_m": 1.0,
-            "pure_pursuit.min_approach_speed_pct": 0.05,
+            "pure_pursuit.min_approach_speed_mps": 0.75,
             "pure_pursuit.search_window": 80,
             "pure_pursuit.initial_sync_done": False,
             "pure_pursuit.max_resync_dist": 80.0,
@@ -165,9 +165,9 @@ def _params(line_path, system_state="AUTONOMOUS"):
         "pure_pursuit.max_lookahead_m": 8.0,
         "pure_pursuit.use_curvature_regulation": True,
         "pure_pursuit.min_radius_m": 12.0,
-        "pure_pursuit.min_reg_speed_pct": 0.20,
+        "pure_pursuit.min_reg_speed_mps": 3.0,
         "pure_pursuit.approach_dist_m": 1.0,
-        "pure_pursuit.min_approach_speed_pct": 0.05,
+        "pure_pursuit.min_approach_speed_mps": 0.75,
         "pure_pursuit.search_window": 80,
         "pure_pursuit.initial_sync_done": False,
         "pure_pursuit.max_resync_dist": 20.0,
@@ -257,7 +257,7 @@ def test_racing_line_closest_idx_advances_while_dynamic_line_active(
             cte = node.planner.line_manager.compute_cte(
                 node.current_xy, node.racing_line, node.planner.closest_idx
             )
-            assert cte < 1.0, f"CTE inflated ({cte:.2f}m) — closest_idx stale"
+            assert cte < 1.0, f"CTE inflated ({cte:.2f}m) closest_idx stale"
         finally:
             node.destroy_node()
 

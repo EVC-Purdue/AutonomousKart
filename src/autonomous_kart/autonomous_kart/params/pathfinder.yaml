@@ -19,7 +19,7 @@
 pathfinder_node:
   ros__parameters:
     # Active planner: mpc | opencv | pure_pursuit
-    planner: pure_pursuit
+    planner: mpc
 
     # pure_pursuit
     pure_pursuit.use_velocity_scaled_lookahead: true
@@ -28,9 +28,9 @@ pathfinder_node:
     pure_pursuit.max_lookahead_m: 8.0
     pure_pursuit.use_curvature_regulation: true
     pure_pursuit.min_radius_m: 10.0
-    pure_pursuit.min_reg_speed_pct: 0.20
+    pure_pursuit.min_reg_speed_mps: 4.0
     pure_pursuit.approach_dist_m: 1.0
-    pure_pursuit.min_approach_speed_pct: 0.05
+    pure_pursuit.min_approach_speed_mps: 1.0
     pure_pursuit.search_window: 80
     pure_pursuit.initial_sync_done: false
     pure_pursuit.max_resync_dist: 80
@@ -44,36 +44,40 @@ pathfinder_node:
     # mpc: sampling MPC
     mpc.horizon_steps: 20
     mpc.dt_s: 0.05
-    mpc.num_samples: 48
-    mpc.steer_sigma_deg: 6.0
-    mpc.accel_sigma_mps2: 1.0
+    mpc.num_samples: 128
+    mpc.steer_sigma_deg: 2.89
+    mpc.accel_sigma_mps2: 1.43
     mpc.proj_window_back: 5
-    mpc.proj_window_fwd: 60
+    mpc.proj_window_fwd: 37
     mpc.frenet_v_window_s: 0.3
-    mpc.target_speed_pct: 0.30
-    mpc.track_half_width_m: 2.5
+    mpc.target_speed_mps: 17.4
+    mpc.track_half_width_m: 2.0
     mpc.safety_margin_m: 0.5
     mpc.kart_half_width_m: 0.5025
     #  mpc costs
-    mpc.w_d: 100.0
-    mpc.w_heading: 30.0
-    mpc.w_speed: 5.0
+    mpc.w_d: 8.85
+    mpc.w_heading: 2.97
+    mpc.w_speed: 30.69
     mpc.w_delta: 5.0
-    mpc.w_delta_rate: 50.0
+    mpc.w_delta_rate: 12.02
     mpc.w_accel: 2.0
-    mpc.w_boundary: 1000.0
-    mpc.w_progress: 1.0
-    mpc.w_terminal_d: 200.0
-    mpc.w_terminal_heading: 100.0
-    mpc.w_a_lat: 50.0
-    #  mpc rejoin
-    mpc.rejoin_activate_d_m: 2.5
-    mpc.rejoin_deactivate_d_m: 1.0
-    mpc.rejoin_v_max_mps: 2.0
+    mpc.w_boundary: 143.22
+    mpc.w_progress: 6.23
+    mpc.w_terminal_d: 64.86
+    mpc.w_terminal_heading: 11.35
+    mpc.w_a_lat: 8.36
+    # Inner-corridor "stay-centered" barrier: zero inside the inner zone,
+    # quadratic out to the corridor wall.
+    mpc.w_edge: 1456.58
+    mpc.edge_inner_frac: 0.274
+    #  mpc rejoin (bezier overlay via DynamicLineManager + RejoinStrategy)
+    mpc.rejoin_cte_activate: 2.5
+    mpc.rejoin_cte_deactivate: 1.0
+    mpc.rejoin_merge_lookahead_m: 15.0
+    mpc.rejoin_min_turning_radius: 3.0
     #  mpc failsafe / feasibility sentinels
     mpc.max_consecutive_solver_failures: 3
     mpc.infeasible_cost: 1000000000.0
-    mpc.rejoin_terminal_penalty: 100000.0
     mpc.feasibility_threshold: 500000000.0
     #  mpc residual learner
     mpc.residual.mode: shadow
@@ -83,5 +87,5 @@ pathfinder_node:
     mpc.residual.min_train_speed_mps: 0.5
     mpc.residual.error_window: 200
 
-    #  safety wrapper
+    #  safety wrapper 
     safety.enabled: true

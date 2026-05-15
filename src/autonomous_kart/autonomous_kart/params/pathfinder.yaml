@@ -8,13 +8,13 @@
 /**:
   ros__parameters:
     # Kart-wide physical limits (shared by every node)
-    v_max_mps: 20.0              # max kart speed (m/s)
-    wheelbase_m: 1.05            # rear-axle → front-axle (m)
-    steer_max_deg: 25.0          # physical front-wheel steering limit (deg)
-    steer_rate_max_degps: 180.0  # max steering slew rate (deg/s)
-    a_max_mps2: 2.0              # max forward acceleration (m/s^2)
-    a_min_mps2: -3.0             # max braking deceleration (m/s^2, negative)
-    a_lat_max_mps2: 4.0          # tire-grip lateral accel cap (m/s^2)
+    v_max_mps: 20.0 # max kart speed (m/s)
+    wheelbase_m: 1.05 # rear-axle → front-axle (m)
+    steer_max_deg: 25.0 # physical front-wheel steering limit (deg)
+    steer_rate_max_degps: 180.0 # max steering slew rate (deg/s)
+    a_max_mps2: 2.0 # max forward acceleration (m/s^2)
+    a_min_mps2: -3.0 # max braking deceleration (m/s^2, negative)
+    a_lat_max_mps2: 4.0 # tire-grip lateral accel cap (m/s^2)
 
 pathfinder_node:
   ros__parameters:

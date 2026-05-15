@@ -361,7 +361,7 @@ class MasterNode(Node):
                 "docker exec ros2-dev bash -lc '"
                 "source /opt/ros/humble/setup.bash && "
                 "cd /ws && "
-                "colcon build --symlink-install && "
+                "colcon build && "
                 "source install/setup.bash && "
                 "ros2 launch autonomous_kart bringup_jetson.launch.py"
                 "'"

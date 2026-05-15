@@ -2,6 +2,7 @@ import cv2 as cv
 import numpy as np
 import os
 import time
+import subprocess
 
 from autonomous_kart.nodes.opencv_pathfinder import utils
 
@@ -28,6 +29,15 @@ class AngleFinder:
         
         if image is None or right is None or left is None:
             return (None, None)
+
+        w = img.shape[1]
+        width = w - 1 - pic_offset
+
+        right_deg = utils.get_angle((width, pic_offset), (width // 2, pic_offset), right)
+        left_deg = utils.get_angle((pic_offset, pic_offset), (width // 2, pic_offset), left)
+
+        if right_deg is None or left_deg is None:
+            return (None, None)
         
         if debug and frame_count % capture_frequency == 0:
             self.logger.info("Wrote Debug Frames To Disk")
@@ -40,16 +50,22 @@ class AngleFinder:
 
             cv.imwrite(f"{log_folder}/normal_frames/{self.start_time}/frame_{frame_count}.jpg", img)
             utils.draw_lines(image, right, left)
+            self.write_debug_info(image, (left, right), (left_deg, right_deg))
             cv.imwrite(f"{log_folder}/debug_frames/{self.start_time}/frame_{frame_count}.jpg", image)
 
-        w = img.shape[1]
-        width = w - 1 - pic_offset
+            with open(f"{log_folder}/debug_frames/{self.start_time}/log", "a") as f:
+                f.write(f"Frame: {frame_count}, ")
+                f.write(f"LDeg: {left_deg:.1f}, ")
+                f.write(f"LPrev: {self.prev_left}, ")
+                f.write(f"LCur: {left}, ")
 
-        right_deg = utils.get_angle((width, pic_offset), (width // 2, pic_offset), right)
-        left_deg = utils.get_angle((pic_offset, pic_offset), (width // 2, pic_offset), left)
+                f.write(f"RDeg: {right_deg:.1f}, ")
+                f.write(f"RPrev: {self.prev_right}, ")
+                f.write(f"RCur: {right}")
 
-        if right_deg is None or left_deg is None:
-            return (None, None)
+                f.write("\n")
+                    
+            
 
         return (right_deg, left_deg)
 
@@ -230,18 +246,35 @@ class AngleFinder:
                 if left_deg is None:
                     left_deg = -1
             
-                cv.putText(presult, f"Previous left: {self.prev_left}", (300, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv.putText(presult, f"Previous right: {self.prev_right}", (900, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-                cv.putText(presult, f"Current left: {cur_left}", (300, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv.putText(presult, f"Current right: {cur_right}", (900, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                
-
-                cv.putText(presult, f"{right_deg:.1f}", (1300, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv.putText(presult, f"{left_deg:.1f}", (100, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                pos = (cur_left, cur_right)
+                degrees = (left_deg, right_deg)
+                self.write_debug_info(presult, pos, degrees)
 
             video.write(presult)
         
         vid.release()
         video.release()
         cv.destroyAllWindows()
+
+    def write_debug_info(self, image, pos, degrees):
+        cur_left, cur_right = pos
+        left_deg, right_deg = degrees
+
+        height, width = image.shape[:2]
+        
+        margin_x = int(width * 0.05)
+        margin_y = int(height * 0.05)
+        font_scale = min(width, height) / 300.0
+        thickness = max(1, int(font_scale * 6))
+        
+        line_spacing = int(font_scale * 40)
+        
+        y_pos = height - margin_y
+        cv.putText(image, f"LDeg: {left_deg:.1f}", (margin_x, y_pos), cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+        cv.putText(image, f"LPrev: {self.prev_left}", (margin_x, y_pos - line_spacing), cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+        cv.putText(image, f"LCur: {cur_left}", (margin_x, y_pos - line_spacing * 2), cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+
+        right_x = int(width * 0.5)
+        cv.putText(image, f"RDeg: {right_deg:.1f}", (right_x, y_pos), cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+        cv.putText(image, f"RPrev: {self.prev_right}", (right_x, y_pos - line_spacing), cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+        cv.putText(image, f"RCur: {cur_right}", (right_x, y_pos - line_spacing * 2), cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)

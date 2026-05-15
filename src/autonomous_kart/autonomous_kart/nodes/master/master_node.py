@@ -349,9 +349,7 @@ class MasterNode(Node):
 
             self.logger.info("Starting Jetson bringup...")
 
-            subprocess.Popen([
-                ssh_command,
-            ])
+            subprocess.Popen(ssh_command)
 
 def main(args=None):
     rclpy.init(args=args)

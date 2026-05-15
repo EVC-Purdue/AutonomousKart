@@ -64,8 +64,6 @@ class AngleFinder:
                 f.write(f"RCur: {right}")
 
                 f.write("\n")
-                    
-            
 
         return (right_deg, left_deg)
 
@@ -227,13 +225,13 @@ class AngleFinder:
                 
             result, cur_right, cur_left = self.get_img_mask(frame, debug=debug, percent=percent, pic_offset=pic_offset, pixel_range=pixel_range)
             
-            presult = np.zeros((h, w), dtype=result.dtype)
+            result = np.zeros((h, w), dtype=result.dtype)
 
             height = h - 1 - pic_offset
             width = w - 1 - pic_offset
             y_index = int(height * percent)
 
-            presult[y_index:height, pic_offset:width] = result
+            result[y_index:height, pic_offset:width] = result
 
             # Write debug info on video
             if debug:
@@ -248,9 +246,9 @@ class AngleFinder:
             
                 pos = (cur_left, cur_right)
                 degrees = (left_deg, right_deg)
-                self.write_debug_info(presult, pos, degrees)
+                self.write_debug_info(result, pos, degrees)
 
-            video.write(presult)
+            video.write(result)
         
         vid.release()
         video.release()

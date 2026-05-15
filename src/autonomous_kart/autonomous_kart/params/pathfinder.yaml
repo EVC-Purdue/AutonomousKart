@@ -23,7 +23,7 @@ pathfinder_node:
 
     # pure_pursuit
     pure_pursuit.use_velocity_scaled_lookahead: true
-    pure_pursuit.lookahead_time_s: 1.0
+    pure_pursuit.lookahead_time_s: 0.6
     pure_pursuit.min_lookahead_m: 3.0
     pure_pursuit.max_lookahead_m: 8.0
     pure_pursuit.use_curvature_regulation: true
@@ -38,6 +38,7 @@ pathfinder_node:
     pure_pursuit.rejoin_cte_activate: 3.0
     pure_pursuit.rejoin_cte_deactivate: 1.0
     pure_pursuit.rejoin_merge_lookahead_m: 15.0
+    pure_pursuit.latency_s: 0.5
 
     # opencv
 

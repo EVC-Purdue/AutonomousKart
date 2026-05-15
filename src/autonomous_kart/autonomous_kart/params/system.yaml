@@ -1,7 +1,7 @@
 /**:
   ros__parameters:
     simulation_mode: false
-    debug_mode: false # Turns on debug info on images in opencv
+    debug_mode: true # Turns on debug info on images in opencv
     system_state: "IDLE" # "STOPPED", "IDLE", "MANUAL", "AUTONOMOUS"
     system_frequency: 60 # Speed of hot loop (Hertz)
     line_path: "/ws/data/racing_line/line14.csv"

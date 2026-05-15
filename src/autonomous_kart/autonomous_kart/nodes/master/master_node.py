@@ -339,10 +339,13 @@ class MasterNode(Node):
     def _ssh_fire(self, remote_command: str, log_msg: str):
         """Shared helper: open a non-blocking SSH subprocess to the Jetson."""
         ssh_command = [
-            "ssh", "-t",
-            f"{self.jetson_user}@{self.jetson_ip}",
-            remote_command,
-        ]
+                "ssh", "-t",
+                "-o", "StrictHostKeyChecking=no",  
+                "-o", "UserKnownHostsFile=/dev/null",
+                f"{self.jetson_user}@{self.jetson_ip}",
+                remote_command,
+            ]
+
         self.logger.info(log_msg)
         subprocess.Popen(ssh_command)
 

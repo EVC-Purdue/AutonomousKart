@@ -8,7 +8,7 @@ import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-from std_msgs.msg import String, Float32MultiArray, Float32,  UInt16, Empty
+from std_msgs.msg import String, Float32MultiArray, Float32,  UInt16, Empty, Bool
 
 
 class STATES(Enum):
@@ -73,8 +73,8 @@ class MasterNode(Node):
 
         # e_comms ADCB state snapshot
         self.e_comms_data = {
-            "logic_state": "not initialized...",
-            "running_mode": "not initialized...",
+            "adcb_state": "not initialized...",
+            "rc_mode": "not initialized...",
             "throttle_pwm": 0,
             "steering_pwm": 0,
         }
@@ -86,8 +86,8 @@ class MasterNode(Node):
         self.create_subscription(Float32MultiArray, "cmd_drive", self._drive_callback, 5)
 
         # e_comms ADCB telemetry
-        self.create_subscription(String, "e_comms/logic_state", self._logic_state_callback, 1)
-        self.create_subscription(String, "e_comms/running_mode", self._running_mode_callback, 1)
+        self.create_subscription(String, "e_comms/adcb_state", self._logic_state_callback, 1)
+        self.create_subscription(Bool, "e_comms/rc_mode", self._running_mode_callback, 1)
         self.create_subscription(UInt16, "e_comms/throttle_pwm", self._throttle_pwm_callback, 1)
         self.create_subscription(UInt16, "e_comms/steering_pwm", self._steering_pwm_callback, 1)
 
@@ -270,11 +270,11 @@ class MasterNode(Node):
 
     def _logic_state_callback(self, msg: String):
         with self._lock:
-            self.e_comms_data["logic_state"] = msg.data
+            self.e_comms_data["adcb_state"] = msg.data
 
-    def _running_mode_callback(self, msg: String):
+    def _running_mode_callback(self, msg: Bool):
         with self._lock:
-            self.e_comms_data["running_mode"] = msg.data
+            self.e_comms_data["rc_mode"] = msg.data
 
     def _throttle_pwm_callback(self, msg: UInt16):
         with self._lock:

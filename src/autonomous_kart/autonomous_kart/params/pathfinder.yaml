@@ -88,8 +88,11 @@ pathfinder_node:
     mpc.residual.error_window: 200
 
     # opencv
-    opencv.angle_threshold: 0.25
-    opencv.max_turning_degree: 45.0
+    opencv.angle_threshold: 5.0
+    opencv.throttle_mps: 5.0
+
+    # Modes: delta | absolute
+    opencv.mode: "absolute"
 
     #  safety wrapper 
     safety.enabled: true

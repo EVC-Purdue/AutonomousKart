@@ -118,14 +118,14 @@ def unpack_adcb_status_message(data: bytes, logger: RcutilsLogger) -> AdcbStatus
         raise ValueError(f"CAN RX data length invalid: expected 8 (or >=5), got {len(data)}")
     
     logic_mode = data[0] & 0x0F      # Bits 0-3
-    rc_mode = (data[0] >> 4) & 0x03  # Bits 4-5
+    running_mode = (data[0] >> 4) & 0x03  # Bits 4-5
     throttle_pwm = int(data[1]) | (int(data[2]) << 8)
     steering_pwm = int(data[3]) | (int(data[4]) << 8)
 
     logic_mode_str = LOGIC_STATE_VALUE_TO_STRING.get(logic_mode, f"UNKNOWN({logic_mode})")
-    rc_mode_str = RUNNING_MODE_VALUE_TO_STRING.get(rc_mode, f"UNKNOWN({rc_mode})")
+    running_mode_str = RUNNING_MODE_VALUE_TO_STRING.get(running_mode, f"UNKNOWN({running_mode})")
 
-    return AdcbStatus(logic_mode_str, rc_mode_str, throttle_pwm, steering_pwm)
+    return AdcbStatus(logic_mode_str, running_mode_str, throttle_pwm, steering_pwm)
 
 def unpack_vesc_status_1_message(data: bytes, logger: RcutilsLogger) -> VescCanStatus1:
     """

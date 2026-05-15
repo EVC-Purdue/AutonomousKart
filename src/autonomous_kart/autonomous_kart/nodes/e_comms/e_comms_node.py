@@ -136,8 +136,8 @@ class ECommsNode(Node):
         clamped_throttle = max(self.min_speed, min(self.max_speed, throttle))
         percent_throttle = (clamped_throttle / self.max_speed) * 100.0
 
-        clamped_steering_deg = max(self.min_steering, min(self.steer_max_deg, steering))
-        max_one_direction_steering = max(abs(self.min_steering), abs(self.steer_max_deg))
+        clamped_steering_deg = max(self.min_steering, min(self.max_steering, steering))
+        max_one_direction_steering = max(abs(self.min_steering), abs(self.max_steering))
         steering_percent = (clamped_steering_deg / max_one_direction_steering) * 100.0
 
         return steering_percent, percent_throttle

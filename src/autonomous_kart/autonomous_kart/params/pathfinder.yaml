@@ -14,7 +14,7 @@
     steer_rate_max_degps: 180.0 # max steering slew rate (deg/s)
     a_max_mps2: 2.0 # max forward acceleration (m/s^2)
     a_min_mps2: -3.0 # max braking deceleration (m/s^2, negative)
-    a_lat_max_mps2: 4.0 # tire-grip lateral accel cap (m/s^2)
+    a_lat_max_mps2: 40.0 # tire-grip lateral accel cap (m/s^2)
 
 pathfinder_node:
   ros__parameters:

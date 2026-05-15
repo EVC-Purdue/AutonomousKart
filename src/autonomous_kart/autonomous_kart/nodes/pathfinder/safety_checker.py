@@ -9,9 +9,5 @@ class SafetyChecker:
     def __init__(self, params: dict):
         self.params = params
 
-    def check(
-        self,
-        proposed: Tuple[float, float],
-        inputs: PlannerInputs,
-    ) -> Tuple[float, float]:
+    def check(self, proposed: Tuple[float, float], inputs: PlannerInputs) -> Tuple[float, float]:
         return proposed

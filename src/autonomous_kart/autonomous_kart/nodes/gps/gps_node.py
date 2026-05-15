@@ -366,7 +366,7 @@ class GpsNode(Node):
         # nmea format is in ddmm.mmm or dddmm.mmm
         # where d is degrees and m is decimal minutes
 
- degrees = int(d / 100)
+        degrees = int(d / 100)
         minutes = d - degrees * 100
 
         decimal = degrees + (minutes / 60.0)

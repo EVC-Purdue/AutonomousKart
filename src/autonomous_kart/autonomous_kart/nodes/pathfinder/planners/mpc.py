@@ -72,6 +72,10 @@ class MPCPlanner(Planner):
         self.a_max = kart.a_max_mps2
         self.a_lat_max = kart.a_lat_max_mps2
         self.target_speed = float(g("target_speed_mps", 6.0))
+        # Below this speed, dpsi = v/L*tan(delta) ~= 0 so the cost can't
+        # distinguish steering choices and the argmin picks noise. Hold delta
+        # at 0 and reset the warm-start steering until v crosses this gate.
+        self.steer_observability_v = float(g("steer_observability_v_mps", 0.5))
 
         # Corridor (centerline = racing line)
         tw = float(g("track_half_width_m", 2.5))
@@ -237,6 +241,10 @@ class MPCPlanner(Planner):
         self.consec_failures = 0
         delta_cmd = float(best_u[0, 0])
         accel_cmd = float(best_u[1, 0])
+
+        if v < self.steer_observability_v:
+            delta_cmd = 0.0
+            self.u_mean[0, :] = 0.0
 
         v_ref_now = min(float(self.l_vx[j_now]), self.target_speed)
         v_ref_now = max(0.0, min(self.v_max, v_ref_now))

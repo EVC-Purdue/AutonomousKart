@@ -51,6 +51,7 @@ pathfinder_node:
     mpc.proj_window_fwd: 37
     mpc.frenet_v_window_s: 0.3
     mpc.target_speed_mps: 6.0
+    mpc.steer_observability_v_mps: 0.5  # below this v, hold delta=0 (steering unobservable to cost)
     mpc.track_half_width_m: 2.0
     mpc.safety_margin_m: 0.5
     mpc.kart_half_width_m: 0.5025

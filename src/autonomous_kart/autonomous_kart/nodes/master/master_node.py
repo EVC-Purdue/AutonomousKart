@@ -135,6 +135,9 @@ class MasterNode(Node):
 
         # MPC residual-learner runtime mode toggle (off | shadow | apply).
         self.residual_mode_publisher = self.create_publisher(String, "mpc/residual_mode", 1)
+        # Pathfinder runtime swaps: active planner name and racing-line CSV path.
+        self.planner_publisher = self.create_publisher(String, "pathfinder/planner", 1)
+        self.line_publisher = self.create_publisher(String, "pathfinder/line_path", 1)
 
         # IMU calibration plumbing
         self.imu_calibrate_publisher = self.create_publisher(Empty, "imu/calibrate", 1)
@@ -332,6 +335,24 @@ class MasterNode(Node):
             return False, f"mode must be off|shadow|apply (got '{mode}')"
         self.residual_mode_publisher.publish(String(data=m))
         return True, m
+
+    def set_planner(self, planner: str) -> tuple[bool, str]:
+        """Publish a planner-swap request. Pathfinder validates against its
+        constructed planners and may reject. Returns (ok, reason)."""
+        name = (planner or "").strip().lower()
+        if name not in ("mpc", "pure_pursuit", "opencv"):
+            return False, f"planner must be mpc|pure_pursuit|opencv (got '{planner}')"
+        self.planner_publisher.publish(String(data=name))
+        return True, name
+
+    def set_line(self, path: str) -> tuple[bool, str]:
+        """Publish a racing-line swap request. Pathfinder reloads the CSV and
+        rebuilds planners (residual state survives). Returns (ok, reason)."""
+        p = (path or "").strip()
+        if not p:
+            return False, "path is empty"
+        self.line_publisher.publish(String(data=p))
+        return True, p
 
     def start_yaw_calibration(self):
         """Validate preconditions and spawn the drive worker. Returns (ok, reason)."""

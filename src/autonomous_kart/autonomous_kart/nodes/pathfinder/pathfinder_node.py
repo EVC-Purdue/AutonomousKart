@@ -61,17 +61,7 @@ class PathfinderNode(Node):
 
         # Racing line
         self.line_path = self._param("line_path", "", str)
-        self.racing_line: List[Tuple[float, ...]] = []
-        try:
-            with open(self.line_path, "r") as f:
-                for line in f:
-                    try:
-                        row = tuple(float(x) for x in line.strip().split(","))
-                    except ValueError:
-                        continue
-                    self.racing_line.append(row)
-        except OSError as e:
-            self.logger.error(f"Racing line not loadable at {self.line_path}: {e}")
+        self.racing_line: List[Tuple[float, ...]] = self._load_line_csv(self.line_path)
 
         # Cached inputs to planners
         self.state = self._param("system_state", "IDLE", str)
@@ -81,21 +71,27 @@ class PathfinderNode(Node):
         self.current_speed_mps = 0.0
         self._latest_track_angles: Optional[Tuple[float, ...]] = None
 
-        # Active planner
-        planner_name = self._param("planner", "pure_pursuit", str)
-        if planner_name not in PLANNERS:
+        # Shared ResidualLearner — persists across planner / line swaps so the
+        # residual keeps training while pure_pursuit drives, and survives a
+        # planner switch to MPC. Constructed once here, passed by reference
+        # to every (re)built MPCPlanner instance.
+        residual_params = {
+            k[len("mpc.residual."):]: p.value
+            for k, p in self.get_parameters_by_prefix("mpc.residual").items()
+        }
+        from autonomous_kart.nodes.pathfinder.planners.mpc_residual import ResidualLearner
+        self.shared_residual = ResidualLearner(residual_params, 1.0 / self.system_frequency)
+
+        # Active planner (and the others — all built, only one drives commands).
+        self.active_planner_name = self._param("planner", "pure_pursuit", str)
+        if self.active_planner_name not in PLANNERS:
             raise ValueError(
-                f"Unknown planner '{planner_name}'. Available: {list(PLANNERS)}"
+                f"Unknown planner '{self.active_planner_name}'. Available: {list(PLANNERS)}"
             )
-        self.planner = None
+        self.planners: dict = {}
         if self.racing_line:
-            planner_params = {
-                k: p.value for k, p in self.get_parameters_by_prefix(planner_name).items()
-            }
-            self.planner = PLANNERS[planner_name](
-                planner_params, self.kart, self.racing_line, logger=self.logger, node=self
-            )
-            self.logger.info(f"Pathfinder using planner '{planner_name}'")
+            self.planners = self._build_planners()
+            self.logger.info(f"Pathfinder using planner '{self.active_planner_name}'")
         else:
             self.logger.error(
                 "Pathfinder disabled: racing line is empty (planner not constructed)"
@@ -113,6 +109,8 @@ class PathfinderNode(Node):
         self.create_subscription(String, "system_state", self.update_state, 10)
         self.create_subscription(Float32MultiArray, "manual_commands", self.manual_loop, 5)
         self.create_subscription(String, "mpc/residual_mode", self._on_residual_mode, 1)
+        self.create_subscription(String, "pathfinder/planner", self._on_planner_swap, 1)
+        self.create_subscription(String, "pathfinder/line_path", self._on_line_swap, 1)
 
         # Publishers
         self.drive_publisher = self.create_publisher(Float32MultiArray, "cmd_drive", 5)
@@ -144,12 +142,32 @@ class PathfinderNode(Node):
         if mode not in ("off", "shadow", "apply"):
             self.logger.warning(f"mpc/residual_mode: ignoring '{msg.data}'")
             return
-        residual = getattr(self.planner, "residual", None)
-        if residual is None:
-            self.logger.warning("mpc/residual_mode: active planner has no residual")
-            return
-        residual.mode = mode
+        self.shared_residual.mode = mode
         self.logger.info(f"residual mode -> {mode}")
+
+    def _on_planner_swap(self, msg: String):
+        name = (msg.data or "").strip().lower()
+        if name not in PLANNERS:
+            self.logger.warning(f"pathfinder/planner: unknown '{msg.data}'")
+            return
+        if name not in self.planners:
+            self.logger.warning(f"pathfinder/planner: '{name}' not constructed")
+            return
+        self.active_planner_name = name
+        self.logger.info(f"active planner -> {name}")
+
+    def _on_line_swap(self, msg: String):
+        path = (msg.data or "").strip()
+        new_line = self._load_line_csv(path)
+        if not new_line:
+            self.logger.warning(f"pathfinder/line_path: could not load '{path}'")
+            return
+        self.line_path = path
+        self.racing_line = new_line
+        # Rebuild all planners on the new line. The shared residual is passed
+        # to the new MPCPlanner, so theta / training samples are preserved.
+        self.planners = self._build_planners()
+        self.logger.info(f"line -> {path} ({len(new_line)} pts)")
 
     def update_state(self, msg: String):
         if msg.data != self.state:
@@ -169,7 +187,8 @@ class PathfinderNode(Node):
     def _autonomous_tick(self):
         if self.state != STATES.AUTONOMOUS.value:
             return
-        if not self.pose_ready or self.planner is None:
+        active = self.planners.get(self.active_planner_name)
+        if not self.pose_ready or active is None:
             return
         inputs = PlannerInputs(
             pose_xy=self.current_xy,
@@ -179,7 +198,7 @@ class PathfinderNode(Node):
             now_ns=self.get_clock().now().nanoseconds,
         )
         try:
-            proposed = self.planner.plan(inputs)
+            proposed = active.plan(inputs)
         except Exception:
             self.logger.error(f"Planner error:\n{traceback.format_exc()}")
             return
@@ -191,6 +210,20 @@ class PathfinderNode(Node):
         self.drive_publisher.publish(
             Float32MultiArray(data=[float(motor_mps), float(steering_deg)])
         )
+        # Residual training runs every tick. If MPC is the active planner, its
+        # own plan() already pushed/stepped — skip to avoid double-counting.
+        if self.active_planner_name != MPCPlanner.name:
+            mpc = self.planners.get(MPCPlanner.name)
+            if mpc is not None:
+                try:
+                    mpc.train_step(
+                        motor_mps, steering_deg,
+                        self.current_xy[0], self.current_xy[1],
+                        self.current_yaw, self.current_speed_mps,
+                        inputs.now_ns,
+                    )
+                except Exception:
+                    self.logger.error(f"Residual train_step error:\n{traceback.format_exc()}")
 
     # Manual mode
     #
@@ -246,7 +279,8 @@ class PathfinderNode(Node):
     # Telemetry
 
     def publish_dynamic_line(self):
-        state = self.planner.dynamic_line_state()
+        active = self.planners.get(self.active_planner_name)
+        state = active.dynamic_line_state() if active is not None else None
         if state is None:
             payload = {"active": False, "strategy": None, "merge_idx": -1, "points": []}
         else:
@@ -254,6 +288,40 @@ class PathfinderNode(Node):
         self.dynamic_line_pub.publish(
             String(data=json.dumps(payload, separators=(",", ":")))
         )
+
+    # Helpers
+
+    def _load_line_csv(self, path: str) -> List[Tuple[float, ...]]:
+        rows: List[Tuple[float, ...]] = []
+        try:
+            with open(path, "r") as f:
+                for line in f:
+                    try:
+                        row = tuple(float(x) for x in line.strip().split(","))
+                    except ValueError:
+                        continue
+                    rows.append(row)
+        except OSError as e:
+            self.logger.error(f"Racing line not loadable at {path}: {e}")
+        return rows
+
+    def _build_planners(self) -> dict:
+        """Construct every registered planner against the current racing line.
+        The MPC instance receives the shared ResidualLearner so training state
+        survives planner / line swaps."""
+        out: dict = {}
+        for name, cls in PLANNERS.items():
+            planner_params = {
+                k: p.value for k, p in self.get_parameters_by_prefix(name).items()
+            }
+            kwargs = dict(logger=self.logger, node=self)
+            if cls is MPCPlanner:
+                kwargs["residual"] = self.shared_residual
+            try:
+                out[name] = cls(planner_params, self.kart, self.racing_line, **kwargs)
+            except Exception as e:
+                self.logger.error(f"Failed to construct planner '{name}': {e}")
+        return out
 
     def log_command_rate(self):
         current_time = self.get_clock().now().nanoseconds

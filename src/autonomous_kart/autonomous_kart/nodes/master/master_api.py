@@ -128,6 +128,28 @@ def mpc_residual_mode():
     return jsonify({"success": "ok", "mode": reason})
 
 
+@app.route("/pathfinder/planner", methods=["POST"])
+def pathfinder_planner():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    data = request.get_json(silent=True) or {}
+    ok, reason = master_node.set_planner(data.get("planner", ""))
+    if not ok:
+        return jsonify({"error": reason}), 400
+    return jsonify({"success": "ok", "planner": reason})
+
+
+@app.route("/pathfinder/line_path", methods=["POST"])
+def pathfinder_line_path():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    data = request.get_json(silent=True) or {}
+    ok, reason = master_node.set_line(data.get("path", ""))
+    if not ok:
+        return jsonify({"error": reason}), 400
+    return jsonify({"success": "ok", "path": reason})
+
+
 @app.route("/gps", methods=["GET"])
 def gps_status():
     if not master_node:

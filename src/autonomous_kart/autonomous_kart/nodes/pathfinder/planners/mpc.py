@@ -41,7 +41,7 @@ class MPCPlanner(Planner):
     name = "mpc"
 
     def __init__(self, params: dict, kart: KartConstants, racing_line: list,
-                 logger=None, node=None):
+                 logger=None, node=None, residual: Optional["ResidualLearner"] = None):
         super().__init__(params, kart, racing_line, logger, node=node)
 
         if not racing_line:
@@ -114,13 +114,14 @@ class MPCPlanner(Planner):
         # manager swaps in a bezier from the kart's pose back onto the racing
         # line; the planner Frenet-projects against that bezier (treating it
         # as the reference line) until it deactivates near the merge point.
-        self.line_manager = DynamicLineManager(racing_line, logger=logger)
-        self.line_manager.register(RejoinStrategy(
+        self._rejoin_kwargs = dict(
             cte_activate=float(g("rejoin_cte_activate", 2.5)),
             cte_deactivate=float(g("rejoin_cte_deactivate", 1.0)),
             merge_lookahead_m=float(g("rejoin_merge_lookahead_m", 15.0)),
             min_turning_radius=float(g("rejoin_min_turning_radius", 3.0)),
-        ))
+        )
+        self.line_manager = DynamicLineManager(racing_line, logger=logger)
+        self.line_manager.register(RejoinStrategy(**self._rejoin_kwargs))
 
         # Racing line as flat numpy arrays with derived tangent for Frenet.
         # The static racing line is built once; `self.l_*` references the
@@ -146,8 +147,13 @@ class MPCPlanner(Planner):
             k[len("residual."):]: v for k, v in params.items()
             if k.startswith("residual.")
         }
-        self.residual = ResidualLearner(residual_params, solve_dt)
+        # Accept a shared ResidualLearner so training survives planner swaps.
+        self.residual = residual if residual is not None else ResidualLearner(residual_params, solve_dt)
         self._nom_steps = max(1, int(round(self.residual.target_horizon_s / self.dt)))
+        # Last commanded throttle (m/s), used to derive accel for train_step
+        # when an external planner drove the kart this tick.
+        self._last_motor_mps = 0.0
+        self._train_dt = solve_dt
         self._steer_hist = deque([0.0] * NUM_STEER_HIST, maxlen=NUM_STEER_HIST)
         self._throttle_hist = deque([0.0] * NUM_THROTTLE_HIST, maxlen=NUM_THROTTLE_HIST)
         # Pose history covers v_window_s of past samples at the solve cadence.
@@ -384,6 +390,51 @@ class MPCPlanner(Planner):
         self.l_vx = arrays["vx"]
         self.l_psi = arrays["psi"]
         self.line_closed = bool(arrays.get("closed", False))
+
+    def set_racing_line(self, racing_line: list) -> None:
+        """Swap in a new racing line at runtime. Residual state is preserved
+        (features are kart-state relative, not line-position absolute) but
+        Frenet / warm-start carry stale info from the old line, so reset."""
+        self.racing_line = racing_line
+        self._static_arrays = self._build_line_arrays(racing_line)
+        self._bezier_arrays = None
+        self._set_active_line(self._static_arrays)
+        self.line_manager = DynamicLineManager(racing_line, logger=self.logger)
+        self.line_manager.register(RejoinStrategy(**self._rejoin_kwargs))
+        self.closest_idx = 0
+        self.static_closest_idx = 0
+        self._reset_warm_start()
+        self._pose_hist.clear()
+
+    def train_step(self, motor_mps: float, steering_deg: float,
+                   x: float, y: float, yaw: float, v: float, now_ns: int) -> None:
+        """Update the residual learner using actual motion vs nominal prediction.
+        Callable when MPC is NOT the active planner so the residual keeps
+        training under pure_pursuit / opencv. No solve, no telemetry publish."""
+        if not self.residual.enabled:
+            return
+        self._set_active_line(self._static_arrays)
+        s, d, j_now, _, _ = self._frenet(x, y, self.closest_idx)
+        self.closest_idx = j_now
+        self._pose_hist.append((now_ns, s, d))
+        v_s, v_d = self._frenet_velocity()
+        delta_rad = math.radians(steering_deg)
+        # Approximate accel from speed-command delta (pure_pursuit publishes
+        # m/s, not m/s^2 — keep feature units consistent with MPC's plan()).
+        accel = (motor_mps - self._last_motor_mps) / max(self._train_dt, 1e-3)
+        self._last_motor_mps = motor_mps
+        self._steer_hist.appendleft(delta_rad)
+        self._throttle_hist.appendleft(accel)
+        nom_x, nom_y = self._hold_rollout(x, y, yaw, v, delta_rad, accel, self._nom_steps)
+        nom_s, nom_d, _, _, _ = self._frenet(nom_x, nom_y, j_now)
+        kappa_local = self._curvature_at(j_now)
+        phi = _features(
+            d, v_s, v_d, kappa_local,
+            tuple(self._steer_hist), tuple(self._throttle_hist),
+            nom_s - s, nom_d - d,
+        )
+        self.residual.push(phi, s, d, nom_s - s, nom_d - d, v)
+        self.residual.step(s, d)
 
     def _reset_warm_start(self) -> None:
         self.u_mean[:] = 0.0

@@ -25,8 +25,8 @@ LOGIC_STATE_VALUE_TO_STRING = {
 
 RUNNING_MODE_VALUE_TO_STRING = {
     0: "RC",
-	1: "AUTONOMOUS",
-	2: "IDLE",
+    1: "AUTONOMOUS",
+    2: "IDLE",
 }
 
 @dataclass

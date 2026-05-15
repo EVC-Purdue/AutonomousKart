@@ -67,7 +67,9 @@ class ECommsNode(Node):
             try:
                 self.bus: Optional[can.interface.Bus] = can.interface.Bus(interface="slcan", channel=CAN_CHANNEL,
                                                                           bitrate=CAN_BITRATE)
-                self.can_notifier: Optional[can.Notifier] = can.Notifier(self.bus, [self._on_can_msg])
+                # self.can_notifier: Optional[can.Notifier] = can.Notifier(self.bus, [self._on_can_msg])
+                self.can_notifierr: Optional[can.Notifier] = can.Notifier(self.bus, [self._on_can_msg], on_error=self._on_can_error)
+
                 self.logger.info(f"Connected to CAN device on {CAN_CHANNEL} at {CAN_BITRATE} baud")
             except FileNotFoundError:
                 self.logger.error(f"Can device not connected on {CAN_CHANNEL}")
@@ -109,6 +111,9 @@ class ECommsNode(Node):
         self.logger.info("Initialized EComms Node")
 
     # CAN RX ------------------------------------------------------------------#
+    def _on_can_error(self, exc):
+        self.logger.error(f"CAN notifier error: {exc}")
+
     def _on_can_msg(self, msg: can.Message):
         """Called by can.Notifier in a background thread for each received message."""
         if self.executor is None:

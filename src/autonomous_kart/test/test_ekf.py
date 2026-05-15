@@ -52,7 +52,7 @@ def test_predict_with_zero_speed_is_identity():
     assert f.x[1] == pytest.approx(2.0)
     assert f.x[2] == pytest.approx(0.5)
     assert f.x[3] == pytest.approx(0.0)
-    # Covariance handled in Task 3 — here we only assert mean is identity.
+    # Covariance handled in Task 3 here we only assert mean is identity.
     del P_before
 
 
@@ -76,7 +76,7 @@ def test_predict_constant_steer_traces_circle():
     f = _mk(wheelbase_m=L)
     f.reset(0.0, 0.0, 0.0, 3.0)
     dt = 0.005
-    for _ in range(2000):  # 10 s — well over a full lap
+    for _ in range(2000):  # 10 s well over a full lap
         f.predict(dt, steer_rad=delta)
     # After any time, the kart should lie on the circle of radius r centered
     # at (0, r) (left turn from origin pointing along +x).
@@ -144,9 +144,9 @@ def test_predict_accel_noise_scales_v_variance():
 def test_update_gps_xy_pulls_state_toward_measurement():
     f = _mk()
     f.reset(0.0, 0.0, 0.0, 0.0)
-    R = np.diag([0.04, 0.04])  # 20 cm 1σ
+    R = np.diag([0.04, 0.04])  # 20 cm 1sigma
     f.update_gps_xy(x=2.0, y=1.0, R_xy=R)
-    # State should move *toward* (2,1) but not all the way (P0 has 25cm 1σ).
+    # State should move *toward* (2,1) but not all the way (P0 has 25cm 1sigma).
     assert 0.0 < f.x[0] < 2.0
     assert 0.0 < f.x[1] < 1.0
 
@@ -185,9 +185,9 @@ def test_update_heading_pulls_yaw_toward_measurement():
 def test_update_heading_handles_wrap_around_pi():
     f = _mk()
     f.reset(0.0, 0.0, math.pi - 0.05, 5.0)
-    # Measurement is just past -π — innovation should be small, not ~2π.
+    # Measurement is just past -pi innovation should be small, not ~2pi.
     f.update_heading(yaw_meas=-math.pi + 0.05, var=0.01)
-    # Yaw moves toward +/-π, NOT toward 0.
+    # Yaw moves toward +/-pi, NOT toward 0.
     assert abs(f.x[2]) > math.pi - 0.2
 
 

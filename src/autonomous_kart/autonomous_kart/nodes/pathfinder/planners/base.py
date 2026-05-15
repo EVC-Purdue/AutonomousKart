@@ -42,7 +42,7 @@ class Planner(ABC):
 
     @abstractmethod
     def plan(self, inputs: PlannerInputs) -> Optional[Tuple[float, float]]:
-        """Return (throttle_pct, steering) or None to skip publishing this tick."""
+        """Return (throttle_mps, steering_deg) or None to skip publishing this tick."""
         ...
 
     def dynamic_line_state(self) -> Optional[dict]:

@@ -110,6 +110,13 @@ def e_comms():
     return jsonify(master_node.get_e_comms())
 
 
+@app.route("/mpc_status", methods=["GET"])
+def mpc_status():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify(master_node.get_mpc_status())
+
+
 @app.route("/gps", methods=["GET"])
 def gps_status():
     if not master_node:

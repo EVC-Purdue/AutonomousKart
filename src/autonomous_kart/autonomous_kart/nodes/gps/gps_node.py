@@ -62,13 +62,29 @@ class GpsNode(Node):
         self.logger = self.get_logger()
 
         self.gps_frequency = self.get_parameter("gps_frequency").value
-        
+
         self.gps_data_pos: list[float] = [0.0, 0.0, 0.0]
-        self.gps_data_quaternion = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0) # Left as identity
+        self.gps_data_quaternion = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
         self.gps_data_cov: list[float] = [0.0] * 36
         self.gps_data_cov[21] = 1e6  # roll
         self.gps_data_cov[28] = 1e6  # pitch
         self.gps_data_cov[35] = 1e6  # yaw
+
+        # VTG-derived course (ENU yaw, rad) + speed (m/s). Covariance entries
+        # below stay at 1e6 until a usable VTG arrives.
+        self.gps_yaw_rad = 0.0
+        self.gps_speed_mps = 0.0
+        self.gps_data_twist_cov: list[float] = [0.0] * 36
+        self.gps_data_twist_cov[0] = 1e6   # vx
+        self.gps_data_twist_cov[7] = 1e6   # vy (unobserved)
+        self.gps_data_twist_cov[14] = 1e6  # vz (unobserved)
+        self.gps_data_twist_cov[21] = 1e6  # wx
+        self.gps_data_twist_cov[28] = 1e6  # wy
+        self.gps_data_twist_cov[35] = 1e6  # wz
+        # sigma_v is the modem doppler-speed 1-sigma (spec value). sigma_yaw is
+        # derived from it at runtime as sigma_v / v.
+        self.vtg_speed_sigma = float(self.get_parameter("vtg_speed_sigma_mps").value)
+        self.vtg_min_speed_for_yaw = float(self.get_parameter("vtg_min_speed_for_yaw").value)
 
         self.origin_lat = float(self.get_parameter("lat0").value)
         self.origin_lon = float(self.get_parameter("lon0").value)
@@ -94,7 +110,7 @@ class GpsNode(Node):
 
         self.timer = self.create_timer(1.0 / self.gps_frequency, self.publish_gps)
 
-        
+
     def publish_gps(self):
         """
         Publishes the 2D coordinates and error
@@ -111,9 +127,16 @@ class GpsNode(Node):
         msg.pose.pose.position.y = self.gps_data_pos[1]
         msg.pose.pose.position.z = self.gps_data_pos[2]
 
-        msg.pose.pose.orientation = self.gps_data_quaternion
+        # Yaw quaternion
+        cy = math.cos(self.gps_yaw_rad / 2.0)
+        sy = math.sin(self.gps_yaw_rad / 2.0)
+        msg.pose.pose.orientation = Quaternion(x=0.0, y=0.0, z=sy, w=cy)
 
         msg.pose.covariance = self.gps_data_cov
+
+        msg.twist.twist.linear.x = self.gps_speed_mps
+        msg.twist.covariance = self.gps_data_twist_cov
+
         self.logger.debug(f"GPS Pos: {msg.pose.pose.position}")
         self.logger.debug(f"GPS Cov: {msg.pose.covariance}")
         self.gps_publisher.publish(msg)
@@ -190,6 +213,8 @@ class GpsNode(Node):
                 self.handle_gst(fields)
             case "RMC":
                 self.handle_rmc(fields)
+            case "VTG":
+                self.handle_vtg(fields)
 
     def handle_gga(self, fields):
         if len(fields) < 10:
@@ -242,7 +267,7 @@ class GpsNode(Node):
     def handle_gsa(self, fields):
         if not fields[16] or not fields[17]:
             return
-        
+
         hdop = float(fields[16]) ** 2 if fields[16] else 0.0
         vdop = float(fields[17]) ** 2 if fields[17] else 0.0
 
@@ -273,6 +298,43 @@ class GpsNode(Node):
         self.gps_data_cov[7] = sigma_n ** 2  # sigma_y (north)
         self.gps_data_cov[14] = sigma_u ** 2  # sigma_z (up)
 
+    def handle_vtg(self, fields):
+        """
+        $GNVTG,track_true,T,track_mag,M,speed_kn,N,speed_kph,K,mode*CS
+        """
+        if len(fields) < 10:
+            return
+        mode = fields[9]
+        if mode == "N": # No valid fix
+            self.gps_data_cov[35] = 1e6
+            self.gps_data_twist_cov[0] = 1e6
+            return
+
+        v = None
+        if fields[7]:
+            try:
+                v = float(fields[7]) / 3.6
+                self.gps_speed_mps = v
+                self.gps_data_twist_cov[0] = self.vtg_speed_sigma ** 2
+            except ValueError:
+                v = None
+                self.gps_data_twist_cov[0] = 1e6
+        else:
+            self.gps_data_twist_cov[0] = 1e6
+
+        # sigma_yaw = sigma_v / v only meaningful once the kart is actually moving.
+        if fields[1] and v is not None and v > self.vtg_min_speed_for_yaw:
+            try:
+                track_true_deg = float(fields[1])
+                # Bearing (CW from north) -> ENU yaw (CCW from east).
+                raw = math.pi / 2.0 - math.radians(track_true_deg)
+                self.gps_yaw_rad = math.atan2(math.sin(raw), math.cos(raw))
+                self.gps_data_cov[35] = (self.vtg_speed_sigma / v) ** 2
+            except ValueError:
+                self.gps_data_cov[35] = 1e6
+        else:
+            self.gps_data_cov[35] = 1e6
+
     def handle_rmc(self, fields):
         lat = fields[3]
         lat_direction = fields[4]
@@ -301,7 +363,7 @@ class GpsNode(Node):
     def nmea_to_decimal(self, value: str, direction: str) -> float:
         d = float(value)
 
-        # nmea format is in ddmm.mmm or dddmm.mmm 
+        # nmea format is in ddmm.mmm or dddmm.mmm
         # where d is degrees and m is decimal minutes
 
         degrees = int(d / 100)
@@ -311,7 +373,7 @@ class GpsNode(Node):
 
         if direction in ('S', 'W'):
             decimal *= -1
-        
+
         return decimal
 
     def _rtcm_loop(self):

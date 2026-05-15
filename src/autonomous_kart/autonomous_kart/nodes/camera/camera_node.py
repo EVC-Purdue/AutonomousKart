@@ -87,18 +87,6 @@ class CameraNode(Node):
             self.image_pub.publish(publish_frame)
             self.frame_counter += 1
 
-            if self.sim_mode and self.frame_counter % self.fps == 0:
-                now = time.time()
-                try:
-                    actual_rate = self.fps / (now - self.last_callback_time)
-                except ZeroDivisionError:
-                    actual_rate = 0
-
-                self.logger.info(
-                    f"Published {self.frame_counter} frames, actual rate: {actual_rate:.1f} fps"
-                )
-                self.last_callback_time = now
-
     def read_frames(self):
         """
         Background thread to read frames for efficiency

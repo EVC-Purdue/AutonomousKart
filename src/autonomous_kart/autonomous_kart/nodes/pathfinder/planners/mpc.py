@@ -230,7 +230,8 @@ class MPCPlanner(Planner):
                 self.mode = MODE_FAILSAFE
             self._publish_status(self.mode, False, t0, s, d, psi_track, v, v_target,
                                  0.0, 0.0, best_cost, 0.0,
-                                 breakdown=breakdown)
+                                 breakdown=breakdown,
+                                 x=x, y=y, yaw_rad=yaw)
             return 0.0, 0.0
 
         self.consec_failures = 0
@@ -269,7 +270,8 @@ class MPCPlanner(Planner):
         self._publish_status(self.mode, True, t0, s, d, psi_track, v, v_target,
                              delta_cmd, accel_cmd, best_cost, margin_min,
                              res_ps, res_pd,
-                             breakdown=breakdown)
+                             breakdown=breakdown,
+                             x=x, y=y, yaw_rad=yaw)
 
         return throttle_mps, steering_deg
 
@@ -298,7 +300,12 @@ class MPCPlanner(Planner):
             all_dy = self.l_y - y
             all_d2 = all_dx * all_dx + all_dy * all_dy
             j_full = int(np.argmin(all_d2))
-            if float(all_d2[j_full]) + 1e-6 < best_d2:
+            # Index-distance gate (wrap-aware): on a closed loop, reject jumps
+            # to a geometrically-near-but-arc-far segment — keeps the planner
+            # from tracking the wrong section when the kart drifts off.
+            n = self.line_n
+            idx_dist = min((j_full - hint) % n, (hint - j_full) % n)
+            if idx_dist < n // 4 and float(all_d2[j_full]) + 1e-6 < best_d2:
                 j = j_full
 
         psi_j = self.l_psi[j]
@@ -502,7 +509,8 @@ class MPCPlanner(Planner):
     #  telemetry
     def _publish_status(self, mode, success, t0, s, d, psi_track, v, v_target,
                         delta_cmd, accel_cmd, cost, margin_min,
-                        res_s=0.0, res_d=0.0, breakdown=(0.0,) * 12):
+                        res_s=0.0, res_d=0.0, breakdown=(0.0,) * 12,
+                        x=0.0, y=0.0, yaw_rad=0.0):
         if self.status_pub is None:
             return
         solve_ms = (time.perf_counter() - t0) * 1000.0
@@ -517,6 +525,7 @@ class MPCPlanner(Planner):
             nom_s, nom_d, res_es, res_ed,
             float(self.residual.samples_trained),
             *breakdown,
+            float(x), float(y), float(yaw_rad),
         ]
         self.status_pub.publish(Float32MultiArray(data=payload))
 

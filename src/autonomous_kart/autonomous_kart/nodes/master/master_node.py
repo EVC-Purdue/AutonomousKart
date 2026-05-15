@@ -118,6 +118,7 @@ class MasterNode(Node):
                 "a_lat": 0.0,
                 "edge": 0.0,
             },
+            "x": 0.0, "y": 0.0, "yaw_rad": 0.0,
         }
         self.create_subscription(
             Float32MultiArray, "mpc/status", self._mpc_status_callback, 5
@@ -161,7 +162,7 @@ class MasterNode(Node):
 
     def _mpc_status_callback(self, msg: Float32MultiArray):
         data = list(msg.data)
-        if len(data) < 31:
+        if len(data) < 34:
             return
         snapshot = {
             "received": True,
@@ -198,6 +199,9 @@ class MasterNode(Node):
                 "a_lat": float(data[29]),
                 "edge": float(data[30]),
             },
+            "x": float(data[31]),
+            "y": float(data[32]),
+            "yaw_rad": float(data[33]),
         }
         with self._lock:
             self.mpc_status_data = snapshot

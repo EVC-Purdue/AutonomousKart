@@ -1,6 +1,6 @@
 """Recursive least-squares residual learner for the MPC planner.
 
-Runs in shadow mode by default trains/predicts/logs but does NOT affect
+Runs in shadow mode by default — trains/predicts/logs but does NOT affect
 control output. The MPC planner consults `predict` only when mode == "apply".
 
 The learner predicts the residual delta_s / delta_d between the nominal

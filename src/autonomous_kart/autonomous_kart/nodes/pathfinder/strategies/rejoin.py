@@ -118,7 +118,7 @@ class RejoinStrategy(LineStrategy):
         p3 = merge_xy
         p2 = (p3[0] - cp_dist * math.cos(merge_yaw), p3[1] - cp_dist * math.sin(merge_yaw))
 
-        # Curvature check push merge further if too tight
+        # Curvature check — push merge further if too tight
         max_kappa = 1.0 / self.min_turning_radius
         needs_retry = any(
             abs(_bezier_curvature(p0, p1, p2, p3, i / self.num_samples)) > max_kappa

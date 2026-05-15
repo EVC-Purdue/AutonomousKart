@@ -6,17 +6,23 @@ import can
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from std_msgs.msg import Float32MultiArray, UInt16, Bool, String
+from std_msgs.msg import Float32MultiArray, UInt16, String, Float32
 from rclpy.impl.rcutils_logger import RcutilsLogger
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms
+import autonomous_kart.nodes.e_comms.powertrain as powertrain
 
 CAN_CHANNEL = "/dev/ttyACM0"
 CAN_BITRATE = 500000
 
+VESC_ID = 7
+VESC_STATUS_1_MSG_NUM = 9
+VESC_MSG_NUM_TO_EXT_ID = lambda msg_num: ((msg_num << 8) | VESC_ID)
+
 CONTROL_ID = 0x100
 STATUS_ID = 0x101
 HEARTBEAT_ID = 0x102
+VESC_STATUS_1_ID = VESC_MSG_NUM_TO_EXT_ID(VESC_STATUS_1_MSG_NUM)
 
 
 class ECommsNode(Node):
@@ -40,15 +46,20 @@ class ECommsNode(Node):
         self.steer_max_deg: float = float(self.get_parameter("steer_max_deg").value)
 
         # Inputs
-        self.throttle_percent: float = 0.0
-        self.steering_angle: float = 0.0
+        self.throttle_erpm: float = 0.0
+        self.steering_percent: float = 0.0
 
         # Outputs
         self.adcb_status: e_comms.AdcbStatus = e_comms.AdcbStatus(
-            logic_mode="not initialized",
-            rc_mode=False,
+            logic_state="not initialized",
+            running_mode="not initialized",
             throttle_pwm=0,
             steering_pwm=0,
+        )
+        self.vesc_status_1: e_comms.VescCanStatus1 = e_comms.VescCanStatus1(
+            erpm=0,
+            current=0,
+            duty_cycle=0,
         )
 
         # CAN bus
@@ -88,10 +99,11 @@ class ECommsNode(Node):
         self.hb_timer = self.create_timer(self.hb_tx_period_ms / 1000.0, self.can_hb_tx)
 
         # Publishers
-        self.adcb_state_pub = self.create_publisher(String, "e_comms/adcb_state", 1)
-        self.rc_mode_pub = self.create_publisher(Bool, "e_comms/rc_mode", 1)
+        self.logic_state_pub = self.create_publisher(String, "e_comms/logic_state", 1)
+        self.running_mode_pub = self.create_publisher(String, "e_comms/running_mode", 1)
         self.throttle_pwm_pub = self.create_publisher(UInt16, "e_comms/throttle_pwm", 1)
         self.steering_pwm_pub = self.create_publisher(UInt16, "e_comms/steering_pwm", 1)
+        self.speed_pub = self.create_publisher(Float32, "e_comms/kart_speed_m_per_s", 1)
 
         # Init finished
         self.logger.info("Initialized EComms Node")
@@ -99,24 +111,35 @@ class ECommsNode(Node):
     # CAN RX ------------------------------------------------------------------#
     def _on_can_msg(self, msg: can.Message):
         """Called by can.Notifier in a background thread for each received message."""
+        if self.executor is None:
+            self.logger.warning("CAN message received before executor ready, dropping frame")
+            return
+        
+        data = bytes(msg.data)  # copy, don't hold a reference
+        
         if msg.arbitration_id == STATUS_ID:
-            data = bytes(msg.data)  # copy, don't hold a reference
-            # Add to executor to handle in main thread because ros publishers are not thread safe
-            if self.executor is not None:
-                self.executor.create_task(lambda: self.handle_status_msg(data))
-            else:
-                self.logger.warning("CAN message received before executor ready, dropping frame")
+            self.executor.create_task(lambda: self.handle_adcb_status_msg(data))
+        elif msg.arbitration_id == VESC_STATUS_1_ID:
+            self.executor.create_task(lambda: self.handle_vesc_status_1_msg(data))
 
-    def handle_status_msg(self, msg_data: bytes):
+    def handle_adcb_status_msg(self, msg_data: bytes):
         try:
-            self.adcb_status = e_comms.unpack_status_message(msg_data, self.logger)
+            self.adcb_status = e_comms.unpack_adcb_status_message(msg_data, self.logger)
 
-            self.adcb_state_pub.publish(String(data=self.adcb_status.logic_mode))
-            self.rc_mode_pub.publish(Bool(data=self.adcb_status.rc_mode))
+            self.logic_state_pub.publish(String(data=self.adcb_status.logic_state))
+            self.running_mode_pub.publish(String(data=self.adcb_status.running_mode))
             self.throttle_pwm_pub.publish(UInt16(data=self.adcb_status.throttle_pwm))
             self.steering_pwm_pub.publish(UInt16(data=self.adcb_status.steering_pwm))
         except Exception as e:
             self.logger.error(f"Failed to parse CAN message: {e}")
+
+    def handle_vesc_status_1_msg(self, msg_data: bytes):
+        try:
+            self.vesc_status_1 = e_comms.unpack_vesc_status_1_message(msg_data, self.logger)
+            speed_m_per_s = powertrain.erpm_to_speed(self.vesc_status_1.erpm)
+            self.speed_pub.publish(Float32(data=speed_m_per_s))
+        except Exception as e:
+            self.logger.error(f"Failed to parse VESC status message: {e}")
     #--------------------------------------------------------------------------#
 
     # Command Callbacks -------------------------------------------------------#
@@ -125,25 +148,20 @@ class ECommsNode(Node):
         if len(msg.data) < 2:
             self.logger.error(f"cmd_drive payload too short: {list(msg.data)}")
             return
-        self.steering_angle, self.throttle_percent = self.convert(
-            float(msg.data[1]), float(msg.data[0]),
-        )
+        throttle_cmd = msg.data[0] # m/s
+        steering_cmd = msg.data[1] # degrees (negative = left, positive = right)
+        self.throttle_erpm, self.steering_percent = self.convert(throttle_cmd, steering_cmd)
         self.can_control_tx()  # Send updated command immediately on CAN bus
 
-    def convert(self, steering: float, throttle: float) -> tuple:
+    def convert(self, throttle_m_per_s: float, steering_deg: float) -> tuple[float, float]:
         """Clamp + unit-convert (steering, throttle) for the CAN control frame."""
-        throttle = throttle * 3
-        if throttle < self.min_speed:
-            throttle = self.min_speed
-        elif throttle > self.max_speed:
-            throttle = self.max_speed
+        clamped_throttle_m_per_s = max(self.min_speed, min(self.max_speed, throttle_m_per_s))
+        throttle_erpm = powertrain.speed_to_erpm(clamped_throttle_m_per_s)
 
-        steering = (steering / self.steer_max_deg) * 100.0 * 2.0
-        if steering < self.min_steering:
-            steering = self.min_steering
-        elif steering > self.max_steering:
-            steering = self.max_steering
-        return steering, throttle
+        clamped_steering_deg = max(self.min_steering, min(self.steer_max_deg, steering_deg))
+        max_one_direction_steering = max(abs(self.min_steering), abs(self.steer_max_deg))
+        steering_percent = (clamped_steering_deg / max_one_direction_steering) * 100.0
+        return throttle_erpm, steering_percent
     #--------------------------------------------------------------------------#
 
     # CAN TX ------------------------------------------------------------------#
@@ -171,7 +189,7 @@ class ECommsNode(Node):
         Send the latest throttle and steering commands on the CAN bus.
         Uses internal state updated by the command callbacks.
         """
-        tx_data = e_comms.pack_control_message(self.throttle_percent, self.steering_angle)
+        tx_data = e_comms.pack_control_message(self.throttle_erpm, self.steering_percent)
         if self.bus is not None:
             msg = can.Message(
                 arbitration_id=CONTROL_ID,
@@ -232,3 +250,4 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
+

@@ -14,7 +14,7 @@
     steer_rate_max_degps: 180.0 # max steering slew rate (deg/s)
     a_max_mps2: 2.0 # max forward acceleration (m/s^2)
     a_min_mps2: -3.0 # max braking deceleration (m/s^2, negative)
-    a_lat_max_mps2: 40.0 # tire-grip lateral accel cap (m/s^2)
+    a_lat_max_mps2: 4.0 # tire-grip lateral accel cap (m/s^2)
 
 pathfinder_node:
   ros__parameters:
@@ -44,13 +44,13 @@ pathfinder_node:
     # mpc: sampling MPC
     mpc.horizon_steps: 20
     mpc.dt_s: 0.05
-    mpc.num_samples: 128
+    mpc.num_samples: 164
     mpc.steer_sigma_deg: 2.89
     mpc.accel_sigma_mps2: 1.43
     mpc.proj_window_back: 5
     mpc.proj_window_fwd: 37
     mpc.frenet_v_window_s: 0.3
-    mpc.target_speed_mps: 17.4
+    mpc.target_speed_mps: 6.0
     mpc.track_half_width_m: 2.0
     mpc.safety_margin_m: 0.5
     mpc.kart_half_width_m: 0.5025

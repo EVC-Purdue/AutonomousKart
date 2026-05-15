@@ -7,7 +7,9 @@ Real mode: EKF over GPS xy + GPS-derived heading + GPS-derived speed,
            driven by cmd_drive steering.
 """
 import math
+import time
 import traceback
+from collections import deque
 
 import numpy as np
 import rclpy
@@ -63,8 +65,36 @@ class LocalizationNode(Node):
         # Spawn at racing line start if available
         self._auto_spawn()
 
+        # Sim noise + actuator delay. All default to 0 so the sim stays
+        # deterministic unless explicitly tuned via localization.yaml.
+        def _np(name, default):
+            return float(self._param(name, default))
+
+        self._sim_delay_s = _np("sim_actuator_delay_s", 0.0)
+        self._sim_motor_std = _np("sim_cmd_motor_noise_pct", 0.0)
+        self._sim_steer_std = _np("sim_cmd_steer_noise_deg", 0.0)
+        self._sim_pos_std = _np("sim_pos_noise_m", 0.0)
+        self._sim_yaw_std_rad = math.radians(_np("sim_yaw_noise_deg", 0.0))
+        self._sim_speed_std = _np("sim_speed_noise_mps", 0.0)
+        self._sim_rng = np.random.default_rng(
+            int(self._param("sim_noise_seed", 0))
+        )
+
+        # Throttle /odom publish to GPS-like cadence even though the bicycle
+        # integrates at system_frequency for smooth physics. On hardware,
+        # localization gets fresh GPS at 10 Hz; mirror that here so MPC sees
+        # the same update rate.
+        sim_odom_hz = _np("sim_odom_rate_hz", hz)
+        if sim_odom_hz <= 0.0:
+            sim_odom_hz = hz
+        self._sim_publish_every = max(1, int(round(hz / sim_odom_hz)))
+        self._sim_tick_count = 0
+
+        # Cached "currently-applied" cmd after delay queue dequeues. Starts at
+        # zero so the first ticks don't take whatever uninitialised value.
         self.cmd_motor = 0.0
         self.cmd_steer = 0.0
+        self._cmd_queue: deque = deque()  # (apply_time_s, motor, steer)
 
         self.create_subscription(Float32MultiArray, "cmd_drive", self._cb_drive, 5)
         self.create_timer(self.dt, self._sim_step)
@@ -98,11 +128,51 @@ class LocalizationNode(Node):
     def _cb_drive(self, msg: Float32MultiArray):
         if len(msg.data) < 2:
             return
-        self.cmd_motor = float(msg.data[0])
-        self.cmd_steer = float(msg.data[1])
+        rng = self._sim_rng
+        motor = float(msg.data[0])
+        steer = float(msg.data[1])
+        if self._sim_motor_std > 0.0:
+            motor += float(rng.normal(0.0, self._sim_motor_std))
+        if self._sim_steer_std > 0.0:
+            steer += float(rng.normal(0.0, self._sim_steer_std))
+        if self._sim_delay_s > 0.0:
+            self._cmd_queue.append(
+                (self._now_s() + self._sim_delay_s, motor, steer)
+            )
+        else:
+            # No delay → take effect immediately.
+            self.cmd_motor = motor
+            self.cmd_steer = steer
 
     def _sim_step(self):
-        x, y, yaw, speed = self.model.step(self.cmd_motor, self.cmd_steer, self.dt)
+        # Pop everything from the delay queue that has aged in; the latest
+        # popped command is the one the actuator is currently honoring.
+        if self._cmd_queue:
+            now = self._now_s()
+            while self._cmd_queue and self._cmd_queue[0][0] <= now:
+                _, self.cmd_motor, self.cmd_steer = self._cmd_queue.popleft()
+
+        # Always step physics at system_frequency for smooth integration with
+        # the actuator delay buffer.
+        x, y, yaw, speed = self.model.step(
+            self.cmd_motor, self.cmd_steer, self.dt
+        )
+
+        # Throttle /odom to GPS-like cadence — apply output noise + publish
+        # only on these ticks.
+        self._sim_tick_count += 1
+        if self._sim_tick_count % self._sim_publish_every != 0:
+            return
+
+        rng = self._sim_rng
+        if self._sim_pos_std > 0.0:
+            x += float(rng.normal(0.0, self._sim_pos_std))
+            y += float(rng.normal(0.0, self._sim_pos_std))
+        if self._sim_yaw_std_rad > 0.0:
+            yaw += float(rng.normal(0.0, self._sim_yaw_std_rad))
+        if self._sim_speed_std > 0.0:
+            speed = max(0.0, speed + float(rng.normal(0.0, self._sim_speed_std)))
+
         self._publish_odom(x, y, yaw, speed)
 
     def _init_real(self):

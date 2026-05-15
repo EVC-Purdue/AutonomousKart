@@ -12,7 +12,7 @@ from rclpy.impl.rcutils_logger import RcutilsLogger
 # 	LOGIC_MODE_RECOVERING,
 # } logic_mode_t;
 
-MODE_VALUE_TO_STRING = {
+LOGIC_STATE_VALUE_TO_STRING = {
     0: "STARTING",
     1: "PRECHARGING",
     2: "CONTACTOR_CLOSING",
@@ -23,10 +23,16 @@ MODE_VALUE_TO_STRING = {
     7: "RECOVERING",
 }
 
+RUNNING_MODE_VALUE_TO_STRING = {
+    0: "RC",
+    1: "AUTONOMOUS",
+    2: "IDLE",
+}
+
 @dataclass
 class AdcbStatus:
-    logic_mode: str   # String representation of the state machine mode (e.g., "RUNNING")
-    rc_mode: bool     # Boolean indicating RC mode (True if in autonomous mode, False if in RC mode)
+    logic_state: str  # String representation of the state machine mode (e.g., "RUNNING")
+    running_mode: str # String representation of the running mode (e.g., "AUTONOMOUS")
     throttle_pwm: int # Integer value of the throttle PWM (1000-2000)
     steering_pwm: int # Integer value of the steering PWM (1000-2000)
 
@@ -94,11 +100,11 @@ def unpack_adcb_status_message(data: bytes, logger: RcutilsLogger) -> AdcbStatus
     """
     Unpack the Autonomous Distro/Control Board (ADCB) status message received from the CAN bus.
 
-    - ID = 0x101 - **Status update** (TX)
+    - ID = `0x101` - **Status update**
         - Byte 0: state machine mode + rc mode
             - Bits0-3 = state machine mode (see logic.h::logic_mode_t)
-            - Bit4 = RC mode (0 = rc mode, 1 = autonomous mode)
-            - Bits5-7 = reserved
+            - Bit4-5 = Mode (0 = RC, 1 = autonomous, 2 = idle)
+            - Bits6-7 = reserved
         - Byte 1-2: throttle PWM (uint16_t, little endian), the actual PWM value being sent to the ESC for throttle (1000-2000)
         - Byte 3-4: steering PWM (uint16_t, little endian), the actual PWM value being sent to the servo for steering (1000-2000)
         - Byte 5-7: reserved / future use
@@ -111,15 +117,15 @@ def unpack_adcb_status_message(data: bytes, logger: RcutilsLogger) -> AdcbStatus
         logger.error(f"CAN RX data length invalid: expected 8 (or >=5), got {len(data)}")
         raise ValueError(f"CAN RX data length invalid: expected 8 (or >=5), got {len(data)}")
     
-    logic_mode = data[0] & 0x0F  # Bits 0-3
-    rc_mode = (data[0] & 0x10) >> 4 # Bit 4
+    logic_mode = data[0] & 0x0F      # Bits 0-3
+    running_mode = (data[0] >> 4) & 0x03  # Bits 4-5
     throttle_pwm = int(data[1]) | (int(data[2]) << 8)
     steering_pwm = int(data[3]) | (int(data[4]) << 8)
 
-    logic_mode_str = MODE_VALUE_TO_STRING.get(logic_mode, f"UNKNOWN({logic_mode})")
-    rc_mode_bool = bool(rc_mode)
+    logic_mode_str = LOGIC_STATE_VALUE_TO_STRING.get(logic_mode, f"UNKNOWN({logic_mode})")
+    running_mode_str = RUNNING_MODE_VALUE_TO_STRING.get(running_mode, f"UNKNOWN({running_mode})")
 
-    return AdcbStatus(logic_mode_str, rc_mode_bool, throttle_pwm, steering_pwm)
+    return AdcbStatus(logic_mode_str, running_mode_str, throttle_pwm, steering_pwm)
 
 def unpack_vesc_status_1_message(data: bytes, logger: RcutilsLogger) -> VescCanStatus1:
     """

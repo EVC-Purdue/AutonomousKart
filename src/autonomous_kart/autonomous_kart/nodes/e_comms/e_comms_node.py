@@ -6,7 +6,7 @@ import can
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from std_msgs.msg import Float32MultiArray, UInt16, Bool, String, Float32
+from std_msgs.msg import Float32MultiArray, UInt16, String, Float32
 from rclpy.impl.rcutils_logger import RcutilsLogger
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms
@@ -51,8 +51,8 @@ class ECommsNode(Node):
 
         # Outputs
         self.adcb_status: e_comms.AdcbStatus = e_comms.AdcbStatus(
-            logic_mode="not initialized",
-            rc_mode=False,
+            logic_state="not initialized",
+            running_mode="not initialized",
             throttle_pwm=0,
             steering_pwm=0,
         )
@@ -99,8 +99,8 @@ class ECommsNode(Node):
         self.hb_timer = self.create_timer(self.hb_tx_period_ms / 1000.0, self.can_hb_tx)
 
         # Publishers
-        self.adcb_state_pub = self.create_publisher(String, "e_comms/adcb_state", 1)
-        self.rc_mode_pub = self.create_publisher(Bool, "e_comms/rc_mode", 1)
+        self.logic_state_pub = self.create_publisher(String, "e_comms/logic_state", 1)
+        self.running_mode_pub = self.create_publisher(String, "e_comms/running_mode", 1)
         self.throttle_pwm_pub = self.create_publisher(UInt16, "e_comms/throttle_pwm", 1)
         self.steering_pwm_pub = self.create_publisher(UInt16, "e_comms/steering_pwm", 1)
         self.speed_pub = self.create_publisher(Float32, "e_comms/kart_speed_m_per_s", 1)
@@ -126,8 +126,8 @@ class ECommsNode(Node):
         try:
             self.adcb_status = e_comms.unpack_adcb_status_message(msg_data, self.logger)
 
-            self.adcb_state_pub.publish(String(data=self.adcb_status.logic_mode))
-            self.rc_mode_pub.publish(Bool(data=self.adcb_status.rc_mode))
+            self.logic_state_pub.publish(String(data=self.adcb_status.logic_state))
+            self.running_mode_pub.publish(String(data=self.adcb_status.running_mode))
             self.throttle_pwm_pub.publish(UInt16(data=self.adcb_status.throttle_pwm))
             self.steering_pwm_pub.publish(UInt16(data=self.adcb_status.steering_pwm))
         except Exception as e:

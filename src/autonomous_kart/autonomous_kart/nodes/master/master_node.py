@@ -334,49 +334,49 @@ class MasterNode(Node):
         with self._lock:
             return dict(self.gps_status_data)
 
-    # pull latest code, rebuild container, and restart bringup on jetson
+    # Jetson remote management
+
+    def _ssh_fire(self, remote_command: str, log_msg: str):
+        """Shared helper: open a non-blocking SSH subprocess to the Jetson."""
+        ssh_command = [
+            "ssh", "-t",
+            f"{self.jetson_user}@{self.jetson_ip}",
+            remote_command,
+        ]
+        self.logger.info(log_msg)
+        subprocess.Popen(ssh_command)
+
+    def hotswap_jetson(self):
+        """Git-pull and rebuild inside the *running* container, then relaunch bringup_rubik.
+        The container is never stopped — fastest way to pick up new code mid-session."""
+        self._ssh_fire(
+            "bash ~/run_remote.sh --hotswap",
+            "Hotswapping: pulling latest code and relaunching inside running container...",
+        )
+
     def restart_jetson(self):
-        with self._lock:
-            remote_command = (
-                "bash ~/run_remote.sh --update"
-            )
+        """Stop the container, rebuild the ROS workspace, and relaunch bringup.
+        No git pull, no Docker image pull — fastest way to bounce the stack."""
+        self._ssh_fire(
+            "bash ~/run_remote.sh --restart",
+            "Restarting Jetson container (no code update)...",
+        )
 
-            ssh_command = [
-                "ssh",
-                "-t",
-                f"{self.jetson_user}@{self.jetson_ip}",
-                remote_command,
-            ]
-
-            self.logger.info("Rebuilding Jetson container and pulling latest code...")
-
-            subprocess.Popen(ssh_command)
-
-    # only pull latest code, dont rebuild container
     def update_jetson(self):
-        with self._lock:
-            remote_command = (
-                "cd ~/AutonomousKart && "
-                "git pull && "
-                "docker exec ros2-dev bash -lc '"
-                "source /opt/ros/humble/setup.bash && "
-                "cd /ws && "
-                "colcon build && "
-                "source install/setup.bash && "
-                "ros2 launch autonomous_kart bringup_jetson.launch.py"
-                "'"
-            )
+        """Git-pull the latest code, then restart.
+        Use this before a session to pick up new commits without a full image rebuild."""
+        self._ssh_fire(
+            "bash ~/run_remote.sh --update",
+            "Pulling latest code and restarting Jetson...",
+        )
 
-            ssh_command = [
-                "ssh",
-                "-t",
-                f"{self.jetson_user}@{self.jetson_ip}",
-                remote_command,
-            ]
-
-            self.logger.info("Starting Jetson and pulling latest code...")
-
-            subprocess.Popen(ssh_command)
+    def rebuild_jetson(self):
+        """Pull the latest Docker image, git-pull code, then restart.
+        Use this after a Docker image has been pushed (e.g. new deps or base OS change)."""
+        self._ssh_fire(
+            "bash ~/run_remote.sh --rebuild",
+            "Pulling latest Docker image + code and rebuilding Jetson...",
+        )
 
 def main(args=None):
     rclpy.init(args=args)

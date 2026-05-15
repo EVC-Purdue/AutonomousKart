@@ -27,4 +27,5 @@ elif [ "$TARGET_DEVICE" == "rubik" ]; then
         sleep 1
     done
     ) &
+fi
 sleep infinity

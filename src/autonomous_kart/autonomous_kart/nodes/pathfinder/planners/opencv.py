@@ -43,9 +43,9 @@ class OpenCVPlanner(Planner):
         
     
     def plan(self, inputs: PlannerInputs) -> Optional[Tuple[float, float]]:
-        if inputs is None or len(inputs.track_angles) < 2:
+        if inputs is None or inputs.track_angles is None or len(inputs.track_angles) < 2:
             self.logger.warning("Inputs or inputs.track_angles is invalid")
-            return self.throttle_mps, 0.0
+            return 0.0, 0.0
         
         steering_deg = None
         match self.mode:

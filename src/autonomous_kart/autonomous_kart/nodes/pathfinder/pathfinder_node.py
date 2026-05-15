@@ -112,6 +112,7 @@ class PathfinderNode(Node):
         self.create_subscription(Float32MultiArray, "track_angles", self._on_track_angles, 5)
         self.create_subscription(String, "system_state", self.update_state, 10)
         self.create_subscription(Float32MultiArray, "manual_commands", self.manual_loop, 5)
+        self.create_subscription(Float32MultiArray, "track_angles", self._on_track_angles, 5)
 
         # Publishers
         self.drive_publisher = self.create_publisher(Float32MultiArray, "cmd_drive", 5)

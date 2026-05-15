@@ -237,7 +237,7 @@ def test_yaw_calibration_publishes_offset_and_ends_in_stopped(ros_ctx, spin_help
             node._yaw_cal_thread.join(timeout=2.0)
 
             assert node.state == "STOPPED"
-            # theta_imu = atan2(0, 1) = 0; psi_gps ≈ 0.5; offset ≈ 0.5
+            # theta_imu = atan2(0, 1) = 0; psi_gps ~= 0.5; offset ~= 0.5
             assert received[0] == pytest.approx(0.5, abs=0.15)
         finally:
             exe.remove_node(listener)
@@ -247,7 +247,7 @@ def test_yaw_calibration_publishes_offset_and_ends_in_stopped(ros_ctx, spin_help
 
 
 def test_yaw_calibration_aborts_when_below_accel_floor(ros_ctx):
-    """All samples have |a_h| below the floor → abort with no publish, R untouched."""
+    """All samples have |a_h| below the floor -> abort with no publish, R untouched."""
     from std_msgs.msg import Float32
 
     with ros_ctx(_yaw_cal_params(

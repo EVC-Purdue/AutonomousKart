@@ -60,8 +60,8 @@ def pack_control_message(throttle_erpm: int, steering_percent: float) -> bytes:
     steering = int(500 + 500 * (steering_percent / 100.0))  # -100..100 -> 0..1000
 
     data = bytearray(8)
-    data[0] = throttle_erpm & 0xFF
-    data[1] = (throttle_erpm >> 8) & 0xFF
+    data[0] = int(throttle_erpm) & 0xFF
+    data[1] = (int(throttle_erpm) >> 8) & 0xFF
 
     data[2] = steering & 0xFF
     data[3] = (steering >> 8) & 0xFF

@@ -25,7 +25,7 @@ def oval(straight=60.0, radius=25.0, n=500, v_str=12.0, v_crv=7.0):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--output", default="/ws/data/racing_line/line14.csv")
+    p.add_argument("--output", default="/ws/data/racing_line/line6.csv")
     args = p.parse_args()
     pts = oval()
     os.makedirs(os.path.dirname(args.output), exist_ok=True)

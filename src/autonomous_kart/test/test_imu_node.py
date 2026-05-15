@@ -201,7 +201,7 @@ def test_calibration_blocked_when_cmd_vel_stale(imu_factory):
 
 
 def test_calibration_proceeds_when_no_cmd_vel_ever_received(imu_factory):
-    """First-boot grace: never heard cmd_vel ⇒ assume idle and proceed."""
+    """First-boot grace: never heard cmd_vel => assume idle and proceed."""
     with imu_factory() as (node, bus, _rclpy):
         assert node._last_cmd_vel is None
         bus.next_read = _make_burst()
@@ -224,7 +224,7 @@ def test_calibration_aborts_on_gyro_motion(imu_factory):
         assert node.state == CALIBRATING
         assert node._calib_count == 3
 
-        # gyro raw 1000 / 131 * pi/180 ≈ 0.133 rad/s, well over 0.05 threshold
+        # gyro raw 1000 / 131 * pi/180 ~= 0.133 rad/s, well over 0.05 threshold
         bus.next_read = _make_burst(gyro_raw=(1000, 0, 0))
         node.publish_imu()
 
@@ -249,7 +249,7 @@ def test_calibration_aborts_on_accel_anomaly(imu_factory):
 def test_calibration_completes_and_writes_cache(imu_factory, tmp_path):
     cache = tmp_path / "out.json"
     # Tiny non-zero gyro so the bias is testable, well below motion threshold.
-    # 50 raw / 131 * pi/180 ≈ 0.00666 rad/s
+    # 50 raw / 131 * pi/180 ~= 0.00666 rad/s
     raw_gyro_x = 50
     expected_bias_x = raw_gyro_x / 131.0 * (math.pi / 180.0)
 
@@ -274,7 +274,7 @@ def test_calibration_completes_and_writes_cache(imu_factory, tmp_path):
 
 
 def test_publish_emits_imu_only_after_calibration(imu_factory):
-    """Drives the full WAITING → CALIBRATED arc and verifies imu publishes are gated."""
+    """Drives the full WAITING -> CALIBRATED arc and verifies imu publishes are gated."""
     from sensor_msgs.msg import Imu
 
     with imu_factory(calibration_samples=3) as (node, bus, rclpy):
@@ -313,7 +313,7 @@ def test_publish_emits_imu_only_after_calibration(imu_factory):
 
 
 def test_published_angular_velocity_subtracts_bias(imu_factory):
-    """Once CALIBRATED, the published ω equals raw-gyro - bias."""
+    """Once CALIBRATED, the published omega equals raw-gyro - bias."""
     from sensor_msgs.msg import Imu
 
     with imu_factory(calibration_samples=4) as (node, bus, rclpy):
@@ -328,14 +328,14 @@ def test_published_angular_velocity_subtracts_bias(imu_factory):
             while time.monotonic() < deadline:
                 exe.spin_once(timeout_sec=0.05)
 
-            # Calibrate with constant bias of raw_x=100 → bias_x stored
+            # Calibrate with constant bias of raw_x=100 -> bias_x stored
             bias_raw = 100
             bus.next_read = _make_burst(gyro_raw=(bias_raw, 0, 0))
             for _ in range(4):
                 node.publish_imu()
             assert node.state == CALIBRATED
 
-            # Now feed raw_x = 300; expect angular_velocity.x ≈ (300 - 100) raw worth
+            # Now feed raw_x = 300; expect angular_velocity.x ~= (300 - 100) raw worth
             bus.next_read = _make_burst(gyro_raw=(300, 0, 0))
             received.clear()
             node.publish_imu()
@@ -440,7 +440,7 @@ def test_status_payload_has_expected_fields(imu_factory):
 
 
 def test_yaw_offset_callback_composes_Rz_with_identity_R(imu_factory, tmp_path):
-    """With R = I, applying a 90° offset yields a pure Rz(π/2) and re-saves the cache."""
+    """With R = I, applying a 90 deg offset yields a pure Rz(pi/2) and re-saves the cache."""
     import numpy as np
     from std_msgs.msg import Float32
 

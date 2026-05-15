@@ -193,9 +193,10 @@ class LocalizationNode(Node):
     def _param(self, name, default):
         """Return the parameter value if declared, else `default`."""
         try:
-            return self.get_parameter(name).value
+            val = self.get_parameter(name).value
         except Exception:
             return default
+        return default if val is None else val
 
     def _cb_drive_real(self, msg: Float32MultiArray):
         if len(msg.data) < 2:

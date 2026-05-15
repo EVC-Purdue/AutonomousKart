@@ -5,5 +5,5 @@
     system_state: "IDLE" # "STOPPED", "IDLE", "MANUAL", "AUTONOMOUS"
     system_frequency: 60 # Speed of hot loop (Hertz)
     line_path: "/ws/data/racing_line/line14.csv"
-    jetson_ip: "0.0.0.0"
+    jetson_ip: "evc-jetson.tail73145c.ts.net"
     jetson_username: "evc" 

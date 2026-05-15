@@ -199,7 +199,9 @@ def jetson_start():
 
     master_node.start_jetson()
 
-    return True, "jetson launch started" 
+    return jsonify({
+        "message": "jetson launch started"
+    })
 
 
 def start(node: MasterNode) -> None:

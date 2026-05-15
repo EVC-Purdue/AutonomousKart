@@ -15,9 +15,9 @@ services:
       - CYCLONEDDS_URI=file:///ws/docker/cyclonedds.xml
     ports:
       - "8000:8000"
-#    devices:
-#      - "/dev/ttyACM0:/dev/ttyACM0"
-#      - "/dev/ttyTHS1:/dev/ttyTHS1"         # GPS
+    devices:
+      - "/dev/ttyACM0:/dev/ttyACM0"
+      - "/dev/ttyTHS1:/dev/ttyTHS1"         # GPS
 #      - "/dev/i2c-7:/dev/i2c-7"
 #      - "/dev/spidev12.0:/dev/spidev12.0" # SPI bus 12, CS0
 #      - "/dev/video0:/dev/video0"

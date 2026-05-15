@@ -10,4 +10,8 @@ class SafetyChecker:
         self.params = params
 
     def check(self, proposed: Tuple[float, float], inputs: PlannerInputs) -> Tuple[float, float]:
-        return proposed
+        motor_pct, steering_pct = proposed
+
+        if inputs is not None:
+            heading = inputs.track_angles
+        return motor_pct, steering_pct

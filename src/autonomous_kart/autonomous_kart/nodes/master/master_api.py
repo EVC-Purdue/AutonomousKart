@@ -192,15 +192,27 @@ def lines_endpoint():
         "dynamic": master_node.get_dynamic_line(),
     })
     
-@app.route("/jetson/start", methods=["POST"])
+@app.route("/jetson/restart", methods=["POST"])
 def jetson_start():
     if not master_node:
         return jsonify({"error": "not initialized"}), 500
 
-    master_node.start_jetson()
+    master_node.restart_jetson()
 
     return jsonify({
-        "message": "jetson launch started"
+        "message": "jetson restart started"
+    })
+
+
+@app.route("/jetson/update", methods=["POST"])
+def jetson_update():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+
+    master_node.update_jetson()
+
+    return jsonify({
+        "message": "jetson update started"
     })
 
 

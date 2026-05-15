@@ -334,7 +334,8 @@ class MasterNode(Node):
         with self._lock:
             return dict(self.gps_status_data)
 
-    def start_jetson(self):
+    # pull latest code, rebuild container, and restart bringup on jetson
+    def restart_jetson(self):
         with self._lock:
             remote_command = (
                 "bash ~/run_remote.sh --update"
@@ -347,7 +348,33 @@ class MasterNode(Node):
                 remote_command,
             ]
 
-            self.logger.info("Starting Jetson bringup...")
+            self.logger.info("Rebuilding Jetson container and pulling latest code...")
+
+            subprocess.Popen(ssh_command)
+
+    # only pull latest code, dont rebuild container
+    def update_jetson(self):
+        with self._lock:
+            remote_command = (
+                "cd ~/AutonomousKart && "
+                "git pull && "
+                "docker exec ros2-dev bash -lc '"
+                "source /opt/ros/humble/setup.bash && "
+                "cd /ws && "
+                "colcon build --symlink-install && "
+                "source install/setup.bash && "
+                "ros2 launch autonomous_kart bringup_jetson.launch.py"
+                "'"
+            )
+
+            ssh_command = [
+                "ssh",
+                "-t",
+                f"{self.jetson_user}@{self.jetson_ip}",
+                remote_command,
+            ]
+
+            self.logger.info("Starting Jetson and pulling latest code...")
 
             subprocess.Popen(ssh_command)
 

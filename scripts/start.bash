@@ -26,5 +26,8 @@ str2str -in ntrip://shayman1:shayman1@108.59.49.226:9000/MSM4_VRS -out tcpsvr://
     sleep 1
   done
 ) &
+  pip install smbus2
+  apt update
+  apt install rtklib
 
 sleep infinity

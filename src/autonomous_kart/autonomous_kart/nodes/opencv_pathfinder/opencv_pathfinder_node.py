@@ -29,7 +29,8 @@ class OpenCVPathfinderNode(Node):
         self.system_frequency = self.get_parameter("system_frequency").value
         self.debug_mode = self.get_parameter("debug_mode").value
         self.pic_offset = self.get_parameter("pic_offset").value
-        self.percent_of_img = self.get_parameter("percent_of_img").value
+        self.top_per = self.get_parameter("top_per").value
+        self.bottom_per = self.get_parameter("bottom_per").value
         self.pixel_range = self.get_parameter("pixel_range").value
         self.capture_frequency = self.get_parameter("capture_frequency").value
         self.log_dir = self.get_parameter("log_dir").value
@@ -75,16 +76,24 @@ class OpenCVPathfinderNode(Node):
             self.last_log_time = current_time
             self.frames_since_last_log = 0
 
-        right_angle, left_angle = self.angle_finder.get_img_angles(frame, log_folder=self.log_folder, frame_count=self.frame_count, capture_frequency=self.capture_frequency, 
-                                                                   debug=self.debug_mode, percent=self.percent_of_img, pixel_range=self.pixel_range, pic_offset=self.pic_offset)
+        right_angle, left_angle = self.angle_finder.get_img_angles(frame, 
+                                                                   log_folder=self.log_folder, 
+                                                                   frame_count=self.frame_count, 
+                                                                   capture_frequency=self.capture_frequency,
+                                                                   debug=self.debug_mode, 
+                                                                   top_per=self.top_per, 
+                                                                   bottom_per=self.bottom_per,
+                                                                   pixel_range=self.pixel_range, 
+                                                                   pic_offset=self.pic_offset
+                                                                    )
 
         if right_angle is None or left_angle is None:
             self.logger.warn("Right or Left angle returned None")
 
         msg = Float32MultiArray()
         msg.data = [
-            float(right_angle) if right_angle is not None else float('nan'),
             float(left_angle) if left_angle is not None else float('nan'),
+            float(right_angle) if right_angle is not None else float('nan'),
         ]
         self.angle_pub.publish(msg)
 

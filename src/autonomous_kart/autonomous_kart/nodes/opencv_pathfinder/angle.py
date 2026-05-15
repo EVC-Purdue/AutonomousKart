@@ -19,14 +19,26 @@ class AngleFinder:
     # @param img: Normal image
     # @param log_folder: Directory for write debug info
     # @param debug: Draws lines on image
-    # @param percent: Percent of the road to cutoff (top down)
+    # @param bottom_percent: Percent of the road to cutoff from bottom
+    # @param top_per: Percent of the road to cutoff from top
     # @param pixel_range: Range of pixels to check around previous pixel for O(1) lookup
     # @param pic_offset: Pixel offset from edge of image
     # @ret image angles or None when cannot find angles/coords
-    def get_img_angles(self, img, frame_count=-1, log_folder="logs", debug=False, percent=0.0, pixel_range=3, pic_offset=5, capture_frequency=100):
-        image, right, left = self.get_img_mask(img, percent=percent, pixel_range=pixel_range, pic_offset=pic_offset)
+    def get_img_angles(self, img, frame_count=-1, log_folder="logs", debug=False, bottom_per=0.0, top_per=0.0, pixel_range=3, pic_offset=5, capture_frequency=100):
+        image, right, left = self.get_img_mask(img, bottom_per=bottom_per, top_per=top_per, pixel_range=pixel_range, pic_offset=pic_offset)
         
         if image is None or right is None or left is None:
+            return (None, None)
+
+        h, w = img.shape[:2]
+        height, width = h - 1 - pic_offset, w - 1 - pic_offset
+        top_y_index = int(height * top_per)
+        bottom_y_index = height - int(height * bottom_per)
+
+        right_deg = utils.get_angle((width, pic_offset), (width // 2, pic_offset), right)
+        left_deg = utils.get_angle((pic_offset, pic_offset), (width // 2, pic_offset), left)
+
+        if right_deg is None or left_deg is None:
             return (None, None)
         
         if debug and frame_count % capture_frequency == 0:
@@ -40,27 +52,31 @@ class AngleFinder:
 
             cv.imwrite(f"{log_folder}/normal_frames/{self.start_time}/frame_{frame_count}.jpg", img)
             utils.draw_lines(image, right, left)
+            self.write_debug_info(image, (left, right), (left_deg, right_deg))
             cv.imwrite(f"{log_folder}/debug_frames/{self.start_time}/frame_{frame_count}.jpg", image)
 
-        w = img.shape[1]
-        width = w - 1 - pic_offset
+            with open(f"{log_folder}/debug_frames/{self.start_time}/log", "a") as f:
+                f.write(f"Frame: {frame_count}, ")
+                f.write(f"LDeg: {left_deg:.1f}, ")
+                f.write(f"LPrev: {self.prev_left}, ")
+                f.write(f"LCur: {left}, ")
 
-        right_deg = utils.get_angle((width, pic_offset), (width // 2, pic_offset), right)
-        left_deg = utils.get_angle((pic_offset, pic_offset), (width // 2, pic_offset), left)
+                f.write(f"RDeg: {right_deg:.1f}, ")
+                f.write(f"RPrev: {self.prev_right}, ")
+                f.write(f"RCur: {right}")
 
-        if right_deg is None or left_deg is None:
-            return (None, None)
+                f.write("\n")
 
         return (right_deg, left_deg)
 
 
     # @param img: Normal image
     # @param debug: Draws lines on image
-    # @param percent: Percent of the road to cutoff (top down)
+    # @param top_per: Percent of the road to cutoff from top
     # @param pixel_range: Range of pixels to check around previous pixel for O(1) lookup
     # @param pic_offset: Pixel offset from edge of image
     # @ret Masked image & right/left divide between road & grass or None when image doesn't exist
-    def get_img_mask(self, img: np.ndarray, percent=0.0, pixel_range=3, pic_offset=5):
+    def get_img_mask(self, img: np.ndarray, bottom_per=0.0, top_per=0.0, pixel_range=3, pic_offset=5):
         if img is None:
             self.logger.error("No Image Provided as Input to get_img_mask")
             return (None, None, None)
@@ -68,9 +84,14 @@ class AngleFinder:
         # Roi mask for a portion of image
         h, w = img.shape[:2]
         height, width = h - 1 - pic_offset, w - 1 - pic_offset
-        y_index = int(height * percent)
+        top_y_index = int(height * top_per)
+        bottom_y_index = height - int(height * bottom_per)
 
-        roi_image = img[y_index:height, pic_offset:width]
+        if bottom_y_index <= top_y_index:
+            self.logger.warning("ROI Image Bounds Collide")
+            return (None, None, None)
+
+        roi_image = img[top_y_index:bottom_y_index, pic_offset:width]
 
         # Get hue mask
         image_hsv = utils.convert_bgr_to_hsv(roi_image)
@@ -90,7 +111,7 @@ class AngleFinder:
             right = self.vectorized_road_coord(result, right_side=True)
         
         if not left:
-            left = self. vectorized_road_coord(result, right_side=False)
+            left = self.vectorized_road_coord(result, right_side=False)
 
         self.prev_right = right
         self.prev_left = left
@@ -184,64 +205,76 @@ class AngleFinder:
     # @param pixel_range: Range of pixels to check around previous pixel for O(1) lookup
     # @param pic_offset: Pixel offset from edge of image
     # @ret video or None
-    def get_video_mask(self, vid, debug=False, percent=0.0, pixel_range=3, pic_offset=5):
-        if vid is None:
-            self.logger.error("Error opening video")
-            return None
+    # def get_video_mask(self, vid, debug=False, top_per=0.0, bottom_per=0.0, pixel_range=3, pic_offset=5):
+    #     if vid is None:
+    #         self.logger.error("Error opening video")
+    #         return None
         
-        r, f = vid.read()
-        if not r:
-            self.logger.error("Can't get initial video frame")
-            return None
-        h, w = f.shape[:2]
-        height, width = h - 1 - pic_offset, w - 1 - pic_offset
+    #     r, f = vid.read()
+    #     if not r:
+    #         self.logger.error("Can't get initial video frame")
+    #         return None
+    #     h, w = f.shape[:2]
+    #     width = w - 1 - pic_offset
 
-        fps = vid.get(cv.CAP_PROP_FPS)
-        if fps == 0:
-            fps = 30
+    #     fps = vid.get(cv.CAP_PROP_FPS)
+    #     if fps == 0:
+    #         fps = 30
 
-        video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (w, h), isColor=False) 
-        vid.set(cv.CAP_PROP_POS_FRAMES, 0)
+    #     video = cv.VideoWriter("labeled_video.mp4", cv.VideoWriter_fourcc(*'mp4v'), fps, (w, h), isColor=False) 
+    #     vid.set(cv.CAP_PROP_POS_FRAMES, 0)
 
-        while (True):
-            ret, frame = vid.read()
+    #     while (True):
+    #         ret, frame = vid.read()
 
-            if not ret:
-                break
+    #         if not ret:
+    #             break
                 
-            result, cur_right, cur_left = self.get_img_mask(frame, debug=debug, percent=percent, pic_offset=pic_offset, pixel_range=pixel_range)
+    #         result, cur_right, cur_left = self.get_img_mask(frame, debug=debug, top_per=top_per, bottom_per=bottom_per, pic_offset=pic_offset, pixel_range=pixel_range)
+    #         result = cv.cvtColor(result, cv.COLOR_GRAY2BGR)
+
+    #         width = w - 1 - pic_offset
+
+    #         # Write debug info on video
+    #         if debug:
+    #             right_deg = utils.get_angle((width, pic_offset), (width // 2, pic_offset), cur_right)
+    #             left_deg = utils.get_angle((pic_offset, pic_offset), (width // 2, pic_offset), cur_left)
+
+    #             if right_deg is None:
+    #                 right_deg = -1
+                
+    #             if left_deg is None:
+    #                 left_deg = -1
             
-            presult = np.zeros((h, w), dtype=result.dtype)
+    #             pos = (cur_left, cur_right)
+    #             degrees = (left_deg, right_deg)
+    #             self.write_debug_info(result, pos, degrees)
 
-            height = h - 1 - pic_offset
-            width = w - 1 - pic_offset
-            y_index = int(height * percent)
-
-            presult[y_index:height, pic_offset:width] = result
-
-            # Write debug info on video
-            if debug:
-                right_deg = utils.get_angle((width, pic_offset), (width // 2, pic_offset), cur_right)
-                left_deg = utils.get_angle((pic_offset, pic_offset), (width // 2, pic_offset), cur_left)
-
-                if right_deg is None:
-                    right_deg = -1
-                
-                if left_deg is None:
-                    left_deg = -1
-            
-                cv.putText(presult, f"Previous left: {self.prev_left}", (300, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv.putText(presult, f"Previous right: {self.prev_right}", (900, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-                cv.putText(presult, f"Current left: {cur_left}", (300, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv.putText(presult, f"Current right: {cur_right}", (900, 400), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                
-
-                cv.putText(presult, f"{right_deg:.1f}", (1300, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                cv.putText(presult, f"{left_deg:.1f}", (100, 100), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-            video.write(presult)
+    #         video.write(result)
         
-        vid.release()
-        video.release()
-        cv.destroyAllWindows()
+    #     vid.release()
+    #     video.release()
+    #     cv.destroyAllWindows()
+
+    def write_debug_info(self, image, pos, degrees):
+        cur_left, cur_right = pos
+        left_deg, right_deg = degrees
+
+        height, width = image.shape[:2]
+        
+        margin_x = int(width * 0.05)
+        margin_y = int(height * 0.05)
+        font_scale = min(width, height) / 300.0
+        thickness = max(1, int(font_scale * 6))
+        
+        line_spacing = int(font_scale * 40)
+        
+        y_pos = height - margin_y
+        cv.putText(image, f"LDeg: {left_deg:.1f}", (margin_x, y_pos), cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+        cv.putText(image, f"LPrev: {self.prev_left}", (margin_x, y_pos - line_spacing), cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+        cv.putText(image, f"LCur: {cur_left}", (margin_x, y_pos - line_spacing * 2), cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+
+        right_x = int(width * 0.5)
+        cv.putText(image, f"RDeg: {right_deg:.1f}", (right_x, y_pos), cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+        cv.putText(image, f"RPrev: {self.prev_right}", (right_x, y_pos - line_spacing), cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+        cv.putText(image, f"RCur: {cur_right}", (right_x, y_pos - line_spacing * 2), cv.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)

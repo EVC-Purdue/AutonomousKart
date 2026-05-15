@@ -3,6 +3,8 @@ opencv_pathfinder_node:
     log_dir: "/ws/logs/"
     log_file: "opencv_pathfinder"
     pic_offset: 5
-    percent_of_img: 0.5
+    top_per: 0.5    #Top percent to exclude
+    bottom_per: 0.0 #Bottom percent to exclude
     pixel_range: 3
     capture_frequency: 100
+    

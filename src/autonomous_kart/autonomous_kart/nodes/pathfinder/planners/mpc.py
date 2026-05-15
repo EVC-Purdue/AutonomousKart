@@ -237,9 +237,9 @@ class MPCPlanner(Planner):
         delta_cmd = float(best_u[0, 0])
         accel_cmd = float(best_u[1, 0])
 
-        # Convert to publish convention: throttle [0..100], steering [deg]
-        v_next = max(0.0, min(self.v_max, v + self.dt * accel_cmd))
-        throttle_pct = 100.0 * v_next / self.v_max if self.v_max > 1e-6 else 0.0
+        v_ref_now = min(float(self.l_vx[j_now]), self.target_speed)
+        v_ref_now = max(0.0, min(self.v_max, v_ref_now))
+        throttle_pct = 100.0 * v_ref_now / self.v_max if self.v_max > 1e-6 else 0.0
         steering_deg = math.degrees(delta_cmd)
 
         # Update warm-start (shift by 1)

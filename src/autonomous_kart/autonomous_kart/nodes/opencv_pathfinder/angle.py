@@ -1,6 +1,7 @@
 import cv2 as cv
 import numpy as np
 import os
+import time
 
 from autonomous_kart.nodes.opencv_pathfinder import utils
 
@@ -13,6 +14,7 @@ class AngleFinder:
         self.prev_right = None
         self.prev_left = None
         self.logger = logger
+        self.start_time = time.strftime("%Y_%m_%d_%H_%M_%S")
 
     # @param img: Normal image
     # @param log_folder: Directory for write debug info
@@ -33,10 +35,12 @@ class AngleFinder:
             os.makedirs(log_folder, exist_ok=True)
             os.makedirs(f"{log_folder}/normal_frames", exist_ok=True)
             os.makedirs(f"{log_folder}/debug_frames", exist_ok=True)
+            os.makedirs(f"{log_folder}/normal_frames/{self.start_time}", exist_ok=True)
+            os.makedirs(f"{log_folder}/debug_frames/{self.start_time}", exist_ok=True)
 
-            cv.imwrite(f"{log_folder}/normal_frames/frame_{frame_count}.jpg", img)
+            cv.imwrite(f"{log_folder}/normal_frames/{self.start_time}/frame_{frame_count}.jpg", img)
             utils.draw_lines(image, right, left)
-            cv.imwrite(f"{log_folder}/debug_frames/frame_{frame_count}.jpg", image)
+            cv.imwrite(f"{log_folder}/debug_frames/{self.start_time}/frame_{frame_count}.jpg", image)
 
         w = img.shape[1]
         width = w - 1 - pic_offset

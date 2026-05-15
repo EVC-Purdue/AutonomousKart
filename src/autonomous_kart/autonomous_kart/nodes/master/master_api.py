@@ -117,6 +117,17 @@ def mpc_status():
     return jsonify(master_node.get_mpc_status())
 
 
+@app.route("/mpc/residual_mode", methods=["POST"])
+def mpc_residual_mode():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    data = request.get_json(silent=True) or {}
+    ok, reason = master_node.set_residual_mode(data.get("mode", ""))
+    if not ok:
+        return jsonify({"error": reason}), 400
+    return jsonify({"success": "ok", "mode": reason})
+
+
 @app.route("/gps", methods=["GET"])
 def gps_status():
     if not master_node:

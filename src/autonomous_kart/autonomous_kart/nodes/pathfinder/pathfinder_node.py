@@ -112,6 +112,7 @@ class PathfinderNode(Node):
         self.create_subscription(Float32MultiArray, "track_angles", self._on_track_angles, 5)
         self.create_subscription(String, "system_state", self.update_state, 10)
         self.create_subscription(Float32MultiArray, "manual_commands", self.manual_loop, 5)
+        self.create_subscription(String, "mpc/residual_mode", self._on_residual_mode, 1)
 
         # Publishers
         self.drive_publisher = self.create_publisher(Float32MultiArray, "cmd_drive", 5)
@@ -137,6 +138,18 @@ class PathfinderNode(Node):
 
     def _on_track_angles(self, msg: Float32MultiArray):
         self._latest_track_angles = tuple(msg.data) if msg.data else None
+
+    def _on_residual_mode(self, msg: String):
+        mode = (msg.data or "").strip().lower()
+        if mode not in ("off", "shadow", "apply"):
+            self.logger.warning(f"mpc/residual_mode: ignoring '{msg.data}'")
+            return
+        residual = getattr(self.planner, "residual", None)
+        if residual is None:
+            self.logger.warning("mpc/residual_mode: active planner has no residual")
+            return
+        residual.mode = mode
+        self.logger.info(f"residual mode -> {mode}")
 
     def update_state(self, msg: String):
         if msg.data != self.state:

@@ -235,7 +235,15 @@ class MPCPlanner(Planner):
             self._publish_status(self.mode, False, t0, s, d, psi_track, v, v_target,
                                  0.0, 0.0, best_cost, 0.0,
                                  breakdown=breakdown,
-                                 x=x, y=y, yaw_rad=yaw)
+                                 x=x, y=y, yaw_rad=yaw,
+                                 throttle_mps_out=0.0, v_s=v_s, v_d=v_d,
+                                 closest_idx_active=self.closest_idx,
+                                 closest_idx_static=self.static_closest_idx,
+                                 rejoin_active=self.line_manager.is_active,
+                                 merge_idx=int(self.line_manager.merge_idx),
+                                 kappa_local=0.0,
+                                 consec_failures=self.consec_failures,
+                                 corridor_half=self.corridor_half)
             return 0.0, 0.0
 
         self.consec_failures = 0
@@ -279,7 +287,15 @@ class MPCPlanner(Planner):
                              delta_cmd, accel_cmd, best_cost, margin_min,
                              res_ps, res_pd,
                              breakdown=breakdown,
-                             x=x, y=y, yaw_rad=yaw)
+                             x=x, y=y, yaw_rad=yaw,
+                             throttle_mps_out=throttle_mps, v_s=v_s, v_d=v_d,
+                             closest_idx_active=j_now,
+                             closest_idx_static=self.static_closest_idx,
+                             rejoin_active=self.line_manager.is_active,
+                             merge_idx=int(self.line_manager.merge_idx),
+                             kappa_local=kappa_local,
+                             consec_failures=self.consec_failures,
+                             corridor_half=self.corridor_half)
 
         return throttle_mps, steering_deg
 
@@ -518,7 +534,12 @@ class MPCPlanner(Planner):
     def _publish_status(self, mode, success, t0, s, d, psi_track, v, v_target,
                         delta_cmd, accel_cmd, cost, margin_min,
                         res_s=0.0, res_d=0.0, breakdown=(0.0,) * 12,
-                        x=0.0, y=0.0, yaw_rad=0.0):
+                        x=0.0, y=0.0, yaw_rad=0.0,
+                        throttle_mps_out=0.0, v_s=0.0, v_d=0.0,
+                        closest_idx_active=0, closest_idx_static=0,
+                        rejoin_active=False, merge_idx=-1,
+                        kappa_local=0.0, consec_failures=0,
+                        corridor_half=0.0):
         if self.status_pub is None:
             return
         solve_ms = (time.perf_counter() - t0) * 1000.0
@@ -534,6 +555,15 @@ class MPCPlanner(Planner):
             float(self.residual.samples_trained),
             *breakdown,
             float(x), float(y), float(yaw_rad),
+            float(throttle_mps_out), float(v_s), float(v_d),
+            float(closest_idx_active), float(closest_idx_static),
+            1.0 if rejoin_active else 0.0, float(merge_idx),
+            float(kappa_local), float(consec_failures),
+            float(corridor_half),
+            # Residual diagnostics: mode (0=off,1=shadow,2=apply), theta norms.
+            float({"off": 0, "shadow": 1, "apply": 2}.get(self.residual.mode, 1)),
+            float(np.linalg.norm(self.residual.theta_s)),
+            float(np.linalg.norm(self.residual.theta_d)),
         ]
         self.status_pub.publish(Float32MultiArray(data=payload))
 

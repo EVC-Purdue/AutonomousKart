@@ -6,7 +6,7 @@ import can
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from std_msgs.msg import Float32MultiArray, UInt16, Bool, String, Float32
+from std_msgs.msg import Float32MultiArray, UInt16, String, Float32
 from rclpy.impl.rcutils_logger import RcutilsLogger
 
 import autonomous_kart.nodes.e_comms.e_comms as e_comms

@@ -72,7 +72,7 @@ pathfinder_node:
     mpc.w_edge: 1456.58
     mpc.edge_inner_frac: 0.274
     #  mpc rejoin (bezier overlay via DynamicLineManager + RejoinStrategy)
-    mpc.rejoin_cte_activate: 2.5
+    mpc.rejoin_cte_activate: 5.0
     mpc.rejoin_cte_deactivate: 1.0
     mpc.rejoin_merge_lookahead_m: 15.0
     mpc.rejoin_min_turning_radius: 3.0

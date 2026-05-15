@@ -198,6 +198,53 @@ def lines_endpoint():
         "static": static_xy,
         "dynamic": master_node.get_dynamic_line(),
     })
+    
+@app.route("/jetson/hotswap", methods=["POST"])
+def jetson_hotswap():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+
+    master_node.hotswap_jetson()
+
+    return jsonify({
+        "message": "jetson hotswap started"
+    })
+
+
+@app.route("/jetson/restart", methods=["POST"])
+def jetson_restart():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+
+    master_node.restart_jetson()
+
+    return jsonify({
+        "message": "jetson restart started"
+    })
+
+
+@app.route("/jetson/update", methods=["POST"])
+def jetson_update():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+
+    master_node.update_jetson()
+
+    return jsonify({
+        "message": "jetson update started"
+    })
+
+
+@app.route("/jetson/rebuild", methods=["POST"])
+def jetson_rebuild():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+
+    master_node.rebuild_jetson()
+
+    return jsonify({
+        "message": "jetson rebuild started"
+    })
 
 
 def start(node: MasterNode) -> None:

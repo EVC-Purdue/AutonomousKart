@@ -39,8 +39,8 @@ class MetricsNode(Node):
             "track_angles": Float32MultiArray,
             # "camera/image_raw": Image, # Note: This does not work because of invalid qos.
             # Regardless, images don't need to be saved.
-            "e_comms/adcb_state": String,
-            "e_comms/rc_mode": Bool,
+            "e_comms/logic_state": String,
+            "e_comms/running_mode": String,
             "e_comms/throttle_pwm": UInt16,
             "e_comms/steering_pwm": UInt16,
             "pathfinder_params": Float32MultiArray,

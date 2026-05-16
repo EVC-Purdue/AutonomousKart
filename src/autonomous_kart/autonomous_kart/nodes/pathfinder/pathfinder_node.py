@@ -11,6 +11,7 @@ from std_msgs.msg import Float32MultiArray, String
 from autonomous_kart.nodes.master.master_node import STATES
 from autonomous_kart.nodes.pathfinder.planners.base import KartConstants, PlannerInputs
 from autonomous_kart.nodes.pathfinder.planners.mpc import MPCPlanner
+from autonomous_kart.nodes.pathfinder.planners.mpc_residual import ResidualLearner
 from autonomous_kart.nodes.pathfinder.planners.opencv import OpenCVPlanner
 from autonomous_kart.nodes.pathfinder.planners.pure_pursuit import PurePursuitPlanner
 from autonomous_kart.nodes.pathfinder.safety_checker import SafetyChecker
@@ -61,17 +62,7 @@ class PathfinderNode(Node):
 
         # Racing line
         self.line_path = self._param("line_path", "", str)
-        self.racing_line: List[Tuple[float, ...]] = []
-        try:
-            with open(self.line_path, "r") as f:
-                for line in f:
-                    try:
-                        row = tuple(float(x) for x in line.strip().split(","))
-                    except ValueError:
-                        continue
-                    self.racing_line.append(row)
-        except OSError as e:
-            self.logger.error(f"Racing line not loadable at {self.line_path}: {e}")
+        self.racing_line: List[Tuple[float, ...]] = self._load_line_csv(self.line_path)
 
         # Cached inputs to planners
         self.state = self._param("system_state", "IDLE", str)
@@ -81,24 +72,28 @@ class PathfinderNode(Node):
         self.current_speed_mps = 0.0
         self._latest_track_angles: Optional[Tuple[float, ...]] = None
 
-        # Active planner
-        planner_name = self._param("planner", "pure_pursuit", str)
-        if planner_name not in PLANNERS:
+        # Shared residual learner — survives planner / line swaps so training
+        # state persists across mode changes.
+        residual_params = {
+            k: p.value
+            for k, p in self.get_parameters_by_prefix("mpc.residual").items()
+        }
+        self.shared_residual = ResidualLearner(residual_params, 1.0 / self.system_frequency)
+
+        # All planners are constructed; `active_planner_name` selects which
+        # one drives cmd_drive. MPC still ticks every frame for telemetry.
+        self.active_planner_name = self._param("planner", "pure_pursuit", str)
+        if self.active_planner_name not in PLANNERS:
             raise ValueError(
-                f"Unknown planner '{planner_name}'. Available: {list(PLANNERS)}"
+                f"Unknown planner '{self.active_planner_name}'. Available: {list(PLANNERS)}"
             )
-        self.planner = None
+        self.planners: dict = {}
         if self.racing_line:
-            planner_params = {
-                k: p.value for k, p in self.get_parameters_by_prefix(planner_name).items()
-            }
-            self.planner = PLANNERS[planner_name](
-                planner_params, self.kart, self.racing_line, logger=self.logger, node=self
-            )
-            self.logger.info(f"Pathfinder using planner '{planner_name}'")
+            self.planners = self._build_planners()
+            self.logger.info(f"Pathfinder using planner '{self.active_planner_name}'")
         else:
             self.logger.error(
-                "Pathfinder disabled: racing line is empty (planner not constructed)"
+                "Pathfinder disabled: racing line is empty (planners not constructed)"
             )
 
         # Safety wrapper (single chokepoint for every planner)
@@ -112,6 +107,9 @@ class PathfinderNode(Node):
         self.create_subscription(Float32MultiArray, "track_angles", self._on_track_angles, 5)
         self.create_subscription(String, "system_state", self.update_state, 10)
         self.create_subscription(Float32MultiArray, "manual_commands", self.manual_loop, 5)
+        self.create_subscription(String, "mpc/residual_mode", self._on_residual_mode, 1)
+        self.create_subscription(String, "pathfinder/planner", self._on_planner_swap, 1)
+        self.create_subscription(String, "pathfinder/line_path", self._on_line_swap, 1)
 
         # Publishers
         self.drive_publisher = self.create_publisher(Float32MultiArray, "cmd_drive", 5)
@@ -138,6 +136,37 @@ class PathfinderNode(Node):
     def _on_track_angles(self, msg: Float32MultiArray):
         self._latest_track_angles = tuple(msg.data) if msg.data else None
 
+    def _on_residual_mode(self, msg: String):
+        mode = (msg.data or "").strip().lower()
+        if mode not in ("off", "shadow", "apply"):
+            self.logger.warning(f"mpc/residual_mode: ignoring '{msg.data}'")
+            return
+        self.shared_residual.mode = mode
+        self.logger.info(f"residual mode -> {mode}")
+
+    def _on_planner_swap(self, msg: String):
+        name = (msg.data or "").strip().lower()
+        if name not in PLANNERS:
+            self.logger.warning(f"pathfinder/planner: unknown '{msg.data}'")
+            return
+        if name not in self.planners:
+            self.logger.warning(f"pathfinder/planner: '{name}' not constructed")
+            return
+        self.active_planner_name = name
+        self.logger.info(f"active planner -> {name}")
+
+    def _on_line_swap(self, msg: String):
+        path = (msg.data or "").strip()
+        new_line = self._load_line_csv(path)
+        if not new_line:
+            self.logger.warning(f"pathfinder/line_path: could not load '{path}'")
+            return
+        self.line_path = path
+        self.racing_line = new_line
+        # Rebuild planners on the new line; shared residual persists.
+        self.planners = self._build_planners()
+        self.logger.info(f"line -> {path} ({len(new_line)} pts)")
+
     def update_state(self, msg: String):
         if msg.data != self.state:
             # Any state transition: zero throttle immediately and drop the
@@ -154,9 +183,10 @@ class PathfinderNode(Node):
     # Autonomous tick
 
     def _autonomous_tick(self):
-        if self.state != STATES.AUTONOMOUS.value:
+        if not self.pose_ready:
             return
-        if not self.pose_ready or self.planner is None:
+        active = self.planners.get(self.active_planner_name)
+        if active is None:
             return
         inputs = PlannerInputs(
             pose_xy=self.current_xy,
@@ -165,11 +195,27 @@ class PathfinderNode(Node):
             track_angles=self._latest_track_angles,
             now_ns=self.get_clock().now().nanoseconds,
         )
-        try:
-            proposed = self.planner.plan(inputs)
-        except Exception:
-            self.logger.error(f"Planner error:\n{traceback.format_exc()}")
+
+        # Always run MPC.plan() so mpc/status keeps flowing for telemetry, regardless of state or active planner
+        mpc = self.planners.get(MPCPlanner.name)
+        mpc_proposed = None
+        if mpc is not None:
+            try:
+                mpc_proposed = mpc.plan(inputs)
+            except Exception:
+                self.logger.error(f"MPC telemetry plan error:\n{traceback.format_exc()}")
+
+        if self.state != STATES.AUTONOMOUS.value:
             return
+
+        if active is mpc:
+            proposed = mpc_proposed
+        else:
+            try:
+                proposed = active.plan(inputs)
+            except Exception:
+                self.logger.error(f"Planner error:\n{traceback.format_exc()}")
+                return
         if proposed is None:
             return
         safe = self.safety.check(proposed, inputs)
@@ -178,6 +224,17 @@ class PathfinderNode(Node):
         self.drive_publisher.publish(
             Float32MultiArray(data=[float(motor_mps), float(steering_deg)])
         )
+        # Keep training the shared residual under non-MPC planners
+        if self.active_planner_name != MPCPlanner.name and mpc is not None:
+            try:
+                mpc.train_step(
+                    motor_mps, steering_deg,
+                    self.current_xy[0], self.current_xy[1],
+                    self.current_yaw, self.current_speed_mps,
+                    inputs.now_ns,
+                )
+            except Exception:
+                self.logger.error(f"Residual train_step error:\n{traceback.format_exc()}")
 
     # Manual mode
     #
@@ -233,7 +290,8 @@ class PathfinderNode(Node):
     # Telemetry
 
     def publish_dynamic_line(self):
-        state = self.planner.dynamic_line_state()
+        active = self.planners.get(self.active_planner_name)
+        state = active.dynamic_line_state() if active is not None else None
         if state is None:
             payload = {"active": False, "strategy": None, "merge_idx": -1, "points": []}
         else:
@@ -241,6 +299,39 @@ class PathfinderNode(Node):
         self.dynamic_line_pub.publish(
             String(data=json.dumps(payload, separators=(",", ":")))
         )
+
+    # Helpers
+
+    def _load_line_csv(self, path: str) -> List[Tuple[float, ...]]:
+        rows: List[Tuple[float, ...]] = []
+        try:
+            with open(path, "r") as f:
+                for line in f:
+                    try:
+                        row = tuple(float(x) for x in line.strip().split(","))
+                    except ValueError:
+                        continue
+                    rows.append(row)
+        except OSError as e:
+            self.logger.error(f"Racing line not loadable at {path}: {e}")
+        return rows
+
+    def _build_planners(self) -> dict:
+        """Construct every registered planner. MPC gets the shared residual
+        so training survives planner / line swaps."""
+        out: dict = {}
+        for name, cls in PLANNERS.items():
+            planner_params = {
+                k: p.value for k, p in self.get_parameters_by_prefix(name).items()
+            }
+            kwargs = dict(logger=self.logger, node=self)
+            if cls is MPCPlanner:
+                kwargs["residual"] = self.shared_residual
+            try:
+                out[name] = cls(planner_params, self.kart, self.racing_line, **kwargs)
+            except Exception as e:
+                self.logger.error(f"Failed to construct planner '{name}': {e}")
+        return out
 
     def log_command_rate(self):
         current_time = self.get_clock().now().nanoseconds

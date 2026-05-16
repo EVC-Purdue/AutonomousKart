@@ -132,16 +132,6 @@ def imu_calibrate():
     return jsonify({"success": "ok"})
 
 
-@app.route("/imu/calibrate_yaw", methods=["POST"])
-def imu_calibrate_yaw():
-    if not master_node:
-        return jsonify({"error": "not initialized"}), 500
-    ok, reason = master_node.start_yaw_calibration()
-    if not ok:
-        return jsonify({"error": reason}), 409
-    return jsonify({"success": "ok"})
-
-
 @app.route("/imu/status", methods=["GET"])
 def imu_status():
     if not master_node:

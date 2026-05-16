@@ -436,51 +436,6 @@ def test_status_payload_has_expected_fields(imu_factory):
             listener.destroy_node()
 
 
-# --------------------------------------------------- yaw-offset callback
-
-
-def test_yaw_offset_callback_composes_Rz_with_identity_R(imu_factory, tmp_path):
-    """With R = I, applying a 90 deg offset yields a pure Rz(pi/2) and re-saves the cache."""
-    import numpy as np
-    from std_msgs.msg import Float32
-
-    cache = tmp_path / "cal.json"
-    cache.write_text(json.dumps({"gyro_bias": [0.0, 0.0, 0.0]}))
-    with imu_factory(cache_path=cache) as (node, _bus, _rclpy):
-        assert node.state == CALIBRATED
-        assert np.allclose(node.R, np.eye(3))
-
-        offset = math.pi / 2.0
-        node._yaw_offset_callback(Float32(data=offset))
-
-        c, s = math.cos(offset), math.sin(offset)
-        expected = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
-        assert np.allclose(node.R, expected, atol=1e-9)
-
-        payload = json.loads(cache.read_text())
-        assert "R" in payload
-        assert np.allclose(np.array(payload["R"]), expected, atol=1e-9)
-
-
-def test_yaw_offset_callback_composes_with_existing_R(imu_factory, tmp_path):
-    """Rz(offset) is left-composed onto the previously-stored R, not assigned over it."""
-    import numpy as np
-    from std_msgs.msg import Float32
-
-    R_prev = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]])
-    cache = tmp_path / "cal.json"
-    cache.write_text(json.dumps({"gyro_bias": [0.0, 0.0, 0.0], "R": R_prev.tolist()}))
-    with imu_factory(cache_path=cache) as (node, _bus, _rclpy):
-        assert np.allclose(node.R, R_prev)
-
-        offset = 0.5
-        node._yaw_offset_callback(Float32(data=offset))
-
-        c, s = math.cos(offset), math.sin(offset)
-        Rz = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
-        assert np.allclose(node.R, Rz @ R_prev, atol=1e-9)
-
-
 def test_save_cache_failure_is_logged_but_not_raised(imu_factory, tmp_path):
     """Pointing the cache at an unwritable location must not crash the calibration."""
     bad_path = tmp_path / "no_such_dir" / "nope.json"

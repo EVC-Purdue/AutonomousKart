@@ -11,7 +11,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from sensor_msgs.msg import Imu
-from std_msgs.msg import Empty, Float32, Float32MultiArray, String
+from std_msgs.msg import Empty, Float32MultiArray, String
 
 from smbus2 import SMBus
 
@@ -31,6 +31,10 @@ def _level_rotation(g, target):
         return np.diag([1.0, -1.0, -1.0])
     K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     return np.eye(3) + K + (K @ K) / (1.0 + c)
+
+# IMU mounted +X forward, +Y right; chip is right-handed so +Z physically
+# points down. Rotate 180° about +X to land in base_link FLU (det = +1).
+R_MOUNT = np.diag([1.0, -1.0, -1.0])
 
 
 class ImuNode(Node):
@@ -75,7 +79,7 @@ class ImuNode(Node):
         # state goes through this lock.
         self._lock = threading.Lock()
         self.gyro_bias = [0.0, 0.0, 0.0]
-        self.R = np.eye(3)
+        self.R = R_MOUNT.copy()
         self._calib_sum = [0.0, 0.0, 0.0]
         self._calib_accel_sum = [0.0, 0.0, 0.0]
         self._calib_count = 0
@@ -91,7 +95,6 @@ class ImuNode(Node):
 
         self.create_subscription(Float32MultiArray, "cmd_drive", self._cmd_vel_callback, 5)
         self.create_subscription(Empty, "imu/calibrate", self._calibrate_trigger, 1)
-        self.create_subscription(Float32, "imu/yaw_offset", self._yaw_offset_callback, 1)
 
         self.logger.info(f"IMU Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}")
 
@@ -139,14 +142,6 @@ class ImuNode(Node):
         self.logger.info("Calibration trigger received - resetting calibration state")
         self._reset_calibration("triggered")
 
-    def _yaw_offset_callback(self, msg: Float32):
-        c, s = math.cos(msg.data), math.sin(msg.data)
-        Rz = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
-        with self._lock:
-            self.R = Rz @ self.R
-        self._save_cache()
-        self.logger.info(f"Applied yaw offset {msg.data:.4f} rad")
-
     def _reset_calibration(self, reason: str):
         with self._lock:
             self.state = WAITING
@@ -169,9 +164,16 @@ class ImuNode(Node):
         return True
 
     def _sample_indicates_motion(self, accel, gyro):
-        for axis, val in zip(("x", "y", "z"), gyro):
-            if abs(val) > self.gyro_motion_thresh:
-                return f"gyro {axis}={val:.3f} rad/s exceeds {self.gyro_motion_thresh}"
+        # Compare against running mean so a constant chip bias doesn't
+        # look like motion. First sample has no mean yet → trivially passes.
+        with self._lock:
+            count = self._calib_count
+            gyro_mean = (
+                [s / count for s in self._calib_sum] if count > 0 else list(gyro)
+            )
+        for axis, val, mean in zip(("x", "y", "z"), gyro, gyro_mean):
+            if abs(val - mean) > self.gyro_motion_thresh:
+                return f"gyro {axis} delta={val - mean:.3f} rad/s exceeds {self.gyro_motion_thresh}"
         accel_mag = math.sqrt(sum(a * a for a in accel))
         if abs(accel_mag - abs(self.default_g)) > self.accel_motion_thresh:
             return f"|accel|={accel_mag:.3f} m/s^2 deviates from g by > {self.accel_motion_thresh}"
@@ -187,8 +189,6 @@ class ImuNode(Node):
     def _finish_calibration(self):
         with self._lock:
             self.gyro_bias = [s / self._calib_count for s in self._calib_sum]
-            accel_mean = np.array([s / self._calib_count for s in self._calib_accel_sum])
-            self.R = _level_rotation(accel_mean, np.array([0.0, 0.0, self.default_g]))
             self.state = CALIBRATED
             self.last_error = ""
             count = self._calib_count
@@ -211,11 +211,6 @@ class ImuNode(Node):
                 raise ValueError("gyro_bias must be a length-3 list")
             with self._lock:
                 self.gyro_bias = [float(b) for b in bias]
-                R = data.get("R")
-                if R is not None:
-                    R_arr = np.asarray(R, dtype=float)
-                    if R_arr.shape == (3, 3):
-                        self.R = R_arr
                 self.state = CALIBRATED
                 bias_snapshot = list(self.gyro_bias)
             self.logger.info(
@@ -230,7 +225,6 @@ class ImuNode(Node):
         with self._lock:
             payload = {
                 "gyro_bias": list(self.gyro_bias),
-                "R": self.R.tolist(),
                 "samples": self._calib_count,
                 "timestamp": time.time(),
             }

@@ -76,7 +76,7 @@ class PathfinderNode(Node):
         # planner switch to MPC. Constructed once here, passed by reference
         # to every (re)built MPCPlanner instance.
         residual_params = {
-            k[len("mpc.residual."):]: p.value
+            k: p.value
             for k, p in self.get_parameters_by_prefix("mpc.residual").items()
         }
         from autonomous_kart.nodes.pathfinder.planners.mpc_residual import ResidualLearner

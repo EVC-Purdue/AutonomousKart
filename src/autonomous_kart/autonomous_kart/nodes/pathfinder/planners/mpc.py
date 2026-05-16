@@ -410,11 +410,13 @@ class MPCPlanner(Planner):
                    x: float, y: float, yaw: float, v: float, now_ns: int) -> None:
         """Update the residual learner using actual motion vs nominal prediction.
         Callable when MPC is NOT the active planner so the residual keeps
-        training under pure_pursuit / opencv. No solve, no telemetry publish."""
+        training under pure_pursuit / opencv. Publishes a /mpc/status frame so
+        the frontend sees samples_trained / theta norms / errors update."""
         if not self.residual.enabled:
             return
+        t0 = time.perf_counter()
         self._set_active_line(self._static_arrays)
-        s, d, j_now, _, _ = self._frenet(x, y, self.closest_idx)
+        s, d, j_now, psi_track, _ = self._frenet(x, y, self.closest_idx)
         self.closest_idx = j_now
         self._pose_hist.append((now_ns, s, d))
         v_s, v_d = self._frenet_velocity()
@@ -435,6 +437,21 @@ class MPCPlanner(Planner):
         )
         self.residual.push(phi, s, d, nom_s - s, nom_d - d, v)
         self.residual.step(s, d)
+        res_ps, res_pd = self.residual.predict(phi)
+        self._publish_status(
+            self.mode, True, t0, s, d, psi_track, v, self.target_speed,
+            delta_rad, accel, 0.0, self.corridor_half,
+            res_ps, res_pd,
+            breakdown=(0.0,) * 12,
+            x=x, y=y, yaw_rad=yaw,
+            throttle_mps_out=motor_mps, v_s=v_s, v_d=v_d,
+            closest_idx_active=j_now,
+            closest_idx_static=j_now,
+            rejoin_active=False, merge_idx=-1,
+            kappa_local=kappa_local,
+            consec_failures=0,
+            corridor_half=self.corridor_half,
+        )
 
     def _reset_warm_start(self) -> None:
         self.u_mean[:] = 0.0

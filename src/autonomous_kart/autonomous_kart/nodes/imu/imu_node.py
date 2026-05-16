@@ -32,8 +32,9 @@ def _level_rotation(g, target):
     K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     return np.eye(3) + K + (K @ K) / (1.0 + c)
 
-# +X forward, +Y right, +Z up
-R_MOUNT = np.diag([1.0, -1.0, 1.0])
+# IMU mounted +X forward, +Y right; chip is right-handed so +Z physically
+# points down. Rotate 180° about +X to land in base_link FLU (det = +1).
+R_MOUNT = np.diag([1.0, -1.0, -1.0])
 
 
 class ImuNode(Node):
@@ -210,11 +211,6 @@ class ImuNode(Node):
                 raise ValueError("gyro_bias must be a length-3 list")
             with self._lock:
                 self.gyro_bias = [float(b) for b in bias]
-                R = data.get("R")
-                if R is not None:
-                    R_arr = np.asarray(R, dtype=float)
-                    if R_arr.shape == (3, 3):
-                        self.R = R_arr
                 self.state = CALIBRATED
                 bias_snapshot = list(self.gyro_bias)
             self.logger.info(
@@ -229,7 +225,6 @@ class ImuNode(Node):
         with self._lock:
             payload = {
                 "gyro_bias": list(self.gyro_bias),
-                "R": self.R.tolist(),
                 "samples": self._calib_count,
                 "timestamp": time.time(),
             }

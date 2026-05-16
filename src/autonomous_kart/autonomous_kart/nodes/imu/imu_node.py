@@ -11,7 +11,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from sensor_msgs.msg import Imu
-from std_msgs.msg import Empty, Float32, Float32MultiArray, String
+from std_msgs.msg import Empty, Float32MultiArray, String
 
 from smbus2 import SMBus
 
@@ -94,7 +94,6 @@ class ImuNode(Node):
 
         self.create_subscription(Float32MultiArray, "cmd_drive", self._cmd_vel_callback, 5)
         self.create_subscription(Empty, "imu/calibrate", self._calibrate_trigger, 1)
-        self.create_subscription(Float32, "imu/yaw_offset", self._yaw_offset_callback, 1)
 
         self.logger.info(f"IMU Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}")
 
@@ -141,14 +140,6 @@ class ImuNode(Node):
     def _calibrate_trigger(self, _msg: Empty):
         self.logger.info("Calibration trigger received - resetting calibration state")
         self._reset_calibration("triggered")
-
-    def _yaw_offset_callback(self, msg: Float32):
-        c, s = math.cos(msg.data), math.sin(msg.data)
-        Rz = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
-        with self._lock:
-            self.R = Rz @ self.R
-        self._save_cache()
-        self.logger.info(f"Applied yaw offset {msg.data:.4f} rad")
 
     def _reset_calibration(self, reason: str):
         with self._lock:

@@ -3,12 +3,11 @@ import threading
 import time
 from enum import Enum
 
-import math
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-from std_msgs.msg import String, Float32MultiArray, Float32,  UInt16, Empty
+from std_msgs.msg import String, Float32MultiArray, UInt16, Empty
 
 
 class STATES(Enum):
@@ -30,11 +29,6 @@ class MasterNode(Node):
         self.state = self.get_parameter("system_state").value
         self.system_frequency = self.get_parameter("system_frequency").value
         self.path = self.get_parameter("line_path").value
-        self.yaw_cal_speed = self.get_parameter("yaw_cal_speed").value
-        self.yaw_cal_duration_s = self.get_parameter("yaw_cal_duration_s").value
-        self.yaw_cal_tick_dt = self.get_parameter("yaw_cal_tick_dt").value
-        self.yaw_cal_accel_floor = self.get_parameter("yaw_cal_accel_floor").value
-        self.yaw_cal_min_samples = self.get_parameter("yaw_cal_min_samples").value
 
         assert self.state in [s.value for s in STATES]
 

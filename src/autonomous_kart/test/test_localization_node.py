@@ -133,8 +133,9 @@ def test_localization_real_mode_seeds_from_single_vtg_fix(ros_ctx):
             node.destroy_node()
 
 
-def test_localization_real_mode_skips_seed_when_yaw_unknown(ros_ctx):
-    """If GPS yaw cov is 1e6 (no VTG yet), do NOT init the EKF."""
+def test_localization_real_mode_seeds_xy_only_when_yaw_unknown(ros_ctx):
+    """If GPS yaw cov is 1e6 (no VTG yet), still seed xy with defaults for
+    yaw/speed at large variance so subsequent updates can pull them in."""
     with ros_ctx(_real_params()) as rclpy:
         node = LocalizationNode()
         try:
@@ -142,7 +143,15 @@ def test_localization_real_mode_skips_seed_when_yaw_unknown(ros_ctx):
                 _gps_odom(x=1.0, y=2.0, yaw=0.0, speed=0.0,
                           yaw_var=1e6, speed_var=1e6)
             )
-            assert not node.ekf.initialized
+            assert node.ekf.initialized
+            px, py, yaw0, v0 = node.ekf.x
+            assert abs(px - 1.0) < 1e-6
+            assert abs(py - 2.0) < 1e-6
+            assert yaw0 == 0.0
+            assert v0 == 0.0
+            # Yaw/speed variances should be wide since they weren't measured.
+            assert node.ekf.P[2, 2] > 1.0
+            assert node.ekf.P[3, 3] >= 1.0
         finally:
             node.destroy_node()
 

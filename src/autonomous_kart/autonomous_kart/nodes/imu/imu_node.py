@@ -169,9 +169,16 @@ class ImuNode(Node):
         return True
 
     def _sample_indicates_motion(self, accel, gyro):
-        for axis, val in zip(("x", "y", "z"), gyro):
-            if abs(val) > self.gyro_motion_thresh:
-                return f"gyro {axis}={val:.3f} rad/s exceeds {self.gyro_motion_thresh}"
+        # Compare against running mean so a constant chip bias doesn't
+        # look like motion. First sample has no mean yet → trivially passes.
+        with self._lock:
+            count = self._calib_count
+            gyro_mean = (
+                [s / count for s in self._calib_sum] if count > 0 else list(gyro)
+            )
+        for axis, val, mean in zip(("x", "y", "z"), gyro, gyro_mean):
+            if abs(val - mean) > self.gyro_motion_thresh:
+                return f"gyro {axis} delta={val - mean:.3f} rad/s exceeds {self.gyro_motion_thresh}"
         accel_mag = math.sqrt(sum(a * a for a in accel))
         if abs(accel_mag - abs(self.default_g)) > self.accel_motion_thresh:
             return f"|accel|={accel_mag:.3f} m/s^2 deviates from g by > {self.accel_motion_thresh}"

@@ -41,7 +41,7 @@ class MPCPlanner(Planner):
     name = "mpc"
 
     def __init__(self, params: dict, kart: KartConstants, racing_line: list,
-                 logger=None, node=None):
+                 logger=None, node=None, residual: Optional[ResidualLearner] = None):
         super().__init__(params, kart, racing_line, logger, node=node)
 
         if not racing_line:
@@ -72,6 +72,9 @@ class MPCPlanner(Planner):
         self.a_max = kart.a_max_mps2
         self.a_lat_max = kart.a_lat_max_mps2
         self.target_speed = float(g("target_speed_mps", 6.0))
+        # Below this speed, dpsi = v/L*tan(delta) ~= 0 so the cost can't
+        # distinguish steering choices — hold delta at 0 until v crosses the gate.
+        self.steer_observability_v = float(g("steer_observability_v_mps", 0.5))
 
         # Corridor (centerline = racing line)
         tw = float(g("track_half_width_m", 2.5))
@@ -110,13 +113,14 @@ class MPCPlanner(Planner):
         # manager swaps in a bezier from the kart's pose back onto the racing
         # line; the planner Frenet-projects against that bezier (treating it
         # as the reference line) until it deactivates near the merge point.
-        self.line_manager = DynamicLineManager(racing_line, logger=logger)
-        self.line_manager.register(RejoinStrategy(
+        self._rejoin_kwargs = dict(
             cte_activate=float(g("rejoin_cte_activate", 2.5)),
             cte_deactivate=float(g("rejoin_cte_deactivate", 1.0)),
             merge_lookahead_m=float(g("rejoin_merge_lookahead_m", 15.0)),
             min_turning_radius=float(g("rejoin_min_turning_radius", 3.0)),
-        ))
+        )
+        self.line_manager = DynamicLineManager(racing_line, logger=logger)
+        self.line_manager.register(RejoinStrategy(**self._rejoin_kwargs))
 
         # Racing line as flat numpy arrays with derived tangent for Frenet.
         # The static racing line is built once; `self.l_*` references the
@@ -127,8 +131,8 @@ class MPCPlanner(Planner):
         self._set_active_line(self._static_arrays)
 
         # State carried between ticks
-        self.closest_idx = 0           # idx into the ACTIVE reference (line or bezier)
-        self.static_closest_idx = 0    # idx into the static racing line (for CTE gate)
+        self.closest_idx = 0  # idx into the ACTIVE reference (line or bezier)
+        self.static_closest_idx = 0  # idx into the static racing line (for CTE gate)
         self.delta_prev = 0.0
         self.a_prev = 0.0
         self.u_mean = np.zeros((2, self.N))  # warm-start [delta(N), accel(N)]
@@ -142,8 +146,11 @@ class MPCPlanner(Planner):
             k[len("residual."):]: v for k, v in params.items()
             if k.startswith("residual.")
         }
-        self.residual = ResidualLearner(residual_params, solve_dt)
+        # Shared ResidualLearner survives planner / line swaps so training state persists
+        self.residual = residual if residual is not None else ResidualLearner(residual_params, solve_dt)
         self._nom_steps = max(1, int(round(self.residual.target_horizon_s / self.dt)))
+        self._last_motor_mps = 0.0
+        self._train_dt = solve_dt
         self._steer_hist = deque([0.0] * NUM_STEER_HIST, maxlen=NUM_STEER_HIST)
         self._throttle_hist = deque([0.0] * NUM_THROTTLE_HIST, maxlen=NUM_THROTTLE_HIST)
         # Pose history covers v_window_s of past samples at the solve cadence.
@@ -191,7 +198,8 @@ class MPCPlanner(Planner):
             self.closest_idx = 0
             self._reset_warm_start()
         elif was_active and not now_active:
-            self.closest_idx = int(self.line_manager.merge_idx)
+            # Resume Frenet against the static line at the kart's actual nearest idx (already computed this tick)
+            self.closest_idx = int(self.static_closest_idx)
             self._bezier_arrays = None
             self._reset_warm_start()
 
@@ -230,12 +238,25 @@ class MPCPlanner(Planner):
                 self.mode = MODE_FAILSAFE
             self._publish_status(self.mode, False, t0, s, d, psi_track, v, v_target,
                                  0.0, 0.0, best_cost, 0.0,
-                                 breakdown=breakdown)
+                                 breakdown=breakdown,
+                                 x=x, y=y, yaw_rad=yaw,
+                                 throttle_mps_out=0.0, v_s=v_s, v_d=v_d,
+                                 closest_idx_active=self.closest_idx,
+                                 closest_idx_static=self.static_closest_idx,
+                                 rejoin_active=self.line_manager.is_active,
+                                 merge_idx=int(self.line_manager.merge_idx),
+                                 kappa_local=0.0,
+                                 consec_failures=self.consec_failures,
+                                 corridor_half=self.corridor_half)
             return 0.0, 0.0
 
         self.consec_failures = 0
         delta_cmd = float(best_u[0, 0])
         accel_cmd = float(best_u[1, 0])
+
+        if v < self.steer_observability_v:
+            delta_cmd = 0.0
+            self.u_mean[0, :] = 0.0
 
         v_ref_now = min(float(self.l_vx[j_now]), self.target_speed)
         v_ref_now = max(0.0, min(self.v_max, v_ref_now))
@@ -269,7 +290,16 @@ class MPCPlanner(Planner):
         self._publish_status(self.mode, True, t0, s, d, psi_track, v, v_target,
                              delta_cmd, accel_cmd, best_cost, margin_min,
                              res_ps, res_pd,
-                             breakdown=breakdown)
+                             breakdown=breakdown,
+                             x=x, y=y, yaw_rad=yaw,
+                             throttle_mps_out=throttle_mps, v_s=v_s, v_d=v_d,
+                             closest_idx_active=j_now,
+                             closest_idx_static=self.static_closest_idx,
+                             rejoin_active=self.line_manager.is_active,
+                             merge_idx=int(self.line_manager.merge_idx),
+                             kappa_local=kappa_local,
+                             consec_failures=self.consec_failures,
+                             corridor_half=self.corridor_half)
 
         return throttle_mps, steering_deg
 
@@ -291,14 +321,18 @@ class MPCPlanner(Planner):
         at_hi_edge = (j == hi - 1 and hi < self.line_n)
         # On a closed loop, the natural "window edge" near the seam is the last index of the array
         near_seam = self.line_closed and (
-            hint <= self.proj_back or hint >= self.line_n - self.proj_back
+                hint <= self.proj_back or hint >= self.line_n - self.proj_back
         )
         if at_lo_edge or at_hi_edge or near_seam or best_d2 > self._resync_dist2:
             all_dx = self.l_x - x
             all_dy = self.l_y - y
             all_d2 = all_dx * all_dx + all_dy * all_dy
             j_full = int(np.argmin(all_d2))
-            if float(all_d2[j_full]) + 1e-6 < best_d2:
+            # Wrap-aware index-distance gate: on a closed loop, reject jumps
+            # to a geometrically-near-but-arc-far segment.
+            n = self.line_n
+            idx_dist = min((j_full - hint) % n, (hint - j_full) % n)
+            if idx_dist < n // 4 and float(all_d2[j_full]) + 1e-6 < best_d2:
                 j = j_full
 
         psi_j = self.l_psi[j]
@@ -499,10 +533,73 @@ class MPCPlanner(Planner):
         )
         return u, best_cost, traj, feasible, breakdown
 
+    def set_racing_line(self, racing_line: list) -> None:
+        """Swap in a new racing line. Residual state is preserved (features
+        are kart-state relative); Frenet / warm-start are reset."""
+        self.racing_line = racing_line
+        self._static_arrays = self._build_line_arrays(racing_line)
+        self._bezier_arrays = None
+        self._set_active_line(self._static_arrays)
+        self.line_manager = DynamicLineManager(racing_line, logger=self.logger)
+        self.line_manager.register(RejoinStrategy(**self._rejoin_kwargs))
+        self.closest_idx = 0
+        self.static_closest_idx = 0
+        self._reset_warm_start()
+        self._pose_hist.clear()
+
+    def train_step(self, motor_mps: float, steering_deg: float,
+                   x: float, y: float, yaw: float, v: float, now_ns: int) -> None:
+        """Drive the residual learner from another planner's commands so it
+        keeps training when MPC isn't the active planner."""
+        if not self.residual.enabled:
+            return
+        t0 = time.perf_counter()
+        self._set_active_line(self._static_arrays)
+        s, d, j_now, psi_track, _ = self._frenet(x, y, self.closest_idx)
+        self.closest_idx = j_now
+        self._pose_hist.append((now_ns, s, d))
+        v_s, v_d = self._frenet_velocity()
+        delta_rad = math.radians(steering_deg)
+        accel = (motor_mps - self._last_motor_mps) / max(self._train_dt, 1e-3)
+        self._last_motor_mps = motor_mps
+        self._steer_hist.appendleft(delta_rad)
+        self._throttle_hist.appendleft(accel)
+        nom_x, nom_y = self._hold_rollout(x, y, yaw, v, delta_rad, accel, self._nom_steps)
+        nom_s, nom_d, _, _, _ = self._frenet(nom_x, nom_y, j_now)
+        kappa_local = self._curvature_at(j_now)
+        phi = _features(
+            d, v_s, v_d, kappa_local,
+            tuple(self._steer_hist), tuple(self._throttle_hist),
+            nom_s - s, nom_d - d,
+        )
+        self.residual.push(phi, s, d, nom_s - s, nom_d - d, v)
+        self.residual.step(s, d)
+        res_ps, res_pd = self.residual.predict(phi)
+        self._publish_status(
+            self.mode, True, t0, s, d, psi_track, v, self.target_speed,
+            delta_rad, accel, 0.0, self.corridor_half,
+            res_ps, res_pd,
+            breakdown=(0.0,) * 12,
+            x=x, y=y, yaw_rad=yaw,
+            throttle_mps_out=motor_mps, v_s=v_s, v_d=v_d,
+            closest_idx_active=j_now,
+            closest_idx_static=j_now,
+            rejoin_active=False, merge_idx=-1,
+            kappa_local=kappa_local,
+            consec_failures=0,
+            corridor_half=self.corridor_half,
+        )
+
     #  telemetry
     def _publish_status(self, mode, success, t0, s, d, psi_track, v, v_target,
                         delta_cmd, accel_cmd, cost, margin_min,
-                        res_s=0.0, res_d=0.0, breakdown=(0.0,) * 12):
+                        res_s=0.0, res_d=0.0, breakdown=(0.0,) * 12,
+                        x=0.0, y=0.0, yaw_rad=0.0,
+                        throttle_mps_out=0.0, v_s=0.0, v_d=0.0,
+                        closest_idx_active=0, closest_idx_static=0,
+                        rejoin_active=False, merge_idx=-1,
+                        kappa_local=0.0, consec_failures=0,
+                        corridor_half=0.0):
         if self.status_pub is None:
             return
         solve_ms = (time.perf_counter() - t0) * 1000.0
@@ -517,6 +614,15 @@ class MPCPlanner(Planner):
             nom_s, nom_d, res_es, res_ed,
             float(self.residual.samples_trained),
             *breakdown,
+            float(x), float(y), float(yaw_rad),
+            float(throttle_mps_out), float(v_s), float(v_d),
+            float(closest_idx_active), float(closest_idx_static),
+            1.0 if rejoin_active else 0.0, float(merge_idx),
+            float(kappa_local), float(consec_failures),
+            float(corridor_half),
+            float({"off": 0, "shadow": 1, "apply": 2}.get(self.residual.mode, 1)),
+            float(np.linalg.norm(self.residual.theta_s)),
+            float(np.linalg.norm(self.residual.theta_d)),
         ]
         self.status_pub.publish(Float32MultiArray(data=payload))
 

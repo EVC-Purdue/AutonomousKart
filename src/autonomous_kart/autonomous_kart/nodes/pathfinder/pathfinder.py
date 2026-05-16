@@ -48,7 +48,8 @@ def pathfinder(
     if v_max_mps <= 0.0:
         return 0.0, 0.0
     speed_mps = 0.0 if speed_mps < 0.0 else (v_max_mps if speed_mps > v_max_mps else speed_mps)
-    desired_speed_mps = 0.0 if desired_speed_mps < 0.0 else (v_max_mps if desired_speed_mps > v_max_mps else desired_speed_mps)
+    desired_speed_mps = 0.0 if desired_speed_mps < 0.0 else (
+        v_max_mps if desired_speed_mps > v_max_mps else desired_speed_mps)
 
     steer_max_rad = math.radians(steer_max_deg)
     if steer_max_rad <= 1e-6 or wheelbase_m <= 1e-6:
@@ -133,5 +134,3 @@ def pathfinder(
         v_cmd = v_max_mps
 
     return v_cmd, math.degrees(delta)
-
-

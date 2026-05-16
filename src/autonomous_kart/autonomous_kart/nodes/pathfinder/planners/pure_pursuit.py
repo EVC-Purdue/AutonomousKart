@@ -19,6 +19,7 @@ class PurePursuitPlanner(Planner):
 
         self.use_velocity_scaled_lookahead = bool(params.get("use_velocity_scaled_lookahead", True))
         self.lookahead_time_s = float(params.get("lookahead_time_s", 1.0))
+        self.latency_s = float(params.get("latency_s", 0.0))
         self.min_lookahead_m = float(params.get("min_lookahead_m", 0.6))
         self.max_lookahead_m = float(params.get("max_lookahead_m", 3.0))
 
@@ -49,7 +50,14 @@ class PurePursuitPlanner(Planner):
         if not racing_line:
             return None
 
-        current_xy = inputs.pose_xy
+        if self.latency_s > 0.0:
+            x, y = inputs.pose_xy
+            current_xy = (
+                x + inputs.speed_mps * math.cos(inputs.yaw_rad) * self.latency_s,
+                y + inputs.speed_mps * math.sin(inputs.yaw_rad) * self.latency_s,
+            )
+        else:
+            current_xy = inputs.pose_xy
 
         if self.use_velocity_scaled_lookahead:
             lookahead_m = inputs.speed_mps * self.lookahead_time_s
@@ -150,11 +158,11 @@ class PurePursuitPlanner(Planner):
 
     @staticmethod
     def _nearest_idx_forward(
-        line: list,
-        xy: Tuple[float, float],
-        start_idx: int,
-        window: int,
-        allow_wrap: bool,
+            line: list,
+            xy: Tuple[float, float],
+            start_idx: int,
+            window: int,
+            allow_wrap: bool,
     ) -> int:
         n = len(line)
         if n == 0:
@@ -199,11 +207,11 @@ class PurePursuitPlanner(Planner):
         return best_i
 
     def _pick_lookahead_point(
-        self,
-        line: list,
-        closest_idx: int,
-        lookahead_m: float,
-        current_xy: Tuple[float, float],
+            self,
+            line: list,
+            closest_idx: int,
+            lookahead_m: float,
+            current_xy: Tuple[float, float],
     ) -> Tuple[Tuple[float, float], float]:
         n = len(line)
         if n == 0:
@@ -220,7 +228,7 @@ class PurePursuitPlanner(Planner):
 
         s_end = float(line[-1][0])
         closed = s_end > 0.0 and (
-            math.hypot(line[0][1] - line[-1][1], line[0][2] - line[-1][2]) <= self.max_closed_dist
+                math.hypot(line[0][1] - line[-1][1], line[0][2] - line[-1][2]) <= self.max_closed_dist
         )
 
         if closed and s_target > s_end:

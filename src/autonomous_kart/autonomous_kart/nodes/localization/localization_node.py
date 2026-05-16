@@ -282,16 +282,19 @@ class LocalizationNode(Node):
         have_speed = var_v < self.vtg_speed_var_max
 
         if not self.ekf.initialized:
-            # With VTG, we can seed on a single fix as soon as a heading is
-            # available. Speed defaults to 0 if the modem hasn't reported one.
-            if have_yaw:
-                v0 = v_meas if have_speed else 0.0
-                var_v0 = var_v if have_speed else 1.0
-                P0 = np.diag([sigma_xx, sigma_yy, var_yaw, var_v0])
-                self.ekf.reset(x, y, yaw_meas, v0, P=P0)
-                self.logger.info(
-                    f"EKF init: pos=({x:.2f},{y:.2f}) yaw={math.degrees(yaw_meas):.1f} deg v={v0:.2f} m/s"
-                )
+            # Seed position from the first fix; if VTG yaw/speed aren't
+            # trusted, init them at 0 with large variance and let updates
+            # pull them in.
+            yaw0 = yaw_meas if have_yaw else 0.0
+            var_yaw0 = var_yaw if have_yaw else (math.pi ** 2)
+            v0 = v_meas if have_speed else 0.0
+            var_v0 = var_v if have_speed else 1.0
+            P0 = np.diag([sigma_xx, sigma_yy, var_yaw0, var_v0])
+            self.ekf.reset(x, y, yaw0, v0, P=P0)
+            self.logger.info(
+                f"EKF init: pos=({x:.2f},{y:.2f}) yaw={math.degrees(yaw0):.1f} deg "
+                f"v={v0:.2f} m/s (vtg_yaw={'y' if have_yaw else 'n'}, vtg_v={'y' if have_speed else 'n'})"
+            )
             self._last_gps_t = t
             return
 

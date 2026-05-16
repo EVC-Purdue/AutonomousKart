@@ -128,6 +128,14 @@ class MasterNode(Node):
         self.create_subscription(
             Float32MultiArray, "mpc/status", self._mpc_status_callback, 5
         )
+        # Hot-fix telemetry sink: every mpc/status payload is appended as one
+        # JSON line to /ws/mpc_status.log so the volume retains the full trace.
+        self._mpc_log_path = "/ws/mpc_status.log"
+        try:
+            self._mpc_log_fh = open(self._mpc_log_path, "a", buffering=1)
+        except OSError as e:
+            self.logger.error(f"mpc_status.log open failed: {e}")
+            self._mpc_log_fh = None
 
         # GPS status snapshot (fix quality, RTK, sigmas, RTCM stats)
         self.gps_status_data = {"fix_quality": 0, "fix_label": "INVALID"}
@@ -226,6 +234,13 @@ class MasterNode(Node):
         }
         with self._lock:
             self.mpc_status_data = snapshot
+        if self._mpc_log_fh is not None:
+            try:
+                snapshot["stamp_ns"] = self.get_clock().now().nanoseconds
+                self._mpc_log_fh.write(json.dumps(snapshot, separators=(",", ":")) + "\n")
+                self._mpc_log_fh.flush()
+            except Exception as e:
+                self.logger.error(f"mpc_status.log write failed: {e}")
 
     def get_mpc_status(self):
         with self._lock:

@@ -185,10 +185,10 @@ class PathfinderNode(Node):
     # Autonomous tick
 
     def _autonomous_tick(self):
-        if self.state != STATES.AUTONOMOUS.value:
+        if not self.pose_ready:
             return
         active = self.planners.get(self.active_planner_name)
-        if not self.pose_ready or active is None:
+        if active is None:
             return
         inputs = PlannerInputs(
             pose_xy=self.current_xy,
@@ -197,11 +197,29 @@ class PathfinderNode(Node):
             track_angles=self._latest_track_angles,
             now_ns=self.get_clock().now().nanoseconds,
         )
-        try:
-            proposed = active.plan(inputs)
-        except Exception:
-            self.logger.error(f"Planner error:\n{traceback.format_exc()}")
+        # Always run MPC.plan() every tick so mpc/status keeps flowing for
+        # telemetry, regardless of system state or which planner is active.
+        # The return value is only used to drive cmd_drive when MPC is active
+        # AND state == AUTONOMOUS; otherwise it's discarded.
+        mpc = self.planners.get(MPCPlanner.name)
+        mpc_proposed = None
+        if mpc is not None:
+            try:
+                mpc_proposed = mpc.plan(inputs)
+            except Exception:
+                self.logger.error(f"MPC telemetry plan error:\n{traceback.format_exc()}")
+
+        if self.state != STATES.AUTONOMOUS.value:
             return
+
+        if active is mpc:
+            proposed = mpc_proposed
+        else:
+            try:
+                proposed = active.plan(inputs)
+            except Exception:
+                self.logger.error(f"Planner error:\n{traceback.format_exc()}")
+                return
         if proposed is None:
             return
         safe = self.safety.check(proposed, inputs)
@@ -213,7 +231,6 @@ class PathfinderNode(Node):
         # Residual training runs every tick. If MPC is the active planner, its
         # own plan() already pushed/stepped — skip to avoid double-counting.
         if self.active_planner_name != MPCPlanner.name:
-            mpc = self.planners.get(MPCPlanner.name)
             if mpc is not None:
                 try:
                     mpc.train_step(

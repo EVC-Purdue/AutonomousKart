@@ -32,6 +32,9 @@ def _level_rotation(g, target):
     K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     return np.eye(3) + K + (K @ K) / (1.0 + c)
 
+# +X forward, +Y right, +Z up
+R_MOUNT = np.diag([1.0, -1.0, 1.0])
+
 
 class ImuNode(Node):
     def __init__(self):
@@ -75,7 +78,7 @@ class ImuNode(Node):
         # state goes through this lock.
         self._lock = threading.Lock()
         self.gyro_bias = [0.0, 0.0, 0.0]
-        self.R = np.eye(3)
+        self.R = R_MOUNT.copy()
         self._calib_sum = [0.0, 0.0, 0.0]
         self._calib_accel_sum = [0.0, 0.0, 0.0]
         self._calib_count = 0
@@ -194,8 +197,6 @@ class ImuNode(Node):
     def _finish_calibration(self):
         with self._lock:
             self.gyro_bias = [s / self._calib_count for s in self._calib_sum]
-            accel_mean = np.array([s / self._calib_count for s in self._calib_accel_sum])
-            self.R = _level_rotation(accel_mean, np.array([0.0, 0.0, self.default_g]))
             self.state = CALIBRATED
             self.last_error = ""
             count = self._calib_count

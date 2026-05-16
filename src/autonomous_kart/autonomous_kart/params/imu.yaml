@@ -2,7 +2,7 @@
 imu_node:
   ros__parameters:
     imu_frequency: 100  # Hz
-    default_g: -9.80665  # m/s^2
+    default_g: -9.80236  # m/s^2
     i2c_bus: 7
     i2c_address: 0x68
     calibration_samples: 200   # ~2s

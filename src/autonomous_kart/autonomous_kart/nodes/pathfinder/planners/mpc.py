@@ -198,7 +198,8 @@ class MPCPlanner(Planner):
             self.closest_idx = 0
             self._reset_warm_start()
         elif was_active and not now_active:
-            self.closest_idx = int(self.line_manager.merge_idx)
+            # Resume Frenet against the static line at the kart's actual nearest idx (already computed this tick)
+            self.closest_idx = int(self.static_closest_idx)
             self._bezier_arrays = None
             self._reset_warm_start()
 

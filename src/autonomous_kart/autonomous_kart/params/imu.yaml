@@ -2,7 +2,7 @@
 imu_node:
   ros__parameters:
     imu_frequency: 100  # Hz
-    default_g: -9.80665  # m/s^2
+    default_g: -9.80236  # m/s^2
     i2c_bus: 7
     i2c_address: 0x68
     calibration_samples: 200   # ~2s
@@ -21,12 +21,3 @@ imu_node:
     calibration_cache_path: imu_calibration.json
 
     status_frequency: 1.0  # Hz
-
-master_api:
-  ros__parameters:
-    # IMU yaw-calibration drive
-    yaw_cal_speed: 2.0
-    yaw_cal_duration_s: 5.0
-    yaw_cal_tick_dt: 0.05    # seconds between manual_commands publishes / sample snapshots
-    yaw_cal_accel_floor: 0.3 # m/s^2; only samples with horizontal accel above this are used
-    yaw_cal_min_samples: 30

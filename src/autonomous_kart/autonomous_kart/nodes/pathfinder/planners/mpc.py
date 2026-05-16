@@ -131,8 +131,8 @@ class MPCPlanner(Planner):
         self._set_active_line(self._static_arrays)
 
         # State carried between ticks
-        self.closest_idx = 0           # idx into the ACTIVE reference (line or bezier)
-        self.static_closest_idx = 0    # idx into the static racing line (for CTE gate)
+        self.closest_idx = 0  # idx into the ACTIVE reference (line or bezier)
+        self.static_closest_idx = 0  # idx into the static racing line (for CTE gate)
         self.delta_prev = 0.0
         self.a_prev = 0.0
         self.u_mean = np.zeros((2, self.N))  # warm-start [delta(N), accel(N)]
@@ -321,7 +321,7 @@ class MPCPlanner(Planner):
         at_hi_edge = (j == hi - 1 and hi < self.line_n)
         # On a closed loop, the natural "window edge" near the seam is the last index of the array
         near_seam = self.line_closed and (
-            hint <= self.proj_back or hint >= self.line_n - self.proj_back
+                hint <= self.proj_back or hint >= self.line_n - self.proj_back
         )
         if at_lo_edge or at_hi_edge or near_seam or best_d2 > self._resync_dist2:
             all_dx = self.l_x - x

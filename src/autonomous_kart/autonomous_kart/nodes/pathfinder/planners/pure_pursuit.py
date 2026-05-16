@@ -158,11 +158,11 @@ class PurePursuitPlanner(Planner):
 
     @staticmethod
     def _nearest_idx_forward(
-        line: list,
-        xy: Tuple[float, float],
-        start_idx: int,
-        window: int,
-        allow_wrap: bool,
+            line: list,
+            xy: Tuple[float, float],
+            start_idx: int,
+            window: int,
+            allow_wrap: bool,
     ) -> int:
         n = len(line)
         if n == 0:
@@ -207,11 +207,11 @@ class PurePursuitPlanner(Planner):
         return best_i
 
     def _pick_lookahead_point(
-        self,
-        line: list,
-        closest_idx: int,
-        lookahead_m: float,
-        current_xy: Tuple[float, float],
+            self,
+            line: list,
+            closest_idx: int,
+            lookahead_m: float,
+            current_xy: Tuple[float, float],
     ) -> Tuple[Tuple[float, float], float]:
         n = len(line)
         if n == 0:
@@ -228,7 +228,7 @@ class PurePursuitPlanner(Planner):
 
         s_end = float(line[-1][0])
         closed = s_end > 0.0 and (
-            math.hypot(line[0][1] - line[-1][1], line[0][2] - line[-1][2]) <= self.max_closed_dist
+                math.hypot(line[0][1] - line[-1][1], line[0][2] - line[-1][2]) <= self.max_closed_dist
         )
 
         if closed and s_target > s_end:

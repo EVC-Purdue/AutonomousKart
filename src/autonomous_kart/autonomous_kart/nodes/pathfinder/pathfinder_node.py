@@ -53,8 +53,8 @@ class PathfinderNode(Node):
         # on cmd_drive at system_frequency by _manual_tick. If no command has
         # arrived within manual_timeout_s the tick falls back to [0, 0] for
         # safety, so a dropped HTTP / ROS connection brings the kart to rest.
-        self._manual_speed_mps = 0.0   # m/s
-        self._manual_steer_deg = 0.0   # degrees
+        self._manual_speed_mps = 0.0  # m/s
+        self._manual_steer_deg = 0.0  # degrees
         self._last_manual_ns = 0
         self.manual_timeout_s = self._param("manual_timeout_s", 0.5, float)
         self.manual_speed_max = self.kart.v_max_mps
@@ -258,8 +258,8 @@ class PathfinderNode(Node):
             return
         now_ns = self.get_clock().now().nanoseconds
         fresh = (
-            self._last_manual_ns > 0
-            and (now_ns - self._last_manual_ns) <= int(self.manual_timeout_s * 1e9)
+                self._last_manual_ns > 0
+                and (now_ns - self._last_manual_ns) <= int(self.manual_timeout_s * 1e9)
         )
         if fresh:
             speed_mps = max(

@@ -1,11 +1,11 @@
 {
-  "name": "ROS2 Pi Dev",
+  "name": "ROS2 Rubik Dev",
 
   "dockerComposeFile": [
     "../compose/docker-compose.yml"
   ],
 
-  "service": "dev-pi",
+  "service": "dev-rubik",
 
   "workspaceFolder": "/ws",
 

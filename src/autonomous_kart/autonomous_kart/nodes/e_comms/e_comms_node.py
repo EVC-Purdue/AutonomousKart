@@ -155,6 +155,7 @@ class ECommsNode(Node):
 
     def convert(self, throttle_m_per_s: float, steering_deg: float) -> tuple[float, float]:
         """Clamp + unit-convert (steering, throttle) for the CAN control frame."""
+        steering_deg *= 3
         clamped_throttle_m_per_s = max(self.min_speed, min(self.max_speed, throttle_m_per_s))
         throttle_erpm = powertrain.speed_to_erpm(clamped_throttle_m_per_s)
 

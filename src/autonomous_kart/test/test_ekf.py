@@ -8,7 +8,7 @@ from autonomous_kart.nodes.localization.ekf import LocalizationEKF
 
 
 def _mk(**kw):
-    defaults = dict(pos_noise=0.01)
+    defaults = dict(pos_noise=0.01, yaw_drift_noise=0.01, speed_drift_noise=0.5)
     defaults.update(kw)
     return LocalizationEKF(**defaults)
 

@@ -38,7 +38,7 @@ pathfinder_node:
     pure_pursuit.rejoin_cte_activate: 3.0
     pure_pursuit.rejoin_cte_deactivate: 1.0
     pure_pursuit.rejoin_merge_lookahead_m: 15.0
-    pure_pursuit.latency_s: 0.3
+    pure_pursuit.latency_s: 0.4
 
     # opencv
 

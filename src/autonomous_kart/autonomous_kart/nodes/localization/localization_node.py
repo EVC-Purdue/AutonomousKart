@@ -20,7 +20,7 @@ from std_msgs.msg import Float32, Float32MultiArray
 from geometry_msgs.msg import Quaternion, TransformStamped
 from tf2_ros import TransformBroadcaster
 
-from .ekf import LocalizationEKF
+from .ekf import LocalizationEKF, _wrap
 from .sim_bicycle import BicycleModel
 
 
@@ -313,6 +313,17 @@ class LocalizationNode(Node):
         var_v = float(msg.twist.covariance[0])
         have_yaw = var_yaw < self.vtg_yaw_var_max
         have_speed = var_v < self.vtg_speed_var_max
+        # VTG track is course-over-ground = direction of motion. If the kart
+        # is rolling in reverse (wheel speed negative), COG points 180° from
+        # the body yaw — flip it before folding into the EKF. We trust the
+        # signed VESC speed first; fall back to the EKF's own v if VTG speed
+        # is unavailable but the filter already has a confident estimate.
+        if have_yaw:
+            v_for_sign = v_meas if have_speed else (
+                float(self.ekf.x[3]) if self.ekf.initialized else 0.0
+            )
+            if v_for_sign < 0.0:
+                yaw_meas = _wrap(yaw_meas + math.pi)
 
         if not self.ekf.initialized:
             if not self._imu_seen:

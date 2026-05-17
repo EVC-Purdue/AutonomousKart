@@ -263,9 +263,10 @@ class LocalizationNode(Node):
 
         accel_x = float(msg.linear_acceleration.x)
         accel_var = float(msg.linear_acceleration_covariance[0])
+        omega_z = float(msg.angular_velocity.z)
+        omega_var = float(msg.angular_velocity_covariance[8])
 
-        # Heading is GPS-only ignore IMU gyro for yaw.
-        self.ekf.predict(dt, 0.0, accel_x, 0.0, accel_var)
+        self.ekf.predict(dt, omega_z, accel_x, omega_var, accel_var)
 
         px, py, yaw, v = self.ekf.x
         cov = self._odom_cov_from_P(self.ekf.P)

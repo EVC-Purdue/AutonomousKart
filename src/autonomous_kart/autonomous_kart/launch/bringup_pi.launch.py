@@ -61,7 +61,7 @@ def generate_launch_description():
                         package="autonomous_kart",
                         executable="localization_node",
                         name="localization_node",
-                        parameters=[pathfinder_yaml, localization_yaml],
+                        parameters=[localization_yaml],
                     ),
                     Node(
                         package="autonomous_kart",

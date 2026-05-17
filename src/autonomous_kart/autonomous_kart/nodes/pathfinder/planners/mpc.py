@@ -75,6 +75,11 @@ class MPCPlanner(Planner):
         # Below this speed, dpsi = v/L*tan(delta) ~= 0 so the cost can't
         # distinguish steering choices — hold delta at 0 until v crosses the gate.
         self.steer_observability_v = float(g("steer_observability_v_mps", 0.5))
+        # Elite-mean fraction: instead of argmin over K samples, average the
+        # top `mppi_elite_frac × K` samples' first actions. Cuts per-tick noise
+        # without the phase-lag cost a 1st-order LPF would impose. 1.0/K = pure
+        # argmin (no smoothing).
+        self.mppi_elite_frac = float(g("mppi_elite_frac", 0.1))
 
         # Corridor (centerline = racing line)
         tw = float(g("track_half_width_m", 2.5))
@@ -518,11 +523,21 @@ class MPCPlanner(Planner):
         cost = (c_d + c_h + c_v + c_delta + c_drate + c_accel
                 + c_bnd + c_edge + c_prog + c_term_d + c_term_h + c_alat)
 
-        # Corridor enforcement is a soft quadratic penalty (c_bnd above)
-        best = int(np.argmin(cost))
+        # Corridor enforcement is a soft quadratic penalty (c_bnd above).
+        # Pick the action by averaging the top `mppi_elite_frac × K` samples'
+        # control sequences (CEM-style elite mean). Cuts per-tick command
+        # noise vs raw argmin without adding a phase lag. The reported "best"
+        # cost is still the elite minimum so feasibility / failsafe still
+        # gate on the truly-best trajectory.
+        n_elite = max(1, int(round(self.mppi_elite_frac * self.K)))
+        elite_idx = np.argpartition(cost, n_elite - 1)[:n_elite]
+        best = int(elite_idx[np.argmin(cost[elite_idx])])
         best_cost = float(cost[best])
         feasible = best_cost < self.feasibility_threshold
-        u = np.stack([delta_seq[best], accel_seq[best]], axis=0)
+        u = np.stack([
+            np.mean(delta_seq[elite_idx, :], axis=0),
+            np.mean(accel_seq[elite_idx, :], axis=0),
+        ], axis=0)
         traj = {"d": d[best], "s": s[best]}
         breakdown = (
             float(c_d[best]), float(c_h[best]), float(c_v[best]),
@@ -551,6 +566,12 @@ class MPCPlanner(Planner):
                    x: float, y: float, yaw: float, v: float, now_ns: int) -> None:
         """Drive the residual learner from another planner's commands so it
         keeps training when MPC isn't the active planner."""
+        # Sync MPC's internal control state to what was actually executed.
+        # Without this, delta_prev / u_mean drift on MPC's own fictional picks
+        # and the candidate cloud diverges from the kart's real steering,
+        # producing saturated δ_cmd telemetry and bogus residual targets.
+        self.delta_prev = math.radians(steering_deg)
+        self.u_mean[0, :] = self.delta_prev
         if not self.residual.enabled:
             return
         t0 = time.perf_counter()

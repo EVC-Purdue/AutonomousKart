@@ -9,7 +9,10 @@ import os
 
 def generate_launch_description():
     pkg_share = get_package_share_directory("autonomous_kart")
+
+    camera_yaml = os.path.join(pkg_share, "params", "camera.yaml")
     system_yaml = os.path.join(pkg_share, "params", "system.yaml")
+
     sim_mode = LaunchConfiguration("simulation_mode")
 
     return LaunchDescription(
@@ -20,6 +23,12 @@ def generate_launch_description():
                     SetParametersFromFile(system_yaml),
                     SetParameter(name="simulation_mode", value=sim_mode),
 
+                    Node(
+                        package="autonomous_kart",
+                        executable="camera_node",
+                        name="camera_node",
+                        parameters=[camera_yaml],
+                    ),
                     Node(
                         package="autonomous_kart",
                         executable="metrics_node",

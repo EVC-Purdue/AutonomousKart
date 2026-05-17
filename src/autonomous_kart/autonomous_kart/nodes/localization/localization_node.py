@@ -163,6 +163,8 @@ class LocalizationNode(Node):
     def _init_real(self):
         self.ekf = LocalizationEKF(
             pos_noise=float(self._param("pos_noise", 0.01)),
+            yaw_drift_noise=float(self._param("yaw_drift_noise", 0.01)),
+            speed_drift_noise=float(self._param("speed_drift_noise", 0.5)),
         )
 
         self.gps_dropout_warn = float(self._param("gps_dropout_warn", 2.0))
@@ -239,7 +241,9 @@ class LocalizationNode(Node):
 
         dt = stamp_s - self._last_imu_stamp_s
         self._last_imu_stamp_s = stamp_s
-        if dt <= 0.0 or dt > 0.1:
+        # Float rounding can push an exact 0.1 s gap to 0.1 + 9e-10
+        # accept up to 0.1 s + 1 ns so a worst-case 10 Hz IMU still predicts.
+        if dt <= 0.0 or dt > 0.1 + 1e-9:
             self.logger.warning(
                 f"IMU dt out of range: {dt:.3f}s",
                 throttle_duration_sec=2.0,
@@ -255,7 +259,7 @@ class LocalizationNode(Node):
 
         px, py, yaw, v = self.ekf.x
         cov = self._odom_cov_from_P(self.ekf.P)
-        self._publish_odom(px, py, yaw, v, cov=cov)
+        self._publish_odom(px, py, yaw, v, cov=cov, speed_var=float(self.ekf.P[3, 3]))
 
         if self._last_gps_t is not None:
             gap = self._now_s() - self._last_gps_t
@@ -327,7 +331,8 @@ class LocalizationNode(Node):
             self.ekf.update_speed(v_meas, var_v)
         self._last_gps_t = t
 
-    def _publish_odom(self, x: float, y: float, yaw: float, speed: float, cov=None):
+    def _publish_odom(self, x: float, y: float, yaw: float, speed: float,
+                      cov=None, speed_var=None):
         now = self.get_clock().now().to_msg()
         q = Quaternion(z=math.sin(yaw / 2.0), w=math.cos(yaw / 2.0))
 
@@ -341,6 +346,10 @@ class LocalizationNode(Node):
         odom.twist.twist.linear.x = speed
         if cov is not None:
             odom.pose.covariance = cov
+        if speed_var is not None:
+            twist_cov = [0.0] * 36
+            twist_cov[0] = float(speed_var)
+            odom.twist.covariance = twist_cov
         self.odom_pub.publish(odom)
 
         tf = TransformStamped()

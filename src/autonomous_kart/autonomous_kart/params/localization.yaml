@@ -1,7 +1,9 @@
 localization_node:
   ros__parameters:
-    # EKF position-process-noise spectral density
-    pos_noise: 0.01     # m^2/s
+    # EKF process-noise spectral densities (units per second).
+    pos_noise: 0.01            # m^2/s, xy diffusion from unmodeled lateral motion
+    yaw_drift_noise: 0.01      # rad^2/s, unmodeled yaw drift beyond gyro noise
+    speed_drift_noise: 0.5     # (m/s)^2/s, absorbs accel bias / gravity-leak from chassis pitch
 
     # VTG validity gates
     vtg_yaw_var_max: 1.0       # rad^2

@@ -263,7 +263,9 @@ class LocalizationNode(Node):
 
         accel_x = float(msg.linear_acceleration.x)
         accel_var = float(msg.linear_acceleration_covariance[0])
-        omega_z = float(msg.angular_velocity.z)
+        # gyro_z published by imu_node has the wrong sign for our chassis
+        # mount; negate so positive yaw_rate = left turn (FLU).
+        omega_z = -float(msg.angular_velocity.z)
         omega_var = float(msg.angular_velocity_covariance[8])
 
         self.ekf.predict(dt, omega_z, accel_x, omega_var, accel_var)

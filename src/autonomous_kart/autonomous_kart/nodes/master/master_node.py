@@ -164,7 +164,7 @@ class MasterNode(Node):
 
     def _mpc_status_callback(self, msg: Float32MultiArray):
         data = list(msg.data)
-        if len(data) < 51:
+        if len(data) < 63:
             return
         snapshot = {
             "received": True,
@@ -219,6 +219,20 @@ class MasterNode(Node):
             "gps_y": float(data[48]),
             "gps_yaw_rad": float(data[49]),
             "gps_v": float(data[50]),
+            # Wheel speed + last-GPS-event EKF prior/posterior snapshot.
+            # gps_event_seq increments per /localization/gps_event publish.
+            "wheel_speed_mps": float(data[51]),
+            "gps_event_seq": int(data[52]),
+            "gps_have_yaw": bool(data[53] > 0.5),
+            "gps_have_speed": bool(data[54] > 0.5),
+            "ekf_prior_x": float(data[55]),
+            "ekf_prior_y": float(data[56]),
+            "ekf_prior_yaw_rad": float(data[57]),
+            "ekf_prior_v": float(data[58]),
+            "ekf_post_x": float(data[59]),
+            "ekf_post_y": float(data[60]),
+            "ekf_post_yaw_rad": float(data[61]),
+            "ekf_post_v": float(data[62]),
         }
         with self._lock:
             self.mpc_status_data = snapshot

@@ -179,6 +179,21 @@ class MPCPlanner(Planner):
         self._gps_y = math.nan
         self._gps_yaw = math.nan
         self._gps_v = math.nan
+        # Wheel speed (m/s) + last-GPS-event EKF prior/posterior snapshot.
+        # Drives the offline EKF-innovation analysis: prior is the IMU+wheel
+        # dead-reckoned state right before GPS fused in; post is after.
+        self._wheel_v = math.nan
+        self._gps_event_seq = 0.0
+        self._gps_have_yaw = 0.0
+        self._gps_have_speed = 0.0
+        self._ekf_prior_x = math.nan
+        self._ekf_prior_y = math.nan
+        self._ekf_prior_yaw = math.nan
+        self._ekf_prior_v = math.nan
+        self._ekf_post_x = math.nan
+        self._ekf_post_y = math.nan
+        self._ekf_post_yaw = math.nan
+        self._ekf_post_v = math.nan
 
     # plan
     def plan(self, inputs: PlannerInputs) -> Optional[Tuple[float, float]]:
@@ -189,6 +204,16 @@ class MPCPlanner(Planner):
         self._gps_x, self._gps_y = inputs.gps_xy
         self._gps_yaw = inputs.gps_yaw_rad
         self._gps_v = inputs.gps_speed_mps
+        self._wheel_v = inputs.wheel_speed_mps
+        self._gps_event_seq = inputs.gps_event_seq
+        self._gps_have_yaw = inputs.gps_have_yaw
+        self._gps_have_speed = inputs.gps_have_speed
+        self._ekf_prior_x, self._ekf_prior_y = inputs.ekf_prior_xy
+        self._ekf_prior_yaw = inputs.ekf_prior_yaw_rad
+        self._ekf_prior_v = inputs.ekf_prior_v
+        self._ekf_post_x, self._ekf_post_y = inputs.ekf_post_xy
+        self._ekf_post_yaw = inputs.ekf_post_yaw_rad
+        self._ekf_post_v = inputs.ekf_post_v
 
         # Frenet against the STATIC racing line so the rejoin gate uses
         #    CTE-to-line, not CTE-to-overlay.
@@ -660,6 +685,14 @@ class MPCPlanner(Planner):
             # Raw GPS pose (EKF-vs-GPS diff). NaN until first /gps fix.
             float(self._gps_x), float(self._gps_y),
             float(self._gps_yaw), float(self._gps_v),
+            # Wheel speed + last-GPS-event EKF prior/posterior. seq lets the
+            # analyst dedupe MPC ticks (60 Hz) against GPS events (10 Hz).
+            float(self._wheel_v), float(self._gps_event_seq),
+            float(self._gps_have_yaw), float(self._gps_have_speed),
+            float(self._ekf_prior_x), float(self._ekf_prior_y),
+            float(self._ekf_prior_yaw), float(self._ekf_prior_v),
+            float(self._ekf_post_x), float(self._ekf_post_y),
+            float(self._ekf_post_yaw), float(self._ekf_post_v),
         ]
         self.status_pub.publish(Float32MultiArray(data=payload))
 

@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray, String
+from std_msgs.msg import Float32, Float32MultiArray, String
 
 from autonomous_kart.nodes.master.master_node import STATES
 from autonomous_kart.nodes.pathfinder.planners.base import KartConstants, PlannerInputs
@@ -75,6 +75,18 @@ class PathfinderNode(Node):
         self.gps_xy: Tuple[float, float] = (math.nan, math.nan)
         self.gps_yaw = math.nan
         self.gps_speed_mps = math.nan
+        # Wheel speed from VESC + per-GPS EKF prior/posterior snapshot. Same
+        # idea: ride through mpc/status so one log captures everything.
+        self.wheel_speed_mps = math.nan
+        self.gps_event_seq = 0.0
+        self.gps_have_yaw = 0.0
+        self.gps_have_speed = 0.0
+        self.ekf_prior_xy: Tuple[float, float] = (math.nan, math.nan)
+        self.ekf_prior_yaw = math.nan
+        self.ekf_prior_v = math.nan
+        self.ekf_post_xy: Tuple[float, float] = (math.nan, math.nan)
+        self.ekf_post_yaw = math.nan
+        self.ekf_post_v = math.nan
 
         # Shared residual learner — survives planner / line swaps so training
         # state persists across mode changes.
@@ -82,7 +94,12 @@ class PathfinderNode(Node):
             k: p.value
             for k, p in self.get_parameters_by_prefix("mpc.residual").items()
         }
-        self.shared_residual = ResidualLearner(residual_params, 1.0 / self.system_frequency)
+        # s_total = racing-line arc length, needed for the residual's seam
+        # unwrap. Falls back to 0 (= no unwrap) if the line is empty.
+        s_total = float(self.racing_line[-1][0]) if self.racing_line else 0.0
+        self.shared_residual = ResidualLearner(
+            residual_params, 1.0 / self.system_frequency, s_total=s_total,
+        )
 
         # All planners are constructed; `active_planner_name` selects which
         # one drives cmd_drive. MPC still ticks every frame for telemetry.
@@ -109,6 +126,12 @@ class PathfinderNode(Node):
         # Subscriptions
         self.create_subscription(Odometry, "odom", self._on_odom, 10)
         self.create_subscription(Odometry, "gps", self._on_gps, 10)
+        self.create_subscription(
+            Float32MultiArray, "localization/gps_event", self._on_gps_event, 10,
+        )
+        self.create_subscription(
+            Float32, "e_comms/kart_speed_m_per_s", self._on_wheel_speed, 10,
+        )
         self.create_subscription(Float32MultiArray, "track_angles", self._on_track_angles, 5)
         self.create_subscription(String, "system_state", self.update_state, 10)
         self.create_subscription(Float32MultiArray, "manual_commands", self.manual_loop, 5)
@@ -144,6 +167,25 @@ class PathfinderNode(Node):
         self.gps_yaw = self._yaw_from_quaternion(msg.pose.pose.orientation)
         self.gps_speed_mps = float(msg.twist.twist.linear.x)
 
+    def _on_gps_event(self, msg: Float32MultiArray):
+        # Payload layout matches localization_node.gps_callback.
+        d = msg.data
+        if len(d) < 15:
+            return
+        self.gps_event_seq = float(d[0])
+        # d[1:5] is the GPS measurement; already captured via _on_gps.
+        self.gps_have_yaw = float(d[5])
+        self.gps_have_speed = float(d[6])
+        self.ekf_prior_xy = (float(d[7]), float(d[8]))
+        self.ekf_prior_yaw = float(d[9])
+        self.ekf_prior_v = float(d[10])
+        self.ekf_post_xy = (float(d[11]), float(d[12]))
+        self.ekf_post_yaw = float(d[13])
+        self.ekf_post_v = float(d[14])
+
+    def _on_wheel_speed(self, msg: Float32):
+        self.wheel_speed_mps = float(msg.data)
+
     def _on_track_angles(self, msg: Float32MultiArray):
         self._latest_track_angles = tuple(msg.data) if msg.data else None
 
@@ -174,6 +216,8 @@ class PathfinderNode(Node):
             return
         self.line_path = path
         self.racing_line = new_line
+        # Keep the residual's seam-unwrap calibrated to the new line length
+        self.shared_residual.s_total = float(new_line[-1][0])
         # Rebuild planners on the new line; shared residual persists.
         self.planners = self._build_planners()
         self.logger.info(f"line -> {path} ({len(new_line)} pts)")
@@ -208,6 +252,16 @@ class PathfinderNode(Node):
             gps_xy=self.gps_xy,
             gps_yaw_rad=self.gps_yaw,
             gps_speed_mps=self.gps_speed_mps,
+            wheel_speed_mps=self.wheel_speed_mps,
+            gps_event_seq=self.gps_event_seq,
+            gps_have_yaw=self.gps_have_yaw,
+            gps_have_speed=self.gps_have_speed,
+            ekf_prior_xy=self.ekf_prior_xy,
+            ekf_prior_yaw_rad=self.ekf_prior_yaw,
+            ekf_prior_v=self.ekf_prior_v,
+            ekf_post_xy=self.ekf_post_xy,
+            ekf_post_yaw_rad=self.ekf_post_yaw,
+            ekf_post_v=self.ekf_post_v,
         )
 
         # Always run MPC.plan() so mpc/status keeps flowing for telemetry, regardless of state or active planner

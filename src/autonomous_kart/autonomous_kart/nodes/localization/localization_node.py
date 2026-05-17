@@ -188,6 +188,14 @@ class LocalizationNode(Node):
             Float32, "e_comms/kart_speed_m_per_s", self._wheel_speed_cb, 5
         )
 
+        # Per-GPS-event EKF snapshot: prior (IMU+wheel only) vs posterior
+        # (after GPS fold-in) plus the raw measurement, for offline
+        # EKF-vs-GPS innovation analysis.
+        self.gps_event_pub = self.create_publisher(
+            Float32MultiArray, "localization/gps_event", 10,
+        )
+        self._gps_event_seq = 0
+
         # 1 Hz watchdog
         self.create_timer(1.0, self._imu_watchdog)
 
@@ -327,12 +335,29 @@ class LocalizationNode(Node):
             return
 
         # Already initialized: run corrections, do NOT publish
+        # Snapshot the EKF state (IMU+wheel predict only) just before GPS is
+        # folded in, and the posterior after, so /localization/gps_event lets
+        # offline analysis see how far IMU+wheel dead-reckoning had drifted.
+        prior = self.ekf.x.copy()
         self.ekf.update_gps_xy(x, y, R_xy)
         if have_yaw:
             self.ekf.update_heading(yaw_meas, var_yaw)
         if have_speed:
             self.ekf.update_speed(v_meas, var_v)
+        post = self.ekf.x.copy()
         self._last_gps_t = t
+
+        self._gps_event_seq += 1
+        self.gps_event_pub.publish(Float32MultiArray(data=[
+            float(self._gps_event_seq),
+            float(x), float(y), float(yaw_meas), float(v_meas),
+            1.0 if have_yaw else 0.0,
+            1.0 if have_speed else 0.0,
+            float(prior[0]), float(prior[1]),
+            float(prior[2]), float(prior[3]),
+            float(post[0]), float(post[1]),
+            float(post[2]), float(post[3]),
+        ]))
 
     def _publish_odom(self, x: float, y: float, yaw: float, speed: float,
                       cov=None, speed_var=None):

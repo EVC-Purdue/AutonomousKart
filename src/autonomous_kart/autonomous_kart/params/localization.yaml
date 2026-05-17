@@ -19,9 +19,10 @@ localization_node:
     # Sim-only noise + actuator delay
     sim_odom_rate_hz: 10.0             # /odom publish rate (Hz) matches real GPS cadence
     sim_noise_seed: 0                  # RNG seed (deterministic noise sequence)
-    sim_actuator_delay_s: 0.08         # 80 ms
+    sim_actuator_delay_s: 0.20         # 200 ms
     sim_cmd_motor_noise_mps: 0.3       # std on throttle command (m/s)
     sim_cmd_steer_noise_deg: 1.0       # std on steering command (deg)
+    sim_steer_slop_deg: 2.0            # mechanical backlash half-width (deg)
     sim_pos_noise_m: 0.03              # std on x, y output (m)
     sim_yaw_noise_deg: 0.5             # std on yaw output (deg)
     sim_speed_noise_mps: 0.05          # std on speed output (m/s)

@@ -1,31 +1,55 @@
 version: "3.8"
+
+x-dev-base: &dev-base
+  image: ghcr.io/evc-purdue/ros2-humble-dev:main
+
+  network_mode: host
+
+  stdin_open: true
+  tty: true
+
+  volumes:
+    - ../:/ws
+    - ros_cache:/root/.cache
+
+  environment:
+    - ROS_DISTRO=humble
+    - ROS_DOMAIN_ID=42
+    - ROS_LOCALHOST_ONLY=0
+    - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    - CYCLONEDDS_URI=file:///ws/docker/cyclonedds.xml
+
+  command: bash /ws/scripts/start.bash
+
 services:
-  dev:
-    image: ghcr.io/evc-purdue/ros2-humble-dev:main
-    container_name: ros2-dev
-    hostname: ros2-dev
-    volumes:
-      - ../:/ws
-      - ros_cache:/root/.cache
-      - /data/kart_logs:/ws/logs  # logs location
+
+  dev-jetson:
+    <<: *dev-base
+
+    container_name: ros2-dev-jetson
+    hostname: jetson-dev
+
     environment:
-      - ROS_DISTRO=humble
-      - ROS_DOMAIN_ID=42
-      - ROS_LOCALHOST_ONLY=0
-      - TARGET_DEVICE=jetson # set target device for build (ex: jetson, rubik)
-      - CYCLONEDDS_URI=file:///ws/docker/cyclonedds.xml
-    ports:
-      - "8000:8000"
-#    devices:
-#      - "/dev/ttyACM0:/dev/ttyACM0"
-#      - "/dev/ttyTHS1:/dev/ttyTHS1"         # GPS
-#      - "/dev/i2c-7:/dev/i2c-7"
-#      - "/dev/spidev12.0:/dev/spidev12.0" # SPI bus 12, CS0
-#      - "/dev/video0:/dev/video0"
-    stdin_open: true
-    tty: true
-    restart: always
-    command: bash /ws/scripts/start.bash
-    network_mode: host
+      - TARGET_DEVICE=jetson
+      - ROS_NETWORK_INTERFACE=enP8p1s0
+
+    # devices:
+    #   - "/dev/ttyACM0:/dev/ttyACM0" # canable
+    #   - "/dev/ttyTHS1:/dev/ttyTHS1" # GPS
+    #   - "/dev/i2c-7:/dev/i2c-7"     # IMU
+
+  dev-rubik:
+    <<: *dev-base
+
+    container_name: ros2-dev-rubik
+    hostname: rubik-dev
+
+    environment:
+      - TARGET_DEVICE=rubik
+      - ROS_NETWORK_INTERFACE=enxf074e47f50f9
+
+    # devices:
+    #   - "/dev/video0:/dev/video0"
+
 volumes:
   ros_cache:

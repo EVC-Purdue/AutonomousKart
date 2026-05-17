@@ -53,15 +53,18 @@ class LocalizationNode(Node):
         steer_max = float(self.get_parameter("steer_max_deg").value)
         hz = float(self.get_parameter("system_frequency").value)
 
-        self.model = BicycleModel(wheelbase, v_max, steer_max)
+        # Sim noise + actuator delay
+        def _np(name, default):
+            return float(self._param(name, default))
+
+        steer_slop_deg = _np("sim_steer_slop_deg", 0.0)
+        self.model = BicycleModel(
+            wheelbase, v_max, steer_max, steer_slop_deg=steer_slop_deg,
+        )
         self.dt = 1.0 / hz
 
         # Spawn at racing line start if available
         self._auto_spawn()
-
-        # Sim noise + actuator delay
-        def _np(name, default):
-            return float(self._param(name, default))
 
         self._sim_delay_s = _np("sim_actuator_delay_s", 0.0)
         self._sim_motor_std = _np("sim_cmd_motor_noise_mps", 0.0)

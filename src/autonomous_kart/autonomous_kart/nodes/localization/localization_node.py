@@ -241,7 +241,7 @@ class LocalizationNode(Node):
 
         dt = stamp_s - self._last_imu_stamp_s
         self._last_imu_stamp_s = stamp_s
-        # Float rounding can push an exact 0.1 s gap to ~0.10000000000000009;
+        # Float rounding can push an exact 0.1 s gap to 0.1 + 9e-10
         # accept up to 0.1 s + 1 ns so a worst-case 10 Hz IMU still predicts.
         if dt <= 0.0 or dt > 0.1 + 1e-9:
             self.logger.warning(

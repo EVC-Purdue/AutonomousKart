@@ -34,10 +34,13 @@ def _features(d: float, v_s: float, v_d: float, kappa: float,
 
 
 class ResidualLearner:
-    def __init__(self, params: dict, solve_dt: float):
+    def __init__(self, params: dict, solve_dt: float, s_total: float = 0.0):
         """solve_dt is the wall-time between successive plan() calls
-        (= 1/system_frequency), used to size the push/step delay.
-        Defaults here are a fallback only; yaml under residual.* is canonical."""
+        (= 1/system_frequency), used to size the push/step delay. s_total
+        is the racing-line arc length, used to unwrap actual_ds across the
+        closed-track seam — without this, the first lap-completion poisons
+        the RLS with a ~−s_total target. Defaults here are a fallback only;
+        yaml under residual.* is canonical."""
         g = params.get
         self.mode = str(g("mode", "shadow")).lower()  # off | shadow | apply
         self.target_horizon_s = float(g("target_horizon_s", 0.5))
@@ -45,11 +48,23 @@ class ResidualLearner:
         self.lam = float(g("forgetting_factor", 0.99))
         self.min_speed = float(g("min_train_speed_mps", 0.5))
         self.err_window = int(g("error_window", 200))
+        # Safety knobs — see mpc_debug/residual_retrain.py for justification.
+        self.s_total = float(s_total)
+        # Drop samples whose target residual exceeds this magnitude (catches
+        # lap-seam wrap leftovers, sensor glitches, simulator teleports).
+        self.outlier_threshold = float(g("outlier_threshold_m", 5.0))
+        # Cap on trace(P) — prevents covariance from drifting unbounded
+        # while the planner sits in low-excitation regimes (e.g., saturated δ).
+        self.max_p_trace = float(g("max_p_trace", 1.0e5))
+        # If either θ norm exceeds this, the learner has diverged: drop
+        # everything and start fresh. Better to lose state than to feed
+        # MPC poisoned residuals in apply mode.
+        self.max_theta_norm = float(g("max_theta_norm", 50.0))
 
-        p0 = float(g("initial_cov", 1000.0))
+        self.p0 = float(g("initial_cov", 1000.0))
         self.theta_s = np.zeros(NUM_FEATURES)
         self.theta_d = np.zeros(NUM_FEATURES)
-        self.P = np.eye(NUM_FEATURES) * p0
+        self.P = np.eye(NUM_FEATURES) * self.p0
 
         # Buffer holds the last `horizon_steps` snapshots; pop when target arrives.
         self._pending: Deque[Tuple[np.ndarray, float, float, float, float]] = deque(
@@ -65,6 +80,8 @@ class ResidualLearner:
         self.last_pred_s = 0.0
         self.last_pred_d = 0.0
         self.samples_trained = 0
+        self.outliers_dropped = 0
+        self.divergence_resets = 0
 
     @property
     def enabled(self) -> bool:
@@ -89,9 +106,22 @@ class ResidualLearner:
         phi, s0, d0, nom_ds, nom_dd = self._pending.popleft()
         actual_ds = s_now - s0
         actual_dd = d_now - d0
-        # Residual targets
+        # Unwrap actual_ds across the closed-track seam. Without this, every
+        # lap completion produces a ≈ −s_total target and detonates the RLS.
+        if self.s_total > 0.0:
+            half = 0.5 * self.s_total
+            if actual_ds < -half:
+                actual_ds += self.s_total
+            elif actual_ds > half:
+                actual_ds -= self.s_total
         r_s = actual_ds - nom_ds
         r_d = actual_dd - nom_dd
+
+        # Outlier rejection — protects against residual sensor glitches,
+        # teleports, or wrap leftovers that snuck past the s-unwrap.
+        if abs(r_s) > self.outlier_threshold or abs(r_d) > self.outlier_threshold:
+            self.outliers_dropped += 1
+            return
 
         # Errors for diagnostics (before update)
         pred_s = float(phi @ self.theta_s)
@@ -111,6 +141,21 @@ class ResidualLearner:
         self.theta_d += K * (r_d - float(phi @ self.theta_d))
         self.P = (self.P - np.outer(K, Pphi)) / self.lam
         self.samples_trained += 1
+
+        # Cap trace(P) — bounds the covariance growth that 1/λ would otherwise
+        # accumulate when novelty is low.
+        tr = float(np.trace(self.P))
+        if tr > self.max_p_trace:
+            self.P *= self.max_p_trace / tr
+
+        # If θ has diverged, blow away everything and start over rather than
+        # let apply mode hand MPC garbage residuals.
+        if (np.linalg.norm(self.theta_s) > self.max_theta_norm
+                or np.linalg.norm(self.theta_d) > self.max_theta_norm):
+            self.theta_s.fill(0.0)
+            self.theta_d.fill(0.0)
+            self.P = np.eye(NUM_FEATURES) * self.p0
+            self.divergence_resets += 1
 
     def predict(self, phi: np.ndarray) -> Tuple[float, float]:
         if not self.enabled:

@@ -152,7 +152,10 @@ class MPCPlanner(Planner):
             if k.startswith("residual.")
         }
         # Shared ResidualLearner survives planner / line swaps so training state persists
-        self.residual = residual if residual is not None else ResidualLearner(residual_params, solve_dt)
+        s_total = float(self._static_arrays["s"][-1])
+        self.residual = residual if residual is not None else ResidualLearner(
+            residual_params, solve_dt, s_total=s_total,
+        )
         self._nom_steps = max(1, int(round(self.residual.target_horizon_s / self.dt)))
         self._last_motor_mps = 0.0
         self._train_dt = solve_dt

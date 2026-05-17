@@ -88,6 +88,12 @@ pathfinder_node:
     mpc.residual.initial_cov: 1000.0
     mpc.residual.min_train_speed_mps: 0.5
     mpc.residual.error_window: 200
+    # safety: drop samples whose target residual exceeds this magnitude
+    mpc.residual.outlier_threshold_m: 5.0
+    # safety: cap covariance trace to bound P drift under low excitation
+    mpc.residual.max_p_trace: 100000.0
+    # safety: reset θ + P when ||θ|| exceeds this (panic divergence guard)
+    mpc.residual.max_theta_norm: 50.0
 
     #  safety wrapper 
     safety.enabled: true

@@ -1,21 +1,15 @@
 {
-  "name": "ROS2 Rubik Dev",
-
+  "name": "ROS2 rclpy Dev",
   "dockerComposeFile": [
     "../compose/docker-compose.yml"
   ],
-
-  "service": "dev-rubik",
-
+  "service": "dev",
   "workspaceFolder": "/ws",
-
   "containerEnv": {
     "ROS_DOMAIN_ID": "42",
     "ROS_LOCALHOST_ONLY": "0",
-    "RMW_IMPLEMENTATION": "rmw_cyclonedds_cpp",
     "CYCLONEDDS_URI": "file:///ws/docker/cyclonedds.xml"
   },
-
   "customizations": {
     "vscode": {
       "extensions": [
@@ -24,10 +18,8 @@
         "ms-azuretools.vscode-docker",
         "foxglove.vscode-foxglove"
       ],
-
       "settings": {
         "python.defaultInterpreterPath": "/ws/.venv/bin/python",
-
         "python.analysis.extraPaths": [
           "/ws/install",
           "/opt/ros/humble/lib/python3.10/site-packages",
@@ -37,7 +29,6 @@
       }
     }
   },
-
   "postCreateCommand": "bash /ws/scripts/devcontainer_post_create.sh",
   "postAttachCommand": "bash /ws/scripts/devcontainer_post_attach.sh"
 }

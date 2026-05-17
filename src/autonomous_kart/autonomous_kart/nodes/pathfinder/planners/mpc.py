@@ -138,6 +138,9 @@ class MPCPlanner(Planner):
         # State carried between ticks
         self.closest_idx = 0  # idx into the ACTIVE reference (line or bezier)
         self.static_closest_idx = 0  # idx into the static racing line (for CTE gate)
+        # First plan() does an O(n) nearest search so a kart spawned mid-track
+        # isn't pinned near idx 0 by _frenet's wrap-aware resync gate.
+        self.initial_sync_done = False
         self.delta_prev = 0.0
         self.a_prev = 0.0
         self.u_mean = np.zeros((2, self.N))  # warm-start [delta(N), accel(N)]
@@ -218,6 +221,11 @@ class MPCPlanner(Planner):
         # Frenet against the STATIC racing line so the rejoin gate uses
         #    CTE-to-line, not CTE-to-overlay.
         self._set_active_line(self._static_arrays)
+        if not self.initial_sync_done:
+            d2 = (self.l_x - x) ** 2 + (self.l_y - y) ** 2
+            self.static_closest_idx = int(np.argmin(d2))
+            self.closest_idx = self.static_closest_idx
+            self.initial_sync_done = True
         _, d_static, j_static, _, _ = self._frenet(x, y, self.static_closest_idx)
         self.static_closest_idx = j_static
 
@@ -597,6 +605,7 @@ class MPCPlanner(Planner):
         self.line_manager.register(RejoinStrategy(**self._rejoin_kwargs))
         self.closest_idx = 0
         self.static_closest_idx = 0
+        self.initial_sync_done = False
         self._reset_warm_start()
         self._pose_hist.clear()
 

@@ -188,13 +188,27 @@ class ImuNode(Node):
 
     def _finish_calibration(self):
         with self._lock:
-            self.gyro_bias = [s / self._calib_count for s in self._calib_sum]
+            count = self._calib_count
+            gyro_bias = [s / count for s in self._calib_sum]
+            accel_mean_raw = np.array([s / count for s in self._calib_accel_sum])
+            # Level correction: any x/y component in the measured gravity
+            # after R_MOUNT is residual chassis tilt. Rotate the measured
+            # direction onto the z axis, matching its existing sign so we
+            # only zero x/y (not flip the accel.z convention downstream).
+            a_post_mount = R_MOUNT @ accel_mean_raw
+            target_z = math.copysign(abs(self.default_g), a_post_mount[2])
+            target = np.array([0.0, 0.0, target_z])
+            R_level = _level_rotation(a_post_mount, target)
+            R_full = R_level @ R_MOUNT
+            a_corrected = R_full @ accel_mean_raw
+            self.gyro_bias = gyro_bias
+            self.R = R_full
             self.state = CALIBRATED
             self.last_error = ""
-            count = self._calib_count
-            bias_snapshot = list(self.gyro_bias)
+            bias_snapshot = list(gyro_bias)
         self.logger.info(
-            f"Calibration complete after {count} samples. gyro_bias={bias_snapshot}"
+            f"Calibration complete after {count} samples. "
+            f"gyro_bias={bias_snapshot}  accel_after_R={a_corrected.tolist()}"
         )
         self._save_cache()
         self._publish_status()
@@ -209,12 +223,23 @@ class ImuNode(Node):
             bias = data["gyro_bias"]
             if not (isinstance(bias, list) and len(bias) == 3):
                 raise ValueError("gyro_bias must be a length-3 list")
+            # R is optional for backward compatibility with older caches
+            # that only stored gyro_bias; fall back to mount-only rotation.
+            R_arr = R_MOUNT.copy()
+            R_data = data.get("R")
+            if R_data is not None:
+                R_arr = np.asarray(R_data, dtype=float)
+                if R_arr.shape != (3, 3):
+                    raise ValueError("R must be 3x3")
             with self._lock:
                 self.gyro_bias = [float(b) for b in bias]
+                self.R = R_arr
                 self.state = CALIBRATED
                 bias_snapshot = list(self.gyro_bias)
+                R_snapshot = self.R.tolist()
             self.logger.info(
-                f"Loaded calibration from {self.cache_path}: gyro_bias={bias_snapshot}"
+                f"Loaded calibration from {self.cache_path}: "
+                f"gyro_bias={bias_snapshot}  R={R_snapshot}"
             )
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as e:
             self.logger.warning(
@@ -225,6 +250,7 @@ class ImuNode(Node):
         with self._lock:
             payload = {
                 "gyro_bias": list(self.gyro_bias),
+                "R": np.asarray(self.R).tolist(),
                 "samples": self._calib_count,
                 "timestamp": time.time(),
             }

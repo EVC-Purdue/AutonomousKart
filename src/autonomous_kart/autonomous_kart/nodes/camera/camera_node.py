@@ -54,7 +54,7 @@ class CameraNode(Node):
                 raise RuntimeError(f"Failed to open video: {video_path}")
 
         else:
-            self.cap = cv2.VideoCapture(0) 
+            self.cap = cv2.VideoCapture('/dev/video0') 
             self.video_fps = self.fps
 
             if not self.cap.isOpened():

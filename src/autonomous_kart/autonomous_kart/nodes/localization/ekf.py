@@ -25,9 +25,20 @@ def _wrap(a: float) -> float:
 
 
 class LocalizationEKF:
-    def __init__(self, pos_noise: float):
-        # Process-noise spectral density on position
+    def __init__(
+        self,
+        pos_noise: float,
+        yaw_drift_noise: float,
+        speed_drift_noise: float,
+    ):
+        # Process-noise spectral densities (units per second).
+        # pos_noise:   xy diffusion from unmodeled lateral motion (m^2/s).
+        # yaw_drift_noise:   unmodeled yaw drift beyond IMU gyro noise (rad^2/s).
+        # speed_drift_noise: unmodeled speed drift; absorbs accel bias / gravity
+        #                    leak from chassis pitch / vibration ((m/s)^2/s).
         self.pos_noise = float(pos_noise)
+        self.yaw_drift_noise = float(yaw_drift_noise)
+        self.speed_drift_noise = float(speed_drift_noise)
 
         self.x = np.zeros(4)
         # Big P -> we know nothing about state.
@@ -80,13 +91,15 @@ class LocalizationEKF:
         F[1, 2] = v * cos_y * dt
         F[1, 3] = sin_y * dt
 
-        # Q = uncertainty we accept this step (scales with dt).
+        # Q = uncertainty we accept this step.
+        # IMU per-sample measurement variance integrates over dt -> dt^2 term.
+        # Drift spectral densities (continuous-time) scale as dt.
         Q = np.diag([
-            self.pos_noise,
-            self.pos_noise,
-            float(omega_var),
-            float(accel_var),
-        ]) * dt
+            self.pos_noise * dt,
+            self.pos_noise * dt,
+            float(omega_var) * dt * dt + self.yaw_drift_noise * dt,
+            float(accel_var) * dt * dt + self.speed_drift_noise * dt,
+        ])
 
         self.P = F @ self.P @ F.T + Q
         self.P = 0.5 * (self.P + self.P.T)  # Force symmetry against float drift.

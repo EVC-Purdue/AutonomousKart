@@ -116,6 +116,7 @@ class ECommsNode(Node):
             return
         
         data = bytes(msg.data)  # copy, don't hold a reference
+        self.cmd_count += 1
         # self.logger.info(f"Msg: {msg.arbitration_id:X}")
         if msg.arbitration_id == STATUS_ID:
             self.executor.create_task(lambda: self.handle_adcb_status_msg(data))

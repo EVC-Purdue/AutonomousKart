@@ -281,14 +281,16 @@ def test_localization_real_mode_imu_drives_predict(ros_ctx, spin_helper):
             node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=1))
             node.gps_callback(_gps_odom(x=0.0, y=0.0, yaw=0.0, speed=0.0))
             assert node.ekf.initialized
-            # Second IMU 0.1 s later with a_x = 1.0 -> v gains ~0.1 m/s.
+            # Second IMU 0.08 s later with a_x = 1.0 -> v gains ~0.08 m/s.
+            # (Stay under the 0.1 s dt clamp; float math puts an exact 0.1 dt
+            # at 0.10000000000000009, which the clamp correctly rejects.)
             node._imu_cb(
                 _imu_msg(omega_z=0.0, accel_x=1.0,
-                         stamp_sec=1, stamp_nanosec=100_000_000)
+                         stamp_sec=1, stamp_nanosec=80_000_000)
             )
             spin_helper(exe, lambda: len(received) >= 1, timeout=0.5)
 
-            assert node.ekf.x[3] > 0.05, f"v should grow under a_x=1 for 0.1s: {node.ekf.x[3]}"
+            assert node.ekf.x[3] > 0.05, f"v should grow under a_x=1 for 0.08s: {node.ekf.x[3]}"
             assert len(received) >= 1, "predict should publish /odom"
         finally:
             exe.remove_node(driver)

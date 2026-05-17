@@ -84,6 +84,7 @@ class CameraNode(Node):
                 self.logger.warning("No frame available")
 
         if publish_frame is not None:
+            self.logger.info(f"Publishing frame {self.frame_counter}")
             self.image_pub.publish(publish_frame)
             self.frame_counter += 1
 

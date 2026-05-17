@@ -344,7 +344,7 @@ class LocalizationNode(Node):
             self._last_gps_t = t
             return
 
-        # Already initialized: run corrections, do NOT publish
+        # Already initialized: run corrections then publish.
         # Snapshot the EKF state (IMU+wheel predict only) just before GPS is
         # folded in, and the posterior after, so /localization/gps_event lets
         # offline analysis see how far IMU+wheel dead-reckoning had drifted.
@@ -356,6 +356,10 @@ class LocalizationNode(Node):
             self.ekf.update_speed(v_meas, var_v)
         post = self.ekf.x.copy()
         self._last_gps_t = t
+
+        px, py, yaw, v = self.ekf.x
+        cov = self._odom_cov_from_P(self.ekf.P)
+        self._publish_odom(px, py, yaw, v, cov=cov, speed_var=float(self.ekf.P[3, 3]))
 
         self._gps_event_seq += 1
         self.gps_event_pub.publish(Float32MultiArray(data=[

@@ -1,17 +1,20 @@
 localization_node:
   ros__parameters:
-    # EKF process-noise spectral densities
+    # EKF position-process-noise spectral density
     pos_noise: 0.01     # m^2/s
-    yaw_noise: 0.05     # rad^2/s
-    accel_noise: 4.0      # (m/s^2)^2/s
 
     # VTG validity gates
     vtg_yaw_var_max: 1.0       # rad^2
     vtg_speed_var_max: 100.0   # (m/s)^2
 
-    cmd_drive_max_age: 1.0      # s
     gps_dropout_warn: 2.0      # s
-    sigma_xy_floor: 0.02     # m
+    sigma_xy_floor: 0.02       # m
+
+    # Wheel-speed (VESC) update variance
+    # 2-sigma = 0.02 m/s
+    wheel_speed_var: 1.0e-4    # (m/s)^2
+
+    imu_dropout_warn: 1.0      # s
 
     # Sim-only noise + actuator delay
     sim_odom_rate_hz: 10.0             # /odom publish rate (Hz) matches real GPS cadence

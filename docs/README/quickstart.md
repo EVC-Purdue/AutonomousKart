@@ -31,9 +31,17 @@ sudo docker compose -f compose/docker-compose.yml up -d dev-rubik
 ```
 
 3) Exec into container
+
+- JETSON
 ```bash
-docker exec -it <container_name> bash
+docker exec -it ros2-dev-jetson bash
 ```
+
+- RUBIK
+```bash
+docker exec -it ros2-dev-rubik bash
+```
+
 4) Setup ROS
 ```bash
 source /opt/ros/humble/setup.bash
@@ -56,9 +64,4 @@ ros2 launch autonomous_kart bringup_rubik.launch.py
 - ALL
 ```bash
 ros2 launch autonomous_kart bringup_all.launch.py
-```
-
-- SIM
-```bash
-ros2 launch autonomous_kart bringup_sim.launch.py
 ```

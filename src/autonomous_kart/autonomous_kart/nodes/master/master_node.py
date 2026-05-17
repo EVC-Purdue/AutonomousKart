@@ -164,7 +164,7 @@ class MasterNode(Node):
 
     def _mpc_status_callback(self, msg: Float32MultiArray):
         data = list(msg.data)
-        if len(data) < 44:
+        if len(data) < 51:
             return
         snapshot = {
             "received": True,
@@ -214,6 +214,11 @@ class MasterNode(Node):
             "kappa_local": float(data[41]),
             "consec_failures": int(data[42]),
             "corridor_half": float(data[43]),
+            # GPS pose passthrough (indices 47..50; 44..46 are residual telemetry).
+            "gps_x": float(data[47]),
+            "gps_y": float(data[48]),
+            "gps_yaw_rad": float(data[49]),
+            "gps_v": float(data[50]),
         }
         with self._lock:
             self.mpc_status_data = snapshot

@@ -170,12 +170,22 @@ class MPCPlanner(Planner):
         # Reusable rng
         self._rng = np.random.default_rng(0)
 
+        # Latest raw GPS pose snapshot — appended to status payload so the
+        # mpc/status log alone is enough to diff EKF vs raw GPS offline.
+        self._gps_x = math.nan
+        self._gps_y = math.nan
+        self._gps_yaw = math.nan
+        self._gps_v = math.nan
+
     # plan
     def plan(self, inputs: PlannerInputs) -> Optional[Tuple[float, float]]:
         t0 = time.perf_counter()
         x, y = inputs.pose_xy
         yaw = inputs.yaw_rad
         v = max(0.0, inputs.speed_mps)
+        self._gps_x, self._gps_y = inputs.gps_xy
+        self._gps_yaw = inputs.gps_yaw_rad
+        self._gps_v = inputs.gps_speed_mps
 
         # Frenet against the STATIC racing line so the rejoin gate uses
         #    CTE-to-line, not CTE-to-overlay.
@@ -644,6 +654,9 @@ class MPCPlanner(Planner):
             float({"off": 0, "shadow": 1, "apply": 2}.get(self.residual.mode, 1)),
             float(np.linalg.norm(self.residual.theta_s)),
             float(np.linalg.norm(self.residual.theta_d)),
+            # Raw GPS pose (EKF-vs-GPS diff). NaN until first /gps fix.
+            float(self._gps_x), float(self._gps_y),
+            float(self._gps_yaw), float(self._gps_v),
         ]
         self.status_pub.publish(Float32MultiArray(data=payload))
 

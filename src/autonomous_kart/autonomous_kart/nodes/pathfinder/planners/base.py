@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from math import nan
 from typing import ClassVar, Optional, Tuple
 
 
@@ -21,6 +22,11 @@ class PlannerInputs:
     speed_mps: float
     track_angles: Optional[Tuple[float, ...]]
     now_ns: int
+    # Raw GPS pose passthrough for EKF-vs-GPS comparison in mpc/status.
+    # NaN when no GPS fix has been seen yet.
+    gps_xy: Tuple[float, float] = (nan, nan)
+    gps_yaw_rad: float = nan
+    gps_speed_mps: float = nan
 
 
 class Planner(ABC):

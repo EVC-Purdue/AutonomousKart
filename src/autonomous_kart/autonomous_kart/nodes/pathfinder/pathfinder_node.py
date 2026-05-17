@@ -71,6 +71,10 @@ class PathfinderNode(Node):
         self.current_yaw = 0.0
         self.current_speed_mps = 0.0
         self._latest_track_angles: Optional[Tuple[float, ...]] = None
+        # Raw GPS pose cache, passed through to MPC for offline EKF-vs-GPS diff.
+        self.gps_xy: Tuple[float, float] = (math.nan, math.nan)
+        self.gps_yaw = math.nan
+        self.gps_speed_mps = math.nan
 
         # Shared residual learner — survives planner / line swaps so training
         # state persists across mode changes.
@@ -104,6 +108,7 @@ class PathfinderNode(Node):
 
         # Subscriptions
         self.create_subscription(Odometry, "odom", self._on_odom, 10)
+        self.create_subscription(Odometry, "gps", self._on_gps, 10)
         self.create_subscription(Float32MultiArray, "track_angles", self._on_track_angles, 5)
         self.create_subscription(String, "system_state", self.update_state, 10)
         self.create_subscription(Float32MultiArray, "manual_commands", self.manual_loop, 5)
@@ -132,6 +137,12 @@ class PathfinderNode(Node):
         self.current_yaw = self._yaw_from_quaternion(msg.pose.pose.orientation)
         self.current_speed_mps = float(msg.twist.twist.linear.x)
         self.pose_ready = True
+
+    def _on_gps(self, msg: Odometry):
+        p = msg.pose.pose.position
+        self.gps_xy = (float(p.x), float(p.y))
+        self.gps_yaw = self._yaw_from_quaternion(msg.pose.pose.orientation)
+        self.gps_speed_mps = float(msg.twist.twist.linear.x)
 
     def _on_track_angles(self, msg: Float32MultiArray):
         self._latest_track_angles = tuple(msg.data) if msg.data else None
@@ -194,6 +205,9 @@ class PathfinderNode(Node):
             speed_mps=self.current_speed_mps,
             track_angles=self._latest_track_angles,
             now_ns=self.get_clock().now().nanoseconds,
+            gps_xy=self.gps_xy,
+            gps_yaw_rad=self.gps_yaw,
+            gps_speed_mps=self.gps_speed_mps,
         )
 
         # Always run MPC.plan() so mpc/status keeps flowing for telemetry, regardless of state or active planner

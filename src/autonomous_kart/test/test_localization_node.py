@@ -277,10 +277,11 @@ def test_localization_real_mode_imu_drives_predict(ros_ctx, spin_helper):
         try:
             spin_helper(exe, lambda: False, timeout=0.2)  # discovery
 
-            node.gps_callback(_gps_odom(x=0.0, y=0.0, yaw=0.0, speed=0.0))
-            # First IMU msg sets the stamp.
+            # Seed IMU first so the GPS init gate opens.
             node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=1))
-            # Second msg 0.1 s later with a_x = 1.0 -> v gains ~0.1 m/s.
+            node.gps_callback(_gps_odom(x=0.0, y=0.0, yaw=0.0, speed=0.0))
+            assert node.ekf.initialized
+            # Second IMU 0.1 s later with a_x = 1.0 -> v gains ~0.1 m/s.
             node._imu_cb(
                 _imu_msg(omega_z=0.0, accel_x=1.0,
                          stamp_sec=1, stamp_nanosec=100_000_000)

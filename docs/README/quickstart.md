@@ -34,12 +34,12 @@ sudo docker compose -f compose/docker-compose.yml up -d dev-rubik
 
 - JETSON
 ```bash
-docker exec -it ros2-dev-jetson bash
+sudo docker exec -it ros2-dev-jetson bash
 ```
 
 - RUBIK
 ```bash
-docker exec -it ros2-dev-rubik bash
+sudo docker exec -it ros2-dev-rubik bash
 ```
 
 4) Setup ROS

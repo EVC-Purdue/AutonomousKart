@@ -3,12 +3,11 @@ import threading
 import time
 from enum import Enum
 
-import math
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-from std_msgs.msg import String, Float32MultiArray, Float32,  UInt16, Empty
+from std_msgs.msg import String, Float32MultiArray, UInt16, Empty
 
 
 class STATES(Enum):
@@ -30,11 +29,6 @@ class MasterNode(Node):
         self.state = self.get_parameter("system_state").value
         self.system_frequency = self.get_parameter("system_frequency").value
         self.path = self.get_parameter("line_path").value
-        self.yaw_cal_speed = self.get_parameter("yaw_cal_speed").value
-        self.yaw_cal_duration_s = self.get_parameter("yaw_cal_duration_s").value
-        self.yaw_cal_tick_dt = self.get_parameter("yaw_cal_tick_dt").value
-        self.yaw_cal_accel_floor = self.get_parameter("yaw_cal_accel_floor").value
-        self.yaw_cal_min_samples = self.get_parameter("yaw_cal_min_samples").value
 
         assert self.state in [s.value for s in STATES]
 
@@ -118,6 +112,12 @@ class MasterNode(Node):
                 "a_lat": 0.0,
                 "edge": 0.0,
             },
+            "x": 0.0, "y": 0.0, "yaw_rad": 0.0,
+            "throttle_mps_out": 0.0, "v_s": 0.0, "v_d": 0.0,
+            "closest_idx_active": 0, "closest_idx_static": 0,
+            "rejoin_active": False, "merge_idx": -1,
+            "kappa_local": 0.0, "consec_failures": 0,
+            "corridor_half": 0.0,
         }
         self.create_subscription(
             Float32MultiArray, "mpc/status", self._mpc_status_callback, 5
@@ -127,10 +127,13 @@ class MasterNode(Node):
         self.gps_status_data = {"fix_quality": 0, "fix_label": "INVALID"}
         self.create_subscription(String, "gps/status", self._gps_status_callback, 1)
 
+        # Runtime swap publishers: residual mode, planner, racing-line path.
+        self.residual_mode_publisher = self.create_publisher(String, "mpc/residual_mode", 1)
+        self.planner_publisher = self.create_publisher(String, "pathfinder/planner", 1)
+        self.line_publisher = self.create_publisher(String, "pathfinder/line_path", 1)
+
         # IMU calibration plumbing
         self.imu_calibrate_publisher = self.create_publisher(Empty, "imu/calibrate", 1)
-        self.yaw_offset_publisher = self.create_publisher(Float32, "imu/yaw_offset", 1)
-        self._yaw_cal_thread: threading.Thread | None = None
         self.imu_status_data = {"state": "unknown"}
         self.create_subscription(
             String, "imu/calibration_status", self._imu_status_callback, 1
@@ -161,7 +164,7 @@ class MasterNode(Node):
 
     def _mpc_status_callback(self, msg: Float32MultiArray):
         data = list(msg.data)
-        if len(data) < 31:
+        if len(data) < 44:
             return
         snapshot = {
             "received": True,
@@ -198,6 +201,19 @@ class MasterNode(Node):
                 "a_lat": float(data[29]),
                 "edge": float(data[30]),
             },
+            "x": float(data[31]),
+            "y": float(data[32]),
+            "yaw_rad": float(data[33]),
+            "throttle_mps_out": float(data[34]),
+            "v_s": float(data[35]),
+            "v_d": float(data[36]),
+            "closest_idx_active": int(data[37]),
+            "closest_idx_static": int(data[38]),
+            "rejoin_active": bool(data[39] > 0.5),
+            "merge_idx": int(data[40]),
+            "kappa_local": float(data[41]),
+            "consec_failures": int(data[42]),
+            "corridor_half": float(data[43]),
         }
         with self._lock:
             self.mpc_status_data = snapshot
@@ -303,77 +319,26 @@ class MasterNode(Node):
     def trigger_imu_calibration(self):
         self.imu_calibrate_publisher.publish(Empty())
 
-    def start_yaw_calibration(self):
-        """Validate preconditions and spawn the drive worker. Returns (ok, reason)."""
-        if self._yaw_cal_thread is not None and self._yaw_cal_thread.is_alive():
-            return False, "yaw calibration already running"
-        if self.state not in (STATES.IDLE.value, STATES.STOPPED.value):
-            return False, f"state must be IDLE or STOPPED (got {self.state})"
-        with self._lock:
-            imu_state = self.imu_status_data.get("state")
-        if imu_state != "CALIBRATED":
-            return False, f"IMU not level-calibrated (state={imu_state})"
-        self._yaw_cal_thread = threading.Thread(
-            target=self._run_yaw_calibration, daemon=True
-        )
-        self._yaw_cal_thread.start()
-        return True, "ok"
+    def set_residual_mode(self, mode: str) -> tuple[bool, str]:
+        m = (mode or "").strip().lower()
+        if m not in ("off", "shadow", "apply"):
+            return False, f"mode must be off|shadow|apply (got '{mode}')"
+        self.residual_mode_publisher.publish(String(data=m))
+        return True, m
 
-    def _run_yaw_calibration(self):
-        self.logger.info("Yaw calibration: drive starting")
-        self.update_state(STATES.MANUAL.value)
+    def set_planner(self, planner: str) -> tuple[bool, str]:
+        name = (planner or "").strip().lower()
+        if name not in ("mpc", "pure_pursuit", "opencv"):
+            return False, f"planner must be mpc|pure_pursuit|opencv (got '{planner}')"
+        self.planner_publisher.publish(String(data=name))
+        return True, name
 
-        tick_dt = float(self.yaw_cal_tick_dt)
-        duration = float(self.yaw_cal_duration_s)
-        accel_floor = float(self.yaw_cal_accel_floor)
-        min_samples = int(self.yaw_cal_min_samples)
-        speed = float(self.yaw_cal_speed)
-
-        samples = []
-        t_end = time.monotonic() + duration
-        while time.monotonic() < t_end:
-            self.manual_control(speed, 0.0)
-            with self._lock:
-                ax = self.imu_data["ax"]
-                ay = self.imu_data["ay"]
-                yaw = self.odom_data["yaw"]
-            samples.append((ax, ay, yaw))
-            time.sleep(tick_dt)
-
-        self.manual_control(0.0, 0.0)
-        self.update_state(STATES.STOPPED.value)
-
-        kept = [(ax, ay, yaw) for (ax, ay, yaw) in samples
-                if math.hypot(ax, ay) > accel_floor]
-        if len(kept) < min_samples:
-            self.logger.warning(
-                f"Yaw calibration aborted: only {len(kept)} samples above accel "
-                f"floor {accel_floor} (need {min_samples}); R unchanged."
-            )
-            return
-
-        yaws = [y for (_, _, y) in kept]
-        if max(yaws) - min(yaws) < 1e-3:
-            self.logger.warning("Yaw calibration aborted: Heading estimate unchanged; R unchanged.")
-            return
-
-        ax_mean = sum(ax for (ax, _, _) in kept) / len(kept)
-        ay_mean = sum(ay for (_, ay, _) in kept) / len(kept)
-        theta_imu = math.atan2(ay_mean, ax_mean)
-
-        n = len(yaws)
-        psi_gps = math.atan2(
-            sum(math.sin(y) for y in yaws) / n,
-            sum(math.cos(y) for y in yaws) / n,
-        )
-
-        yaw_offset = math.atan2(math.sin(psi_gps - theta_imu), math.cos(psi_gps - theta_imu))
-        self.yaw_offset_publisher.publish(Float32(data=yaw_offset))
-        self.logger.info(
-            f"Yaw calibration complete: theta_imu={theta_imu:.4f} rad, "
-            f"psi_gps={psi_gps:.4f} rad, offset={yaw_offset:.4f} rad "
-            f"({len(kept)}/{len(samples)} samples used)"
-        )
+    def set_line(self, path: str) -> tuple[bool, str]:
+        p = (path or "").strip()
+        if not p:
+            return False, "path is empty"
+        self.line_publisher.publish(String(data=p))
+        return True, p
 
     def _imu_callback(self, msg: Imu):
         a, g, q = msg.linear_acceleration, msg.angular_velocity, msg.orientation

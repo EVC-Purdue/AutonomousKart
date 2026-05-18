@@ -133,13 +133,13 @@ def test_pick_lookahead_point_is_pure(ros_ctx, tiny_racing_line):
             node.current_xy = (0.0, 0.0)
             short = _straight_line(n=5, step=1.0, vx=10.0)
             pre_racing = node.racing_line
-            pre_idx = node.planner.closest_idx
-            tgt, _spd = node.planner._pick_lookahead_point(
+            pre_idx = node.planners[node.active_planner_name].closest_idx
+            tgt, _spd = node.planners[node.active_planner_name]._pick_lookahead_point(
                 short, 0, lookahead_m=2.0, current_xy=node.current_xy
             )
             assert tgt[0] == pytest.approx(2.0)
             assert node.racing_line is pre_racing
-            assert node.planner.closest_idx == pre_idx
+            assert node.planners[node.active_planner_name].closest_idx == pre_idx
         finally:
             node.destroy_node()
 
@@ -231,8 +231,8 @@ def test_racing_line_closest_idx_advances_while_dynamic_line_active(
                     target_idx = min(int(cx + 60.0), len(l) - 1)
                     return pts, target_idx
 
-            node.planner.line_manager._strategies = []
-            node.planner.line_manager.register(_Sticky())
+            node.planners[node.active_planner_name].line_manager._strategies = []
+            node.planners[node.active_planner_name].line_manager.register(_Sticky())
 
             node.current_xy = (0.0, 0.0)
             node.current_yaw = 0.0
@@ -241,21 +241,21 @@ def test_racing_line_closest_idx_advances_while_dynamic_line_active(
 
             # Tick 1: initial sync + activate dynamic line.
             node._autonomous_tick()
-            assert node.planner.line_manager.is_active
-            idx_at_start = node.planner.closest_idx
+            assert node.planners[node.active_planner_name].line_manager.is_active
+            idx_at_start = node.planners[node.active_planner_name].closest_idx
             assert idx_at_start == 0
 
             for step_x in (10.0, 20.0, 30.0, 40.0, 50.0):
                 node.current_xy = (step_x, 0.0)
                 node._autonomous_tick()
-                assert node.planner.line_manager.is_active
-                assert abs(node.planner.closest_idx - int(step_x)) <= 2, (
-                    f"racing-line closest_idx stuck at {node.planner.closest_idx} "
+                assert node.planners[node.active_planner_name].line_manager.is_active
+                assert abs(node.planners[node.active_planner_name].closest_idx - int(step_x)) <= 2, (
+                    f"racing-line closest_idx stuck at {node.planners[node.active_planner_name].closest_idx} "
                     f"while kart moved to x={step_x}"
                 )
 
-            cte = node.planner.line_manager.compute_cte(
-                node.current_xy, node.racing_line, node.planner.closest_idx
+            cte = node.planners[node.active_planner_name].line_manager.compute_cte(
+                node.current_xy, node.racing_line, node.planners[node.active_planner_name].closest_idx
             )
             assert cte < 1.0, f"CTE inflated ({cte:.2f}m) closest_idx stale"
         finally:
@@ -276,15 +276,15 @@ def test_initial_sync_picks_true_nearest_when_kart_spawns_far_from_idx0(
             node.current_speed_mps = 0.0
             node.pose_ready = True
 
-            assert node.planner.closest_idx == 0
-            assert not node.planner.initial_sync_done
+            assert node.planners[node.active_planner_name].closest_idx == 0
+            assert not node.planners[node.active_planner_name].initial_sync_done
 
             node._autonomous_tick()
 
-            assert node.planner.initial_sync_done
-            assert abs(node.planner.closest_idx - 150) <= 1, (
+            assert node.planners[node.active_planner_name].initial_sync_done
+            assert abs(node.planners[node.active_planner_name].closest_idx - 150) <= 1, (
                 f"initial sync failed to find true nearest; got "
-                f"{node.planner.closest_idx}"
+                f"{node.planners[node.active_planner_name].closest_idx}"
             )
         finally:
             node.destroy_node()
@@ -302,10 +302,10 @@ def test_resync_on_large_localization_jump(ros_ctx, long_racing_line):
             node.pose_ready = True
 
             node._autonomous_tick()
-            assert node.planner.closest_idx == 0
+            assert node.planners[node.active_planner_name].closest_idx == 0
 
             node.current_xy = (180.0, 0.0)
             node._autonomous_tick()
-            assert abs(node.planner.closest_idx - 180) <= 1
+            assert abs(node.planners[node.active_planner_name].closest_idx - 180) <= 1
         finally:
             node.destroy_node()

@@ -122,6 +122,7 @@ def test_localization_real_mode_seeds_from_single_vtg_fix(ros_ctx):
         node = LocalizationNode()
         try:
             assert not node.ekf.initialized
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=0))
             node.gps_callback(_gps_odom(x=10.0, y=20.0, yaw=math.pi / 4, speed=3.0))
             assert node.ekf.initialized, "single fix w/ VTG should seed EKF"
             px, py, yaw, v = node.ekf.x
@@ -133,16 +134,26 @@ def test_localization_real_mode_seeds_from_single_vtg_fix(ros_ctx):
             node.destroy_node()
 
 
-def test_localization_real_mode_skips_seed_when_yaw_unknown(ros_ctx):
-    """If GPS yaw cov is 1e6 (no VTG yet), do NOT init the EKF."""
+def test_localization_real_mode_seeds_xy_only_when_yaw_unknown(ros_ctx):
+    """If GPS yaw cov is 1e6 (no VTG yet), still seed xy with defaults for
+    yaw/speed at large variance so subsequent updates can pull them in."""
     with ros_ctx(_real_params()) as rclpy:
         node = LocalizationNode()
         try:
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=0))
             node.gps_callback(
                 _gps_odom(x=1.0, y=2.0, yaw=0.0, speed=0.0,
                           yaw_var=1e6, speed_var=1e6)
             )
-            assert not node.ekf.initialized
+            assert node.ekf.initialized
+            px, py, yaw0, v0 = node.ekf.x
+            assert abs(px - 1.0) < 1e-6
+            assert abs(py - 2.0) < 1e-6
+            assert yaw0 == 0.0
+            assert v0 == 0.0
+            # Yaw/speed variances should be wide since they weren't measured.
+            assert node.ekf.P[2, 2] > 1.0
+            assert node.ekf.P[3, 3] >= 1.0
         finally:
             node.destroy_node()
 
@@ -154,6 +165,7 @@ def test_localization_real_mode_folds_vtg_updates(ros_ctx):
     with ros_ctx(_real_params()) as rclpy:
         node = LocalizationNode()
         try:
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=0))
             node.gps_callback(_gps_odom(x=0.0, y=0.0, yaw=0.0, speed=2.0))
             assert node.ekf.initialized
             # Step forward: report moving north now at 4 m/s.
@@ -173,5 +185,207 @@ def test_localization_real_mode_folds_vtg_updates(ros_ctx):
             )
             _, _, _, v_after = node.ekf.x
             assert v_after > v, f"speed-only update should pull v up: {v}->{v_after}"
+        finally:
+            node.destroy_node()
+
+
+def test_localization_real_mode_wheel_speed_pulls_v_and_shrinks_pv(ros_ctx):
+    """An /e_comms/kart_speed_m_per_s message after init folds into v."""
+    from std_msgs.msg import Float32
+
+    with ros_ctx(_real_params()) as rclpy:
+        node = LocalizationNode()
+        try:
+            # Seed with v=0; then feed a wheel-speed of 5 m/s.
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=0))
+            node.gps_callback(_gps_odom(x=0.0, y=0.0, yaw=0.0, speed=0.0))
+            assert node.ekf.initialized
+            pv_before = node.ekf.P[3, 3]
+            v_before = node.ekf.x[3]
+
+            node._wheel_speed_cb(Float32(data=5.0))
+
+            assert node.ekf.x[3] > v_before, "v should move toward 5 m/s"
+            assert node.ekf.P[3, 3] < pv_before, "P[v,v] should shrink"
+        finally:
+            node.destroy_node()
+
+
+def test_localization_real_mode_wheel_speed_ignored_before_init(ros_ctx):
+    """Wheel-speed messages before GPS init are no-ops (no crash, no state)."""
+    from std_msgs.msg import Float32
+
+    with ros_ctx(_real_params()) as rclpy:
+        node = LocalizationNode()
+        try:
+            assert not node.ekf.initialized
+            node._wheel_speed_cb(Float32(data=5.0))  # must not raise
+            assert not node.ekf.initialized
+            assert node.ekf.x[3] == 0.0
+        finally:
+            node.destroy_node()
+
+
+def _imu_msg(omega_z, accel_x, stamp_sec, stamp_nanosec=0,
+             omega_var=0.001, accel_var=0.01):
+    from sensor_msgs.msg import Imu
+
+    m = Imu()
+    m.header.stamp.sec = int(stamp_sec)
+    m.header.stamp.nanosec = int(stamp_nanosec)
+    m.angular_velocity.z = float(omega_z)
+    m.linear_acceleration.x = float(accel_x)
+    cov_g = [0.0] * 9
+    cov_g[8] = float(omega_var)
+    m.angular_velocity_covariance = cov_g
+    cov_a = [0.0] * 9
+    cov_a[0] = float(accel_var)
+    m.linear_acceleration_covariance = cov_a
+    return m
+
+
+def test_localization_real_mode_imu_first_msg_only_sets_stamp(ros_ctx):
+    """First /imu msg seeds _last_imu_stamp; no predict, no /odom."""
+    with ros_ctx(_real_params()) as rclpy:
+        node = LocalizationNode()
+        try:
+            # No GPS yet, no init. First IMU just sets the stamp.
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=2.0, stamp_sec=1))
+            assert node._imu_seen is True
+            assert node._last_imu_stamp_s == pytest.approx(1.0)
+            # No predict happened -> v still 0 (filter not initialized either).
+            assert node.ekf.x[3] == 0.0
+            assert not node.ekf.initialized
+        finally:
+            node.destroy_node()
+
+
+def test_localization_real_mode_imu_drives_predict(ros_ctx, spin_helper):
+    """Second /imu msg integrates accel_x over the stamp delta."""
+    from nav_msgs.msg import Odometry
+
+    with ros_ctx(_real_params()) as rclpy:
+        node = LocalizationNode()
+        driver = rclpy.create_node("odom_sink")
+        received = []
+        driver.create_subscription(
+            Odometry, "odom", lambda m: received.append(m), 10
+        )
+        exe = rclpy.executors.SingleThreadedExecutor()
+        exe.add_node(node)
+        exe.add_node(driver)
+        try:
+            spin_helper(exe, lambda: False, timeout=0.2)  # discovery
+
+            # Seed IMU first so the GPS init gate opens.
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=1))
+            node.gps_callback(_gps_odom(x=0.0, y=0.0, yaw=0.0, speed=0.0))
+            assert node.ekf.initialized
+            # Second IMU 0.1 s later with a_x = 1.0 -> v gains ~0.1 m/s.
+            # Exact 0.1 s rounds to ~0.10000000000000009 in float; the dt
+            # clamp accepts up to 0.1 s + 1 ns so this still predicts.
+            node._imu_cb(
+                _imu_msg(omega_z=0.0, accel_x=1.0,
+                         stamp_sec=1, stamp_nanosec=100_000_000)
+            )
+            spin_helper(exe, lambda: len(received) >= 1, timeout=0.5)
+
+            assert node.ekf.x[3] > 0.05, f"v should grow under a_x=1 for 0.1s: {node.ekf.x[3]}"
+            assert len(received) >= 1, "predict should publish /odom"
+        finally:
+            exe.remove_node(driver)
+            exe.remove_node(node)
+            driver.destroy_node()
+            node.destroy_node()
+
+
+def test_localization_real_mode_init_gate_waits_for_imu(ros_ctx):
+    """A GPS fix arriving before any /imu does NOT initialize the EKF."""
+    with ros_ctx(_real_params()) as rclpy:
+        node = LocalizationNode()
+        try:
+            node.gps_callback(_gps_odom(x=1.0, y=2.0, yaw=0.0, speed=0.0))
+            assert not node.ekf.initialized, "init should wait for IMU"
+            # Seed IMU stamp, then re-send the GPS fix.
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=1))
+            node.gps_callback(_gps_odom(x=1.0, y=2.0, yaw=0.0, speed=0.0))
+            assert node.ekf.initialized
+        finally:
+            node.destroy_node()
+
+
+def test_localization_real_mode_publishes_twist_speed_covariance(
+    ros_ctx, spin_helper
+):
+    """After predict, /odom carries P[3,3] in twist.covariance[0]."""
+    from nav_msgs.msg import Odometry
+
+    with ros_ctx(_real_params()) as rclpy:
+        node = LocalizationNode()
+        driver = rclpy.create_node("odom_sink_cov")
+        received = []
+        driver.create_subscription(
+            Odometry, "odom", lambda m: received.append(m), 10
+        )
+        exe = rclpy.executors.SingleThreadedExecutor()
+        exe.add_node(node)
+        exe.add_node(driver)
+        try:
+            spin_helper(exe, lambda: False, timeout=0.2)
+
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=1))
+            node.gps_callback(_gps_odom(x=0.0, y=0.0, yaw=0.0, speed=0.0))
+            assert node.ekf.initialized
+            node._imu_cb(
+                _imu_msg(omega_z=0.0, accel_x=0.0,
+                         stamp_sec=1, stamp_nanosec=50_000_000)
+            )
+            spin_helper(exe, lambda: len(received) >= 1, timeout=0.5)
+
+            assert len(received) >= 1, "expected at least one /odom message"
+            twist_cov_0 = float(received[-1].twist.covariance[0])
+            assert twist_cov_0 > 0.0, f"twist.covariance[0] should carry P[3,3]: {twist_cov_0}"
+            assert twist_cov_0 == pytest.approx(
+                float(node.ekf.P[3, 3]), rel=1e-6
+            )
+        finally:
+            exe.remove_node(driver)
+            exe.remove_node(node)
+            driver.destroy_node()
+            node.destroy_node()
+
+
+def test_localization_real_mode_wheel_speed_pins_v_against_accel_bias(ros_ctx):
+    """A constant accel_x bias gets pinned by frequent wheel-speed updates."""
+    from std_msgs.msg import Float32
+
+    with ros_ctx(_real_params()) as rclpy:
+        node = LocalizationNode()
+        try:
+            # Seed init at v=0.
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=0))
+            node.gps_callback(_gps_odom(x=0.0, y=0.0, yaw=0.0, speed=0.0))
+            assert node.ekf.initialized
+
+            # 5 s of 100 Hz IMU at a_x = 0.85 (simulated 5 deg pitch leak),
+            # interleaved with wheel-speed updates pinning v at 0.
+            ACCEL_BIAS = 0.85  # m/s^2 (~ g * sin(5 deg))
+            t = 0.0
+            for _ in range(500):  # 5 s at 100 Hz
+                t += 0.01
+                sec = int(t)
+                nanosec = int(round((t - sec) * 1e9))
+                node._imu_cb(
+                    _imu_msg(omega_z=0.0, accel_x=ACCEL_BIAS,
+                             stamp_sec=sec, stamp_nanosec=nanosec)
+                )
+                node._wheel_speed_cb(Float32(data=0.0))
+
+            # Open-loop accel integration would drive v to ~4.25 m/s after 5 s.
+            # Wheel-speed updates should pin v close to 0 instead.
+            v_final = node.ekf.x[3]
+            assert abs(v_final) < 0.5, (
+                f"wheel speed should pin v near 0 despite accel bias; got v={v_final}"
+            )
         finally:
             node.destroy_node()

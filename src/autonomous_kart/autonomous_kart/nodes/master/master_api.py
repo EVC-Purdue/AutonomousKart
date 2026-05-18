@@ -117,6 +117,39 @@ def mpc_status():
     return jsonify(master_node.get_mpc_status())
 
 
+@app.route("/mpc/residual_mode", methods=["POST"])
+def mpc_residual_mode():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    data = request.get_json(silent=True) or {}
+    ok, reason = master_node.set_residual_mode(data.get("mode", ""))
+    if not ok:
+        return jsonify({"error": reason}), 400
+    return jsonify({"success": "ok", "mode": reason})
+
+
+@app.route("/pathfinder/planner", methods=["POST"])
+def pathfinder_planner():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    data = request.get_json(silent=True) or {}
+    ok, reason = master_node.set_planner(data.get("planner", ""))
+    if not ok:
+        return jsonify({"error": reason}), 400
+    return jsonify({"success": "ok", "planner": reason})
+
+
+@app.route("/pathfinder/line_path", methods=["POST"])
+def pathfinder_line_path():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    data = request.get_json(silent=True) or {}
+    ok, reason = master_node.set_line(data.get("path", ""))
+    if not ok:
+        return jsonify({"error": reason}), 400
+    return jsonify({"success": "ok", "path": reason})
+
+
 @app.route("/gps", methods=["GET"])
 def gps_status():
     if not master_node:
@@ -129,16 +162,6 @@ def imu_calibrate():
     if not master_node:
         return jsonify({"error": "not initialized"}), 500
     master_node.trigger_imu_calibration()
-    return jsonify({"success": "ok"})
-
-
-@app.route("/imu/calibrate_yaw", methods=["POST"])
-def imu_calibrate_yaw():
-    if not master_node:
-        return jsonify({"error": "not initialized"}), 500
-    ok, reason = master_node.start_yaw_calibration()
-    if not ok:
-        return jsonify({"error": reason}), 409
     return jsonify({"success": "ok"})
 
 

@@ -8,15 +8,14 @@ from autonomous_kart.nodes.localization.ekf import LocalizationEKF
 
 
 def _mk(**kw):
-    defaults = dict(
-        wheelbase_m=1.05,
-        steer_max_rad=math.radians(25.0),
-        pos_noise=0.01,
-        yaw_noise=0.05,
-        accel_noise=4.0,
-    )
+    defaults = dict(pos_noise=0.01, yaw_drift_noise=0.01, speed_drift_noise=0.5)
     defaults.update(kw)
     return LocalizationEKF(**defaults)
+
+
+# Default IMU per-sample variances used by predict tests.
+_OMEGA_VAR = 0.001   # rad^2/s^2
+_ACCEL_VAR = 0.01    # (m/s^2)^2
 
 
 def test_starts_uninitialized_with_huge_covariance():
@@ -46,14 +45,12 @@ def test_reset_with_explicit_covariance():
 def test_predict_with_zero_speed_is_identity():
     f = _mk()
     f.reset(1.0, 2.0, 0.5, 0.0)
-    P_before = f.P.copy()
-    f.predict(dt=0.0167, steer_rad=0.2)
+    f.predict(dt=0.0167, omega_z=0.2, accel_x=0.0,
+              omega_var=_OMEGA_VAR, accel_var=_ACCEL_VAR)
     assert f.x[0] == pytest.approx(1.0)
     assert f.x[1] == pytest.approx(2.0)
-    assert f.x[2] == pytest.approx(0.5)
+    # yaw can drift from omega_z even at v=0 that's correct behaviour now.
     assert f.x[3] == pytest.approx(0.0)
-    # Covariance handled in Task 3 here we only assert mean is identity.
-    del P_before
 
 
 def test_predict_constant_velocity_straight_line():
@@ -61,63 +58,47 @@ def test_predict_constant_velocity_straight_line():
     f.reset(0.0, 0.0, 0.0, 5.0)
     dt = 0.02
     for _ in range(50):  # 1 s
-        f.predict(dt, steer_rad=0.0)
+        f.predict(dt, omega_z=0.0, accel_x=0.0,
+                  omega_var=_OMEGA_VAR, accel_var=_ACCEL_VAR)
     assert f.x[0] == pytest.approx(5.0, abs=1e-6)
     assert f.x[1] == pytest.approx(0.0, abs=1e-6)
     assert f.x[2] == pytest.approx(0.0, abs=1e-9)
     assert f.x[3] == pytest.approx(5.0)
 
 
-def test_predict_constant_steer_traces_circle():
-    # Radius r = L / tan(delta) for bicycle kinematics.
-    L = 1.05
-    delta = math.radians(15.0)
-    r = L / math.tan(delta)
-    f = _mk(wheelbase_m=L)
-    f.reset(0.0, 0.0, 0.0, 3.0)
+def test_predict_constant_yaw_rate_traces_circle():
+    # With constant omega_z and constant v, radius r = v / omega_z.
+    v = 3.0
+    omega = math.radians(15.0)
+    r = v / omega
+    f = _mk()
+    f.reset(0.0, 0.0, 0.0, v)
     dt = 0.005
-    for _ in range(2000):  # 10 s well over a full lap
-        f.predict(dt, steer_rad=delta)
-    # After any time, the kart should lie on the circle of radius r centered
-    # at (0, r) (left turn from origin pointing along +x).
+    for _ in range(2000):  # 10 s
+        f.predict(dt, omega_z=omega, accel_x=0.0,
+                  omega_var=_OMEGA_VAR, accel_var=_ACCEL_VAR)
+    # Left turn from origin pointing along +x circles center (0, r).
     cx, cy = 0.0, r
     dist = math.hypot(f.x[0] - cx, f.x[1] - cy)
     assert dist == pytest.approx(r, rel=5e-3)
-
-
-def test_predict_clamps_steer_to_steer_max():
-    f = _mk(steer_max_rad=math.radians(25.0))
-    f.reset(0.0, 0.0, 0.0, 5.0)
-    g = _mk(steer_max_rad=math.radians(25.0))
-    g.reset(0.0, 0.0, 0.0, 5.0)
-    for _ in range(10):
-        f.predict(0.02, steer_rad=math.radians(90.0))   # over the limit
-        g.predict(0.02, steer_rad=math.radians(25.0))   # at the limit
-    assert f.x[2] == pytest.approx(g.x[2], rel=1e-9)
 
 
 def test_predict_wraps_yaw_into_minus_pi_pi():
     f = _mk()
     f.reset(0.0, 0.0, 0.0, 10.0)
     for _ in range(2000):
-        f.predict(0.02, steer_rad=math.radians(20.0))
+        f.predict(0.02, omega_z=math.radians(20.0), accel_x=0.0,
+                  omega_var=_OMEGA_VAR, accel_var=_ACCEL_VAR)
         assert -math.pi - 1e-9 <= f.x[2] <= math.pi + 1e-9
-
-
-def test_predict_handles_zero_wheelbase_without_dividing_by_zero():
-    f = _mk(wheelbase_m=0.0)
-    f.reset(0.0, 0.0, 0.0, 5.0)
-    f.predict(0.02, steer_rad=0.2)  # must not raise
-    assert f.x[2] == 0.0
 
 
 def test_predict_grows_covariance_when_uncorrected():
     f = _mk()
     f.reset(0.0, 0.0, 0.0, 5.0)
     P0 = f.P.copy()
-    for _ in range(60):  # 1 s at 60 Hz
-        f.predict(1 / 60.0, steer_rad=0.05)
-    # Every diagonal element should be strictly larger than init.
+    for _ in range(60):
+        f.predict(1 / 60.0, omega_z=0.05, accel_x=0.0,
+                  omega_var=_OMEGA_VAR, accel_var=_ACCEL_VAR)
     for i in range(4):
         assert f.P[i, i] > P0[i, i]
 
@@ -126,19 +107,56 @@ def test_predict_covariance_is_symmetric():
     f = _mk()
     f.reset(0.0, 0.0, 0.3, 4.0)
     for _ in range(100):
-        f.predict(0.02, steer_rad=0.1)
+        f.predict(0.02, omega_z=0.1, accel_x=0.0,
+                  omega_var=_OMEGA_VAR, accel_var=_ACCEL_VAR)
     np.testing.assert_allclose(f.P, f.P.T, atol=1e-12)
 
 
-def test_predict_accel_noise_scales_v_variance():
-    f_small = _mk(accel_noise=0.1)
+def test_predict_accel_var_scales_v_variance():
+    f_small = _mk()
     f_small.reset(0.0, 0.0, 0.0, 0.0)
-    f_big = _mk(accel_noise=10.0)
+    f_big = _mk()
     f_big.reset(0.0, 0.0, 0.0, 0.0)
     for _ in range(60):
-        f_small.predict(1 / 60.0, steer_rad=0.0)
-        f_big.predict(1 / 60.0, steer_rad=0.0)
+        f_small.predict(1 / 60.0, omega_z=0.0, accel_x=0.0,
+                        omega_var=_OMEGA_VAR, accel_var=0.1)
+        f_big.predict(1 / 60.0, omega_z=0.0, accel_x=0.0,
+                      omega_var=_OMEGA_VAR, accel_var=10.0)
     assert f_big.P[3, 3] > f_small.P[3, 3]
+
+
+def test_predict_accel_drives_v_evolution():
+    f = _mk()
+    f.reset(0.0, 0.0, 0.0, 0.0)
+    dt = 0.01
+    for _ in range(100):  # 1 s of a_x = 1.0
+        f.predict(dt, omega_z=0.0, accel_x=1.0,
+                  omega_var=_OMEGA_VAR, accel_var=_ACCEL_VAR)
+    assert f.x[3] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_predict_gyro_drives_yaw_evolution():
+    f = _mk()
+    f.reset(0.0, 0.0, 0.0, 0.0)
+    dt = 0.01
+    for _ in range(100):  # 1 s of omega_z = 0.5
+        f.predict(dt, omega_z=0.5, accel_x=0.0,
+                  omega_var=_OMEGA_VAR, accel_var=_ACCEL_VAR)
+    assert f.x[2] == pytest.approx(0.5, abs=1e-6)
+
+
+def test_predict_yaw_no_longer_depends_on_v():
+    f_slow = _mk()
+    f_slow.reset(0.0, 0.0, 0.0, 1.0)
+    f_fast = _mk()
+    f_fast.reset(0.0, 0.0, 0.0, 10.0)
+    dt = 0.01
+    for _ in range(100):
+        f_slow.predict(dt, omega_z=0.3, accel_x=0.0,
+                       omega_var=_OMEGA_VAR, accel_var=_ACCEL_VAR)
+        f_fast.predict(dt, omega_z=0.3, accel_x=0.0,
+                       omega_var=_OMEGA_VAR, accel_var=_ACCEL_VAR)
+    assert f_slow.x[2] == pytest.approx(f_fast.x[2], abs=1e-9)
 
 
 def test_update_gps_xy_pulls_state_toward_measurement():

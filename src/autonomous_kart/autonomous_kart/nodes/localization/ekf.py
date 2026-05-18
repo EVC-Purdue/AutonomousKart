@@ -7,9 +7,10 @@ State vector x:
     x[2] = yaw  heading (rad)
     x[3] = v    forward speed (m/s)
 
-Predict rolls x forward using bicycle kinematics driven by commanded
-steering. Update folds in GPS xy directly, plus heading and speed
-derived from consecutive GPS fixes (pseudo-measurements, gated by motion).
+Predict rolls x forward using IMU inputs: gyro_z drives yaw and accel_x
+drives v. Update folds in GPS xy directly, plus heading and speed from
+GPS (when VTG is trusted) and a direct speed measurement from the VESC
+wheel-speed topic.
 """
 from __future__ import annotations
 
@@ -25,20 +26,14 @@ def _wrap(a: float) -> float:
 
 class LocalizationEKF:
     def __init__(
-        self,
-        wheelbase_m: float,
-        steer_max_rad: float,
-        pos_noise: float,
-        yaw_noise: float,
-        accel_noise: float,
+            self,
+            pos_noise: float,
+            yaw_drift_noise: float,
+            speed_drift_noise: float,
     ):
-        self.L = float(wheelbase_m)
-        self.steer_max = float(steer_max_rad)
-
-        # Process-noise spectral densities (per second).
-        self.pos_noise = float(pos_noise)
-        self.yaw_noise = float(yaw_noise)
-        self.accel_noise = float(accel_noise)
+        self.pos_noise = float(pos_noise) # xy diffusion from unmodeled lateral motion (m^2/s).
+        self.yaw_drift_noise = float(yaw_drift_noise) # unmodeled yaw drift beyond IMU gyro noise (rad^2/s)
+        self.speed_drift_noise = float(speed_drift_noise) # unmodeled speed drift; absorbs accel bias / gravity
 
         self.x = np.zeros(4)
         # Big P -> we know nothing about state.
@@ -46,12 +41,12 @@ class LocalizationEKF:
         self.initialized = False
 
     def reset(
-        self,
-        px: float,
-        py: float,
-        yaw: float,
-        v: float,
-        P: np.ndarray | None = None,
+            self,
+            px: float,
+            py: float,
+            yaw: float,
+            v: float,
+            P: np.ndarray | None = None,
     ) -> None:
         """Seed the filter with a known state from a confident GPS fix."""
         self.x[:] = (px, py, _wrap(yaw), v)
@@ -63,17 +58,26 @@ class LocalizationEKF:
             self.P = np.diag([0.25, 0.25, 0.25, 1.0])
         self.initialized = True
 
-    def predict(self, dt: float, steer_rad: float) -> None:
-        """Roll the state forward dt seconds using bicycle kinematics."""
+    def predict(
+            self,
+            dt: float,
+            omega_z: float,
+            accel_x: float,
+            omega_var: float,
+            accel_var: float,
+    ) -> None:
+        """Roll the state forward dt seconds.
+
+        Inputs are the body-frame yaw rate (rad/s) and longitudinal accel (m/s^2)
+        from the IMU. Their per-sample variances size the yaw/v entries of Q.
+        """
         px, py, yaw, v = self.x
-        delta = max(-self.steer_max, min(self.steer_max, float(steer_rad)))
         sin_y, cos_y = math.sin(yaw), math.cos(yaw)
 
-        # Advance the mean. v is unchanged only process noise drives it.
         self.x[0] = px + v * cos_y * dt
         self.x[1] = py + v * sin_y * dt
-        if self.L > 1e-6:
-            self.x[2] = _wrap(yaw + v * math.tan(delta) * dt / self.L)
+        self.x[2] = _wrap(yaw + float(omega_z) * dt)
+        self.x[3] = v + float(accel_x) * dt
 
         # F = how each state derivative depends on each state.
         F = np.eye(4)
@@ -81,11 +85,14 @@ class LocalizationEKF:
         F[0, 3] = cos_y * dt
         F[1, 2] = v * cos_y * dt
         F[1, 3] = sin_y * dt
-        if self.L > 1e-6:
-            F[2, 3] = math.tan(delta) * dt / self.L
 
-        # Q = uncertainty we accept this step (scales with dt).
-        Q = np.diag([self.pos_noise, self.pos_noise, self.yaw_noise, self.accel_noise]) * dt
+        # Q = uncertainty we accept this step.
+        Q = np.diag([
+            self.pos_noise * dt,
+            self.pos_noise * dt,
+            float(omega_var) * dt * dt + self.yaw_drift_noise * dt,
+            float(accel_var) * dt * dt + self.speed_drift_noise * dt,
+        ])
 
         self.P = F @ self.P @ F.T + Q
         self.P = 0.5 * (self.P + self.P.T)  # Force symmetry against float drift.
@@ -115,11 +122,11 @@ class LocalizationEKF:
         self._linear_update(H, z, np.array([[float(var)]]))
 
     def _linear_update(
-        self,
-        H: np.ndarray,
-        z: np.ndarray,
-        R: np.ndarray,
-        innovation: np.ndarray | None = None,
+            self,
+            H: np.ndarray,
+            z: np.ndarray,
+            R: np.ndarray,
+            innovation: np.ndarray | None = None,
     ) -> None:
         """Fold a linear measurement into the state and shrink P accordingly."""
         if innovation is None:

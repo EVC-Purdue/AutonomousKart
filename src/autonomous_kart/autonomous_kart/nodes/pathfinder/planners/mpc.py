@@ -77,8 +77,7 @@ class MPCPlanner(Planner):
         self.steer_observability_v = float(g("steer_observability_v_mps", 0.5))
         # Elite-mean fraction: instead of argmin over K samples, average the
         # top `mppi_elite_frac × K` samples' first actions. Cuts per-tick noise
-        # without the phase-lag cost a 1st-order LPF would impose. 1.0/K = pure
-        # argmin (no smoothing).
+        # without the phase-lag cost of a 1st-order filter. 1.0/K = pure argmin (no smoothing).
         self.mppi_elite_frac = float(g("mppi_elite_frac", 0.1))
 
         # Corridor (centerline = racing line)
@@ -334,7 +333,11 @@ class MPCPlanner(Planner):
         )
         self.residual.push(phi, s, d, nom_s - s, nom_d - d, v)
         self.residual.step(s, d)
-        res_ps, res_pd = self.residual.predict(phi)
+        res_ps, res_pd, _residual_source = self.residual.predict(phi)
+        # effective_mode gating: zero the residual any time we're not yet in apply
+        # so future consumers automatically see (0, 0) until the apply gate opens.
+        if self.residual.effective_mode() != "apply":
+            res_ps, res_pd = 0.0, 0.0
 
         # Telemetry
         margin_min = self.corridor_half - float(np.max(np.abs(traj["d"])))
@@ -571,8 +574,7 @@ class MPCPlanner(Planner):
 
         # Corridor enforcement is a soft quadratic penalty (c_bnd above).
         # Pick the action by averaging the top `mppi_elite_frac × K` samples'
-        # control sequences (CEM-style elite mean). Cuts per-tick command
-        # noise vs raw argmin without adding a phase lag. The reported "best"
+        # control sequences (CEM-style elite mean). The reported "best"
         # cost is still the elite minimum so feasibility / failsafe still
         # gate on the truly-best trajectory.
         n_elite = max(1, int(round(self.mppi_elite_frac * self.K)))
@@ -614,9 +616,6 @@ class MPCPlanner(Planner):
         """Drive the residual learner from another planner's commands so it
         keeps training when MPC isn't the active planner."""
         # Sync MPC's internal control state to what was actually executed.
-        # Without this, delta_prev / u_mean drift on MPC's own fictional picks
-        # and the candidate cloud diverges from the kart's real steering,
-        # producing saturated δ_cmd telemetry and bogus residual targets.
         self.delta_prev = math.radians(steering_deg)
         self.u_mean[0, :] = self.delta_prev
         if not self.residual.enabled:
@@ -642,7 +641,10 @@ class MPCPlanner(Planner):
         )
         self.residual.push(phi, s, d, nom_s - s, nom_d - d, v)
         self.residual.step(s, d)
-        res_ps, res_pd = self.residual.predict(phi)
+        res_ps, res_pd, _residual_source = self.residual.predict(phi)
+        # effective_mode gating: zero the residual any time we're not yet in apply
+        if self.residual.effective_mode() != "apply":
+            res_ps, res_pd = 0.0, 0.0
         self._publish_status(
             self.mode, True, t0, s, d, psi_track, v, self.target_speed,
             delta_rad, accel, 0.0, self.corridor_half,
@@ -702,7 +704,54 @@ class MPCPlanner(Planner):
             float(self._ekf_prior_yaw), float(self._ekf_prior_v),
             float(self._ekf_post_x), float(self._ekf_post_y),
             float(self._ekf_post_yaw), float(self._ekf_post_v),
+            # ---- Phase 1 residual telemetry (Phase 2 fields stay 0/NaN here) ----
+            float(self.residual.buffer.size if self.residual.buffer is not None else 0),
+            float(self.residual.buffer.capacity if self.residual.buffer is not None else 0),
+            float(self.residual.trainer.last_result.train_wall_ms
+                  if (self.residual.trainer and self.residual.trainer.last_result)
+                  else float("nan")),
+            float(self.residual.trainer.last_result.n_samples
+                  if (self.residual.trainer and self.residual.trainer.last_result)
+                  else 0),
+            float(self.residual.trainer.train_seq if self.residual.trainer else 0),
+            float(self.residual.trainer.last_result.train_mae_s
+                  if (self.residual.trainer and self.residual.trainer.last_result)
+                  else float("nan")),
+            float(self.residual.trainer.last_result.train_mae_d
+                  if (self.residual.trainer and self.residual.trainer.last_result)
+                  else float("nan")),
+            float(self.residual.trainer.last_result.val_mae_s
+                  if (self.residual.trainer and self.residual.trainer.last_result)
+                  else float("nan")),
+            float(self.residual.trainer.last_result.val_mae_d
+                  if (self.residual.trainer and self.residual.trainer.last_result)
+                  else float("nan")),
+            float(self.residual.trainer.last_result.rls_val_mae_s
+                  if (self.residual.trainer and self.residual.trainer.last_result)
+                  else float("nan")),
+            float(self.residual.trainer.last_result.rls_val_mae_d
+                  if (self.residual.trainer and self.residual.trainer.last_result)
+                  else float("nan")),
+            float(self.residual.last_active_model),  # active_model
+            float(self.residual.last_pred_clipped),
+            float(self.residual.clip_rate()),
+            float(self.residual.outliers_dropped),
+            float(self.residual.off_line_skipped),
+            float(self.residual.divergence_resets),
+            float(self.residual.samples_trained),
+            float(self.residual.revert_count),
+            float(self.residual.checkpoint_ring.best_recent().val_mae_s
+                  if self.residual.checkpoint_ring and not self.residual.checkpoint_ring.is_empty()
+                  else float("nan")),
+            float(self.residual.checkpoint_ring.best_recent().val_mae_d
+                  if self.residual.checkpoint_ring and not self.residual.checkpoint_ring.is_empty()
+                  else float("nan")),
+            float(1.0 if self.residual.cache_loaded else 0.0),
+            float(1.0 if self.residual.samples_trained >= self.residual.rls_warmup_samples else 0.0),
+            float({"off": 0, "shadow": 1, "apply": 2}.get(self.residual.effective_mode(), 1)),
+            float(self.residual.samples_accepted_this_run),
         ]
+        assert len(payload) == 88, f"mpc/status payload must be 88 floats, got {len(payload)}"
         self.status_pub.publish(Float32MultiArray(data=payload))
 
     def dynamic_line_state(self) -> Optional[dict]:

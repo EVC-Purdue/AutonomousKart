@@ -7,6 +7,7 @@ import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from std_msgs.msg import Float32, Float32MultiArray, String
+from std_msgs.msg import Empty as _EmptyMsg # naming conflict
 
 from autonomous_kart.nodes.master.master_node import STATES
 from autonomous_kart.nodes.pathfinder.planners.base import KartConstants, PlannerInputs
@@ -136,6 +137,7 @@ class PathfinderNode(Node):
         self.create_subscription(String, "system_state", self.update_state, 10)
         self.create_subscription(Float32MultiArray, "manual_commands", self.manual_loop, 5)
         self.create_subscription(String, "mpc/residual_mode", self._on_residual_mode, 1)
+        self.create_subscription(_EmptyMsg, "mpc/residual_revert", self._on_residual_revert, 1)
         self.create_subscription(String, "pathfinder/planner", self._on_planner_swap, 1)
         self.create_subscription(String, "pathfinder/line_path", self._on_line_swap, 1)
 
@@ -196,6 +198,14 @@ class PathfinderNode(Node):
             return
         self.shared_residual.mode = mode
         self.logger.info(f"residual mode -> {mode}")
+
+    def _on_residual_revert(self, _msg):
+        """Operator-explicit revert. Bypasses regime check."""
+        if hasattr(self.shared_residual, "manual_revert"):
+            self.shared_residual.manual_revert()
+            self.logger.warning("mpc/residual_revert received -> manual_revert() invoked")
+        else:
+            self.logger.warning("mpc/residual_revert received but learner has no manual_revert() yet")
 
     def _on_planner_swap(self, msg: String):
         name = (msg.data or "").strip().lower()
@@ -437,6 +447,16 @@ class PathfinderNode(Node):
         siny_cosp = 2.0 * (w * z + x * y)
         cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
         return math.atan2(siny_cosp, cosy_cosp)
+
+    def destroy_node(self):
+        try:
+            self.shared_residual.shutdown()
+        except Exception as exc:
+            try:
+                self.get_logger().warning(f"residual.shutdown() raised: {exc!r}")
+            except Exception:
+                pass
+        super().destroy_node()
 
 
 def main(args=None):

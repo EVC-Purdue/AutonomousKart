@@ -47,9 +47,9 @@ class CheckpointRing:
             return
         # Need to evict. Find the all-time-best entry by val_mae_s
         best_idx = self._best_index()
-        # Oldest is index 0. Don't evict the best.
+        # Oldest is index 0. Don't evict the best (unless it's the only slot).
         evict_idx = 0
-        if best_idx == 0:
+        if best_idx == 0 and self.size > 1:
             evict_idx = 1
         del self.entries[evict_idx]
         self.entries.append(cp)

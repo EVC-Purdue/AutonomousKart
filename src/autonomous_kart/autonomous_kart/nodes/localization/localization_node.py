@@ -181,6 +181,7 @@ class LocalizationNode(Node):
         self._last_gps_t = None
         self._imu_seen = False
         self._last_imu_stamp_s = None
+        self._last_wheel_v = None
 
         self.create_subscription(Odometry, "gps", self.gps_callback, 10)
         self.create_subscription(Imu, "imu", self._imu_cb, 5)
@@ -232,9 +233,10 @@ class LocalizationNode(Node):
         return cov
 
     def _wheel_speed_cb(self, msg: Float32):
+        self._last_wheel_v = float(msg.data)
         if not self.ekf.initialized:
             return
-        self.ekf.update_speed(float(msg.data), self.wheel_speed_var)
+        self.ekf.update_speed(self._last_wheel_v, self.wheel_speed_var)
 
     def _imu_cb(self, msg: Imu):
         stamp_s = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
@@ -316,10 +318,15 @@ class LocalizationNode(Node):
         # is rolling in reverse (wheel speed negative), COG points 180° from
         # the body yaw so flip it so EKF is accurate
         if have_yaw:
-            # We trust the signed VESC speed first
-            v_for_sign = v_meas if have_speed else (
-                float(self.ekf.x[3]) if self.ekf.initialized else 0.0
-            )
+            # VTG speed is unsigned (magnitude), so prefer a signed source for
+            # the reverse-motion sign: latest VESC wheel speed, then EKF v,
+            # then fall back to VTG magnitude.
+            if self._last_wheel_v is not None:
+                v_for_sign = self._last_wheel_v
+            elif self.ekf.initialized:
+                v_for_sign = float(self.ekf.x[3])
+            else:
+                v_for_sign = v_meas if have_speed else 0.0
             if v_for_sign < 0.0:
                 yaw_meas = _wrap(yaw_meas + math.pi)
 

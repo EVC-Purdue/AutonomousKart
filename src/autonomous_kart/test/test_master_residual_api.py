@@ -5,6 +5,11 @@ rclpy = pytest.importorskip("rclpy")  # skip whole file on machines w/o rclpy
 from std_msgs.msg import Float32MultiArray
 
 
+def _default_params(state="IDLE"):
+    """MasterNode requires these globals declared or it asserts on init."""
+    return {"system_state": state, "system_frequency": 60}
+
+
 def _status_msg_with_train_seq(seq, val_mae_s=0.10, val_mae_d=0.03):
     """Build an 88-float /mpc/status message with the train_seq slot set."""
     data = [0.0] * 88
@@ -23,7 +28,7 @@ def _status_msg_with_train_seq(seq, val_mae_s=0.10, val_mae_d=0.03):
 
 def test_residual_log_records_new_train_seq(ros_ctx):
     from autonomous_kart.nodes.master.master_node import MasterNode
-    with ros_ctx():
+    with ros_ctx(_default_params()):
         node = MasterNode()
         try:
             node._mpc_status_callback(_status_msg_with_train_seq(seq=1))
@@ -39,7 +44,7 @@ def test_residual_log_records_new_train_seq(ros_ctx):
 
 def test_residual_log_limit(ros_ctx):
     from autonomous_kart.nodes.master.master_node import MasterNode
-    with ros_ctx():
+    with ros_ctx(_default_params()):
         node = MasterNode()
         try:
             for s in range(5):
@@ -54,7 +59,7 @@ def test_residual_log_limit(ros_ctx):
 
 def test_residual_status_returns_latest_snapshot(ros_ctx):
     from autonomous_kart.nodes.master.master_node import MasterNode
-    with ros_ctx():
+    with ros_ctx(_default_params()):
         node = MasterNode()
         try:
             node._mpc_status_callback(_status_msg_with_train_seq(seq=42, val_mae_s=0.07))

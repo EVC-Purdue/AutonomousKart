@@ -29,9 +29,7 @@ class PlannerInputs:
     gps_speed_mps: float = nan
     # Latest VESC wheel-speed (m/s). NaN until first /e_comms/kart_speed msg.
     wheel_speed_mps: float = nan
-    # Latest /localization/gps_event snapshot — EKF state immediately before
-    # and after a GPS fold-in. seq increments per event so repeats across
-    # successive MPC ticks (60 Hz pulling 10 Hz GPS) are detectable offline.
+    # Latest /localization/gps_event snapshot
     gps_event_seq: float = 0.0
     gps_have_yaw: float = 0.0
     gps_have_speed: float = 0.0

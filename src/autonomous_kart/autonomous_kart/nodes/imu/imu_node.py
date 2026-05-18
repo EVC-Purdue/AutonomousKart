@@ -191,10 +191,7 @@ class ImuNode(Node):
             count = self._calib_count
             gyro_bias = [s / count for s in self._calib_sum]
             accel_mean_raw = np.array([s / count for s in self._calib_accel_sum])
-            # Level correction: any x/y component in the measured gravity
-            # after R_MOUNT is residual chassis tilt. Rotate the measured
-            # direction onto the z axis, matching its existing sign so we
-            # only zero x/y (not flip the accel.z convention downstream).
+            # Level correction: any x/y component in the measured gravity after R_MOUNT is residual chassis tilt
             a_post_mount = R_MOUNT @ accel_mean_raw
             target_z = math.copysign(abs(self.default_g), a_post_mount[2])
             target = np.array([0.0, 0.0, target_z])
@@ -223,8 +220,7 @@ class ImuNode(Node):
             bias = data["gyro_bias"]
             if not (isinstance(bias, list) and len(bias) == 3):
                 raise ValueError("gyro_bias must be a length-3 list")
-            # R is optional for backward compatibility with older caches
-            # that only stored gyro_bias; fall back to mount-only rotation.
+
             R_arr = R_MOUNT.copy()
             R_data = data.get("R")
             if R_data is not None:

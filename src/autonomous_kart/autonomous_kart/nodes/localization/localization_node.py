@@ -188,9 +188,7 @@ class LocalizationNode(Node):
             Float32, "e_comms/kart_speed_m_per_s", self._wheel_speed_cb, 5
         )
 
-        # Per-GPS-event EKF snapshot: prior (IMU+wheel only) vs posterior
-        # (after GPS fold-in) plus the raw measurement, for offline
-        # EKF-vs-GPS innovation analysis.
+        # For snapshotting the EKF before / after GPS event to get accuracy
         self.gps_event_pub = self.create_publisher(
             Float32MultiArray, "localization/gps_event", 10,
         )
@@ -264,7 +262,6 @@ class LocalizationNode(Node):
         accel_x = float(msg.linear_acceleration.x)
         accel_var = float(msg.linear_acceleration_covariance[0])
         # gyro_z published by imu_node has the wrong sign for our chassis
-        # mount; negate so positive yaw_rate = left turn (FLU).
         omega_z = -float(msg.angular_velocity.z)
         omega_var = float(msg.angular_velocity_covariance[8])
 
@@ -317,10 +314,9 @@ class LocalizationNode(Node):
         have_speed = var_v < self.vtg_speed_var_max
         # VTG track is course-over-ground = direction of motion. If the kart
         # is rolling in reverse (wheel speed negative), COG points 180° from
-        # the body yaw — flip it before folding into the EKF. We trust the
-        # signed VESC speed first; fall back to the EKF's own v if VTG speed
-        # is unavailable but the filter already has a confident estimate.
+        # the body yaw so flip it so EKF is accurate
         if have_yaw:
+            # We trust the signed VESC speed first
             v_for_sign = v_meas if have_speed else (
                 float(self.ekf.x[3]) if self.ekf.initialized else 0.0
             )

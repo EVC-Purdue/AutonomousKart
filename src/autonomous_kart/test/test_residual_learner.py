@@ -363,3 +363,63 @@ def test_trainer_installs_gbm_and_flips_selector():
         assert learner._gbm_s is not None
     finally:
         learner.shutdown()
+
+
+def test_rls_predict_clipped():
+    """RLS predictions are clipped to ±gbm_predict_clip_m, matching GBM.
+
+    Offline replay caught RLS spiking to ~200 m of Δs prediction in benign
+    driving. The clip is hard safety for apply mode and matches GBM."""
+    learner = _make({"rls_warmup_samples": 0,
+                     "gbm_predict_clip_m": 0.5})
+    # Push theta beyond the clip threshold via the public attributes
+    learner.theta_s = np.zeros(NUM_FEATURES)
+    learner.theta_d = np.zeros(NUM_FEATURES)
+    learner.theta_s[0] = 100.0   # bias slot — phi[0]=1.0 → prediction = 100
+    learner.theta_d[0] = -100.0
+    learner.samples_trained = 100  # past warmup
+    pred_s, pred_d, source = learner.predict(_phi(d=0.0))
+    assert source == 0   # RLS
+    assert pred_s == 0.5     # clipped from 100 → +0.5
+    assert pred_d == -0.5    # clipped from -100 → -0.5
+    assert learner.last_pred_clipped == 1
+
+
+def test_rls_predict_unclipped_when_in_bounds():
+    """RLS predictions within ±clip pass through unchanged."""
+    learner = _make({"rls_warmup_samples": 0, "gbm_predict_clip_m": 0.5})
+    learner.theta_s = np.zeros(NUM_FEATURES)
+    learner.theta_d = np.zeros(NUM_FEATURES)
+    learner.theta_s[0] = 0.2
+    learner.samples_trained = 100
+    pred_s, pred_d, _ = learner.predict(_phi(d=0.0))
+    assert abs(pred_s - 0.2) < 1e-12
+    assert learner.last_pred_clipped == 0
+
+
+def test_selector_flips_to_gbm_when_only_d_wins():
+    """Selector's OR rule: GBM only needs to beat RLS on s OR d, not both.
+
+    Offline replay showed the AND rule kept the selector on RLS 94% of ticks
+    because s val_maes were nearly tied even when GBM was a clear winner on d."""
+    learner = _make({"rls_warmup_samples": 0,
+                     "gbm_select_eps_s_m": 0.0,
+                     "gbm_select_eps_d_m": 0.0,
+                     "gbm_predict_clip_m": 5.0})
+    # GBM ties on s (no improvement), but beats on d by a clear margin.
+    learner._install_gbm(_FakeGBM(0.1), _FakeGBM(0.05),
+                         val_mae_s=0.30, val_mae_d=0.05,
+                         rls_val_mae_s=0.30, rls_val_mae_d=0.12)
+    assert learner.use_gbm    # OR rule flips because d wins
+
+
+def test_selector_stays_rls_when_neither_axis_beats():
+    """If GBM is no better on either axis, selector stays on RLS."""
+    learner = _make({"rls_warmup_samples": 0,
+                     "gbm_select_eps_s_m": 0.0,
+                     "gbm_select_eps_d_m": 0.0,
+                     "gbm_predict_clip_m": 5.0})
+    learner._install_gbm(_FakeGBM(0.0), _FakeGBM(0.0),
+                         val_mae_s=0.30, val_mae_d=0.10,
+                         rls_val_mae_s=0.30, rls_val_mae_d=0.10)
+    assert not learner.use_gbm

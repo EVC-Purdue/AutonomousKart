@@ -106,7 +106,7 @@ pathfinder_node:
     mpc.residual.gbm_retrain_secs: 10.0
     mpc.residual.gbm_min_samples_to_train: 1200
     mpc.residual.gbm_retrain_every_samples: 1200
-    mpc.residual.gbm_select_eps_s_m: 0.01
+    mpc.residual.gbm_select_eps_s_m: 0.0
     mpc.residual.gbm_select_eps_d_m: 0.005
     mpc.residual.gbm_predict_clip_m: 0.5
     # Checkpoints + revert

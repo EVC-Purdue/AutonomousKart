@@ -300,13 +300,19 @@ class ResidualLearner:
             self._clip_history.append(clipped)
             self._maybe_clip_revert()
             return s, d, SOURCE_GBM
-        s = float(phi @ self.theta_s)
-        d = float(phi @ self.theta_d)
+        # Offline replay observed RLS spikes to ~200 m of Δs prediction in benign driving
+        # Clip is hard safety
+        s_raw = float(phi @ self.theta_s)
+        d_raw = float(phi @ self.theta_d)
+        clip = self._predict_clip_m
+        s = max(-clip, min(clip, s_raw))
+        d = max(-clip, min(clip, d_raw))
+        clipped = 1 if (s != s_raw or d != d_raw) else 0
         self.last_pred_s = s
         self.last_pred_d = d
         self.last_active_model = SOURCE_RLS
-        self.last_pred_clipped = 0
-        self._clip_history.append(0)
+        self.last_pred_clipped = clipped
+        self._clip_history.append(clipped)
         return s, d, SOURCE_RLS
 
     def mean_error(self) -> Tuple[float, float, float, float]:
@@ -410,20 +416,14 @@ class ResidualLearner:
         if self._last_val_mae_s > 2.0 * self._last_rls_val_mae_s:
             self.use_gbm = False
             return
+        beats_on_s = self._last_val_mae_s + self._select_eps_s < self._last_rls_val_mae_s
+        beats_on_d = self._last_val_mae_d + self._select_eps_d < self._last_rls_val_mae_d
         if self.use_gbm:
-            # Already GBM — keep unless RLS now beats it by ε on s AND on d
-            stays_gbm = (
-                self._last_val_mae_s + self._select_eps_s < self._last_rls_val_mae_s
-                or self._last_val_mae_d + self._select_eps_d < self._last_rls_val_mae_d
-            )
-            self.use_gbm = stays_gbm
+            # Stay on GBM if GBM still beats RLS on s OR d (hysteresis).
+            self.use_gbm = beats_on_s or beats_on_d
         else:
-            # Was RLS — flip only if GBM beats RLS on s AND not-worse on d
-            flips = (
-                self._last_val_mae_s + self._select_eps_s < self._last_rls_val_mae_s
-                and self._last_val_mae_d <= self._last_rls_val_mae_d + self._select_eps_d
-            )
-            self.use_gbm = flips
+            # Flip to GBM if GBM beats RLS on s OR d.
+            self.use_gbm = beats_on_s or beats_on_d
 
     def _compute_current_regime(self):
         from autonomous_kart.nodes.pathfinder.planners.residual.regime import RegimeSignature

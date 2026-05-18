@@ -10,3 +10,4 @@ flask
 flask-cors
 pyserial
 smbus2==0.6.1
+joblib

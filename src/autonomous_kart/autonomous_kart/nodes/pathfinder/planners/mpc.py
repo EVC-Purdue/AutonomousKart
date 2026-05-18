@@ -674,6 +674,8 @@ class MPCPlanner(Planner):
             return
         solve_ms = (time.perf_counter() - t0) * 1000.0
         nom_s, nom_d, res_es, res_ed = self.residual.mean_error()
+        trainer = self.residual.trainer
+        last = trainer.snapshot_models()[2] if trainer else None
         payload = [
             float(mode), 1.0 if success else 0.0, solve_ms,
             float(s), float(d), float(psi_track), float(v), float(v_target),
@@ -707,31 +709,15 @@ class MPCPlanner(Planner):
             # ---- Phase 1 residual telemetry (Phase 2 fields stay 0/NaN here) ----
             float(self.residual.buffer.size if self.residual.buffer is not None else 0),
             float(self.residual.buffer.capacity if self.residual.buffer is not None else 0),
-            float(self.residual.trainer.last_result.train_wall_ms
-                  if (self.residual.trainer and self.residual.trainer.last_result)
-                  else float("nan")),
-            float(self.residual.trainer.last_result.n_samples
-                  if (self.residual.trainer and self.residual.trainer.last_result)
-                  else 0),
-            float(self.residual.trainer.train_seq if self.residual.trainer else 0),
-            float(self.residual.trainer.last_result.train_mae_s
-                  if (self.residual.trainer and self.residual.trainer.last_result)
-                  else float("nan")),
-            float(self.residual.trainer.last_result.train_mae_d
-                  if (self.residual.trainer and self.residual.trainer.last_result)
-                  else float("nan")),
-            float(self.residual.trainer.last_result.val_mae_s
-                  if (self.residual.trainer and self.residual.trainer.last_result)
-                  else float("nan")),
-            float(self.residual.trainer.last_result.val_mae_d
-                  if (self.residual.trainer and self.residual.trainer.last_result)
-                  else float("nan")),
-            float(self.residual.trainer.last_result.rls_val_mae_s
-                  if (self.residual.trainer and self.residual.trainer.last_result)
-                  else float("nan")),
-            float(self.residual.trainer.last_result.rls_val_mae_d
-                  if (self.residual.trainer and self.residual.trainer.last_result)
-                  else float("nan")),
+            float(last.train_wall_ms if last is not None else float("nan")),
+            float(last.n_samples if last is not None else 0),
+            float(trainer.train_seq if trainer else 0),
+            float(last.train_mae_s if last is not None else float("nan")),
+            float(last.train_mae_d if last is not None else float("nan")),
+            float(last.val_mae_s if last is not None else float("nan")),
+            float(last.val_mae_d if last is not None else float("nan")),
+            float(last.rls_val_mae_s if last is not None else float("nan")),
+            float(last.rls_val_mae_d if last is not None else float("nan")),
             float(self.residual.last_active_model),  # active_model
             float(self.residual.last_pred_clipped),
             float(self.residual.clip_rate()),

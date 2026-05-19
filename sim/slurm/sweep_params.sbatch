@@ -13,7 +13,15 @@
 # Run a 400-trial Bayesian (Optuna TPE) parameter sweep over MPC weights.
 set -euo pipefail
 
-REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+# Repo root resolution. SLURM spools the script to /var/spool so "$0" doesn't
+# point at the original path — use $SLURM_SUBMIT_DIR (set to the dir where you
+# ran `sbatch`). Submit from the repo root, or set REPO_ROOT explicitly.
+REPO_ROOT="${REPO_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}"
+if [[ ! -f "${REPO_ROOT}/sim/runner.py" ]]; then
+    echo "ERROR: sim/runner.py not found under REPO_ROOT=${REPO_ROOT}" >&2
+    echo "  Run 'sbatch sim/slurm/sweep_params.sbatch' from the repo root, or set REPO_ROOT explicitly." >&2
+    exit 1
+fi
 
 # Set SIM_PY_ENV_ACTIVATE=/path/to/venv/bin/activate in your .bashrc or before
 # calling sbatch, e.g.:   SIM_PY_ENV_ACTIVATE=~/venvs/kart/bin/activate sbatch ...

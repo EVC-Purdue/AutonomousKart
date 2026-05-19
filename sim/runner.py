@@ -1,9 +1,10 @@
 """Cluster-friendly runner for the offline kart simulator.
 
 Subcommands:
-  one     — run a single MPC param set; optionally render a GIF
-  sweep   — Optuna sweep over MPC params, parallel across trials
-  render  — render a saved trajectory.npz as a GIF
+  one               — run a single MPC param set; optionally render a GIF
+  sweep             — Optuna sweep over MPC params, parallel across trials
+  render            — render a saved trajectory.npz as a GIF
+  compare-residuals — compare multiple residual-learner modes side-by-side
 """
 from __future__ import annotations
 
@@ -23,9 +24,6 @@ if REPO not in sys.path:
 import numpy as np
 
 
-# ---------------------------------------------------------------------------
-# Racing-line loader (same logic as optimize_mpc_sim.py:load_line)
-# ---------------------------------------------------------------------------
 def load_line(path: str):
     line = []
     with open(path) as f:
@@ -66,6 +64,49 @@ def _sample_params(trial, defaults: dict) -> dict:
     return p
 
 
+def _sample_params_from_spec(spec: dict):
+    """Return a _sample_params-compatible function built from a JSON spec dict.
+
+    The spec schema::
+
+        {
+          "fixed":  {str: any},           # optional — applied to DEFAULT_MPC first
+          "search": [                      # required
+            {"name": str, "dist": str, "lo": float, "hi": float, ...}
+          ]
+        }
+
+    Supported dist values: uniform, log_uniform, int, int_log, categorical.
+    Categorical entries carry a "choices" list instead of lo/hi.
+    Int entries may carry an optional "step" field.
+    """
+    fixed = spec.get("fixed", {})
+    search = spec["search"]
+
+    def _sampler(trial, defaults: dict) -> dict:
+        p = dict(defaults)
+        p.update(fixed)
+        for entry in search:
+            name = entry["name"]
+            dist = entry["dist"]
+            if dist == "uniform":
+                p[name] = trial.suggest_float(name, entry["lo"], entry["hi"])
+            elif dist == "log_uniform":
+                p[name] = trial.suggest_float(name, entry["lo"], entry["hi"], log=True)
+            elif dist == "int":
+                step = entry.get("step", 1)
+                p[name] = trial.suggest_int(name, int(entry["lo"]), int(entry["hi"]), step=step)
+            elif dist == "int_log":
+                p[name] = trial.suggest_int(name, int(entry["lo"]), int(entry["hi"]), log=True)
+            elif dist == "categorical":
+                p[name] = trial.suggest_categorical(name, entry["choices"])
+            else:
+                raise ValueError(f"unknown dist {dist!r} for param {name!r}")
+        return p
+
+    return _sampler
+
+
 def _sweep_objective(
     trial,
     line,
@@ -76,11 +117,13 @@ def _sweep_objective(
     n_laps: int,
     seeds_per_trial: int,
     safety_margin: float,
+    sample_fn=None,
 ):
     """Top-level Optuna objective — defined at module level for n_jobs > 1."""
     from sim.closed_loop import simulate
 
-    params = _sample_params(trial, defaults)
+    _fn = sample_fn if sample_fn is not None else _sample_params
+    params = _fn(trial, defaults)
     results = []
     for seed in range(seeds_per_trial):
         r = simulate(
@@ -245,6 +288,8 @@ def _add_sweep_parser(sub):
     p.add_argument("--out-dir", default=None)
     p.add_argument("--resume", action="store_true")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--sweep-spec", default=None, metavar="PATH",
+                   help="JSON search-space spec; when set replaces the hardcoded _sample_params")
 
 
 def cmd_sweep(args):
@@ -281,6 +326,14 @@ def cmd_sweep(args):
                 value=t.get("value", float("inf")),
             ))
 
+    # Pick sample function: spec-driven or hardcoded default
+    if args.sweep_spec:
+        with open(args.sweep_spec) as _sf:
+            _spec = json.load(_sf)
+        sample_fn = _sample_params_from_spec(_spec)
+    else:
+        sample_fn = None  # _sweep_objective falls back to _sample_params
+
     # Bind with functools.partial over a module-level function (required for n_jobs > 1)
     objective = functools.partial(
         _sweep_objective,
@@ -292,6 +345,7 @@ def cmd_sweep(args):
         n_laps=args.laps,
         seeds_per_trial=args.seeds_per_trial,
         safety_margin=args.safety_margin,
+        sample_fn=sample_fn,
     )
 
     jsonl_path = os.path.join(out_dir, "trials.jsonl")
@@ -466,6 +520,315 @@ def cmd_render(args):
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: compare-residuals
+# ---------------------------------------------------------------------------
+
+# Mode -> param overrides applied on top of the user's --params-json overlay.
+_RESIDUAL_MODE_OVERRIDES = {
+    "off":    {"residual.mode": "off"},
+    "rls":    {"residual.mode": "apply", "mpc.residual.use_gbm_on_select": False,
+               "mpc.residual.gbm_enabled": False},
+    "gbm":    {"residual.mode": "apply", "mpc.residual.use_gbm_on_select": True,
+               "mpc.residual.gbm_enabled": True},
+    "both":   {"residual.mode": "apply", "mpc.residual.gbm_enabled": True},
+    "shadow": {"residual.mode": "shadow"},
+}
+
+_ALL_MODES = list(_RESIDUAL_MODE_OVERRIDES.keys())
+
+
+def _run_one_compare(mode: str, seed: int, args_dict: dict) -> dict:
+    """Top-level picklable job for joblib.Parallel."""
+    import traceback as _tb
+    from sim.closed_loop import DEFAULT_MPC, simulate
+
+    out_dir = args_dict["out_dir"]
+    run_dir = os.path.join(out_dir, f"{mode}_seed{seed}")
+    os.makedirs(run_dir, exist_ok=True)
+
+    mpc_params = dict(DEFAULT_MPC)
+    if args_dict.get("params_json"):
+        with open(args_dict["params_json"]) as f:
+            mpc_params.update(json.load(f))
+    mpc_params.update(_RESIDUAL_MODE_OVERRIDES.get(mode, {}))
+
+    line_path = args_dict["line_path"]
+    line = load_line(line_path)
+
+    try:
+        result = simulate(
+            line, mpc_params,
+            sim_backend=args_dict["sim"],
+            datasim_model_dir=args_dict["datasim_model_dir"],
+            noise_mode=args_dict["noise_mode"],
+            rng_seed=seed,
+            n_laps=args_dict["laps"],
+        )
+        aborted = result.aborted
+        abort_step = None
+        abort_xy = None
+        abort_t = None
+        max_d_step = int(np.argmax(np.abs(result.ds))) if result.ds.size else None
+        max_d_value = float(result.max_abs_d)
+        completed_laps = result.completed_laps
+        lap_time = result.avg_lap_time_s
+        avg_speed = result.avg_speed
+        total_time = result.total_time_s
+    except Exception:
+        aborted = True
+        abort_step = -1
+        abort_xy = None
+        abort_t = None
+        max_d_step = None
+        max_d_value = float("inf")
+        completed_laps = 0
+        lap_time = float("inf")
+        avg_speed = 0.0
+        total_time = 0.0
+        result = None
+        print(f"  [{mode} seed{seed}] EXCEPTION:\n{_tb.format_exc()}", flush=True)
+
+    if result is not None:
+        np.savez(
+            os.path.join(run_dir, "trajectory.npz"),
+            xs=result.xs, ys=result.ys, yaws=result.yaws,
+            vs=result.vs, ds=result.ds, times=result.times,
+        )
+        metrics = {
+            "completed_laps": result.completed_laps,
+            "total_time_s": result.total_time_s,
+            "avg_lap_time_s": result.avg_lap_time_s,
+            "max_abs_d": result.max_abs_d,
+            "avg_speed": result.avg_speed,
+            "safe": result.safe,
+            "aborted": result.aborted,
+        }
+    else:
+        metrics = {
+            "completed_laps": 0,
+            "total_time_s": 0.0,
+            "avg_lap_time_s": float("inf"),
+            "max_abs_d": float("inf"),
+            "avg_speed": 0.0,
+            "safe": False,
+            "aborted": True,
+        }
+    with open(os.path.join(run_dir, "metrics.json"), "w") as f:
+        json.dump(metrics, f, indent=2)
+
+    saved_params = dict(mpc_params)
+    saved_params["_meta"] = {"mode": mode, "seed": seed}
+    with open(os.path.join(run_dir, "params.json"), "w") as f:
+        json.dump(saved_params, f, indent=2)
+
+    if result is not None and aborted and result.ds.size:
+        abort_step = len(result.ds) - 1
+        abort_xy = [float(result.xs[-1]), float(result.ys[-1])]
+        abort_t = float(result.times[-1])
+
+    return {
+        "mode": mode,
+        "seed": seed,
+        "run_dir": run_dir,
+        "aborted": aborted,
+        "abort_step": abort_step,
+        "abort_xy": abort_xy,
+        "abort_t": abort_t,
+        "max_d_step": max_d_step,
+        "max_d_value": max_d_value,
+        "completed_laps": completed_laps,
+        "lap_time": lap_time,
+        "avg_speed": avg_speed,
+        "total_time": total_time,
+        "result": result,  # kept in-process for render; not serialised by joblib
+    }
+
+
+def _add_compare_residuals_parser(sub):
+    p = sub.add_parser("compare-residuals",
+                       help="compare multiple residual-learner modes side-by-side")
+    p.add_argument("--line", default="data/racing_line/line6.csv")
+    p.add_argument("--sim", choices=["bicycle", "datasim"], default="datasim")
+    p.add_argument("--datasim-model-dir", default="sim/model")
+    p.add_argument("--noise-mode", choices=["none", "gaussian", "bootstrap"], default="none")
+    p.add_argument("--params-json", default=None, metavar="PATH",
+                   help="JSON overlay onto DEFAULT_MPC applied to every mode")
+    p.add_argument("--modes", nargs="+", default=["off", "rls", "gbm", "both", "shadow"],
+                   metavar="MODE")
+    p.add_argument("--laps", type=int, default=5)
+    p.add_argument("--seeds", type=int, default=2, metavar="N")
+    p.add_argument("--n-jobs", type=int, default=max(1, (os.cpu_count() or 2) // 2))
+    p.add_argument("--torch-threads", type=int, default=0)
+    p.add_argument("--out-dir", default=None)
+    p.add_argument("--render", action="store_true",
+                   help="write comparison.png with 4 trajectories overlaid")
+
+
+def cmd_compare_residuals(args):
+    from joblib import Parallel, delayed
+
+    if args.torch_threads > 0:
+        import torch
+        torch.set_num_threads(args.torch_threads)
+
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    out_dir = args.out_dir or os.path.join("runs", f"residual-compare-{ts}")
+    os.makedirs(out_dir, exist_ok=True)
+
+    line_path = args.line if os.path.isabs(args.line) else os.path.join(REPO, args.line)
+    line = load_line(line_path)
+    if len(line) < 10:
+        raise SystemExit(f"racing line at {line_path} too short / not found")
+
+    # Validate modes
+    for m in args.modes:
+        if m not in _RESIDUAL_MODE_OVERRIDES:
+            raise SystemExit(f"unknown mode {m!r}; valid: {_ALL_MODES}")
+
+    args_dict = {
+        "out_dir": out_dir,
+        "line_path": line_path,
+        "sim": args.sim,
+        "datasim_model_dir": args.datasim_model_dir,
+        "noise_mode": args.noise_mode,
+        "params_json": args.params_json,
+        "laps": args.laps,
+    }
+
+    jobs = [(mode, seed) for mode in args.modes for seed in range(args.seeds)]
+    print(
+        f"compare-residuals: {len(jobs)} runs "
+        f"({len(args.modes)} modes × {args.seeds} seed(s)), "
+        f"n_jobs={args.n_jobs} -> {out_dir}"
+    )
+
+    raw_results = Parallel(n_jobs=args.n_jobs)(
+        delayed(_run_one_compare)(mode, seed, args_dict)
+        for mode, seed in jobs
+    )
+
+    # ------------------------------------------------------------------
+    # Aggregate per-mode stats
+    # ------------------------------------------------------------------
+    from collections import defaultdict
+    mode_results = defaultdict(list)
+    for r in raw_results:
+        mode_results[r["mode"]].append(r)
+
+    track_half = 2.0
+    kart_half = 0.5025
+    safety_margin = 0.2
+    limit = track_half - kart_half - safety_margin
+
+    summary = {}
+    failure_points = []
+
+    for mode in args.modes:
+        rs = mode_results[mode]
+        laps_vals = [r["completed_laps"] for r in rs]
+        lap_times = [r["lap_time"] for r in rs if r["lap_time"] != float("inf")]
+        max_ds = [r["max_d_value"] for r in rs if r["max_d_value"] != float("inf")]
+        aborted_count = sum(1 for r in rs if r["aborted"])
+        summary[mode] = {
+            "laps_mean": float(np.mean(laps_vals)) if laps_vals else 0.0,
+            "laps_min": int(min(laps_vals)) if laps_vals else 0,
+            "lap_time_mean": float(np.mean(lap_times)) if lap_times else float("inf"),
+            "lap_time_std": float(np.std(lap_times)) if len(lap_times) > 1 else 0.0,
+            "max_abs_d_max": float(max(max_ds)) if max_ds else float("inf"),
+            "aborted_count": aborted_count,
+            "n_runs": len(rs),
+        }
+        for r in rs:
+            is_failure = r["aborted"] or r["max_d_value"] > limit
+            if is_failure:
+                failure_points.append({
+                    "mode": r["mode"],
+                    "seed": r["seed"],
+                    "abort_step": r["abort_step"],
+                    "abort_xy": r["abort_xy"],
+                    "abort_t": r["abort_t"],
+                    "max_d_step": r["max_d_step"],
+                    "max_d_value": r["max_d_value"],
+                })
+
+    with open(os.path.join(out_dir, "summary.json"), "w") as f:
+        json.dump(summary, f, indent=2)
+    with open(os.path.join(out_dir, "failure_points.json"), "w") as f:
+        json.dump(failure_points, f, indent=2)
+
+    # Summary table
+    col_w = 10
+    header = f"{'mode':<12} {'laps_mean':>{col_w}} {'laps_min':>{col_w}} {'lap_t_mean':>{col_w}} {'lap_t_std':>{col_w}} {'max|d|_max':>{col_w}} {'aborted':>{col_w}}"
+    rows = [header, "-" * len(header)]
+    for mode in args.modes:
+        s = summary[mode]
+        lm = f"{s['laps_mean']:.2f}" if s['laps_mean'] != float("inf") else "inf"
+        li = str(s['laps_min'])
+        lt = f"{s['lap_time_mean']:.3f}" if s['lap_time_mean'] != float("inf") else "inf"
+        ls = f"{s['lap_time_std']:.3f}"
+        md = f"{s['max_abs_d_max']:.3f}" if s['max_abs_d_max'] != float("inf") else "inf"
+        ab = str(s['aborted_count'])
+        rows.append(f"{mode:<12} {lm:>{col_w}} {li:>{col_w}} {lt:>{col_w}} {ls:>{col_w}} {md:>{col_w}} {ab:>{col_w}}")
+
+    summary_txt = "\n".join(rows) + "\n"
+    with open(os.path.join(out_dir, "summary.txt"), "w") as f:
+        f.write(summary_txt)
+
+    # ------------------------------------------------------------------
+    # Optional comparison plot
+    # ------------------------------------------------------------------
+    if args.render:
+        _render_comparison(raw_results, args.modes, line_path, out_dir)
+
+    print(summary_txt)
+    print(f"wrote {out_dir}")
+
+
+def _render_comparison(raw_results, modes, line_path, out_dir):
+    """Write comparison.png: up to 4 trajectories overlaid on track."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from sim.render import load_line_xy, _tangent_normal
+
+    lx, ly = load_line_xy(line_path)
+    nx, ny = _tangent_normal(lx, ly)
+    track_half = 2.0
+    left_x = lx + nx * track_half
+    left_y = ly + ny * track_half
+    right_x = lx - nx * track_half
+    right_y = ly - ny * track_half
+
+    colors = ["#e63", "#36e", "#3a3", "#c3c", "#a80"]
+    fig, ax = plt.subplots(figsize=(8, 7))
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.plot(left_x, left_y, color="#555", lw=0.8)
+    ax.plot(right_x, right_y, color="#555", lw=0.8)
+    ax.plot(lx, ly, color="#bbb", lw=0.5, ls="--")
+
+    # One trajectory per mode (first seed that has data)
+    plotted = []
+    for i, mode in enumerate(modes[:4]):
+        col = colors[i % len(colors)]
+        for r in raw_results:
+            if r["mode"] == mode and r.get("result") is not None and r["result"].xs.size:
+                xs = r["result"].xs
+                ys = r["result"].ys
+                ax.plot(xs, ys, color=col, lw=1.0, alpha=0.8, label=mode)
+                plotted.append(mode)
+                break
+
+    if plotted:
+        ax.legend(fontsize=7, loc="upper right")
+    ax.set_title("Residual mode comparison (first seed each)", fontsize=8)
+    out_path = os.path.join(out_dir, "comparison.png")
+    fig.savefig(out_path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    print(f"wrote {out_path}")
+
+
+# ---------------------------------------------------------------------------
 # Main dispatch
 # ---------------------------------------------------------------------------
 def main():
@@ -477,8 +840,14 @@ def main():
     _add_one_parser(sub)
     _add_sweep_parser(sub)
     _add_render_parser(sub)
+    _add_compare_residuals_parser(sub)
     args = ap.parse_args()
-    {"one": cmd_one, "sweep": cmd_sweep, "render": cmd_render}[args.cmd](args)
+    {
+        "one": cmd_one,
+        "sweep": cmd_sweep,
+        "render": cmd_render,
+        "compare-residuals": cmd_compare_residuals,
+    }[args.cmd](args)
 
 
 if __name__ == "__main__":

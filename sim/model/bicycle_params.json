@@ -1,0 +1,47 @@
+{
+  "params": {
+    "accel_tau": 4.935379602520705,
+    "brake_tau": 4.999999998747633,
+    "throttle_delay_s": 1e-10,
+    "steer_delay_s": 1e-10,
+    "steer_gain": 0.24489874243929322,
+    "steer_slop_deg": 0.7913420097618941,
+    "wheelbase_m": 1.1003142014724272,
+    "steer_rate_max_degps": 30.00000017051059,
+    "slip_angle_at_v": -0.1884535407901888,
+    "v_max_mps": 12.0
+  },
+  "fit_info": {
+    "cost": 85958.63796924372,
+    "nfev": 15,
+    "success": true,
+    "sigma_v_rough": 1.1269939613139455,
+    "sigma_p_rough": 0.3576502527752695,
+    "param_order": [
+      "accel_tau",
+      "brake_tau",
+      "throttle_delay_s",
+      "steer_delay_s",
+      "steer_gain",
+      "steer_slop_deg",
+      "wheelbase_m",
+      "steer_rate_max_degps",
+      "slip_angle_at_v"
+    ],
+    "x_final": [
+      4.935379602520705,
+      4.999999998747633,
+      1e-10,
+      1e-10,
+      0.24489874243929322,
+      0.7913420097618941,
+      1.1003142014724272,
+      30.00000017051059,
+      -0.1884535407901888
+    ]
+  },
+  "training_bags": [
+    "docs/superpowers/data_sim/cache/215024.npz",
+    "docs/superpowers/data_sim/cache/232625.npz"
+  ]
+}

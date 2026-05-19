@@ -56,7 +56,8 @@ python3 "${REPO_ROOT}/sim/runner.py" one \
     --out-dir "$OUT_DIR" \
     --render \
     --fps 30 \
-    --max-frames 300
+    --realtime-factor 5 \
+    --max-frames 8000
 
 rm -f "$PARAMS_JSON"
 echo "Done. Results in $OUT_DIR"

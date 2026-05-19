@@ -60,9 +60,18 @@ def render_gif(
     kart_length_m: float = 1.05,
     kart_width_m: float = 0.5,
     fps: int = 30,
-    max_frames: int = 300,
+    max_frames: int = 5000,
+    realtime_factor: float = 1.0,
     title: str = "Kart sim",
 ) -> None:
+    """Render an animated GIF of the kart's trajectory.
+
+    realtime_factor:
+        Ratio of sim time to GIF time. 1.0 = play in real time
+        (60 Hz sim, 30 fps GIF => stride 2). 5.0 = 5x sped up. <1 = slow-mo.
+        ``max_frames`` is a hard cap to prevent huge GIFs on long runs;
+        the visual will then play faster than ``realtime_factor`` requested.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -76,11 +85,25 @@ def render_gif(
     right_x = lx - nx * track_half_width
     right_y = ly - ny * track_half_width
 
-    # Decimate frames
+    # Decimate frames.  Aim for `realtime_factor` sim-seconds per GIF-second:
+    #   stride_ticks = realtime_factor * sim_freq / fps
+    # so each GIF frame advances `stride_ticks` of the sim. max_frames caps
+    # the total frame count to keep file size manageable on long runs.
     N = len(xs)
-    stride = max(1, N // max_frames)
+    if N >= 2:
+        sim_dt = float(times[1] - times[0]) if times.size >= 2 else 1.0 / 60.0
+        sim_freq = 1.0 / max(sim_dt, 1e-6)
+        stride_realtime = max(1, int(round(realtime_factor * sim_freq / fps)))
+    else:
+        stride_realtime = 1
+    # If the realtime stride would still produce more than max_frames frames,
+    # bump stride up to fit (visual will be sped up beyond realtime_factor).
+    stride = max(stride_realtime, (N + max_frames - 1) // max_frames if max_frames > 0 else 1)
     idxs = np.arange(0, N, stride)[:max_frames]
     n_frames = len(idxs)
+    eff_factor = stride * fps * (times[1] - times[0] if times.size >= 2 else 1.0 / 60.0)
+    print(f"render: N={N} ticks, stride={stride}, frames={n_frames}, "
+          f"effective realtime_factor={eff_factor:.2f}x", flush=True)
 
     # Fixed view limits
     all_x = np.concatenate([xs, lx])
@@ -186,7 +209,10 @@ if __name__ == "__main__":
     ap.add_argument("--out", required=True)
     ap.add_argument("--params", default=None)
     ap.add_argument("--fps", type=int, default=30)
-    ap.add_argument("--max-frames", type=int, default=300)
+    ap.add_argument("--max-frames", type=int, default=5000,
+                    help="hard cap on GIF frames (default 5000)")
+    ap.add_argument("--realtime-factor", type=float, default=1.0,
+                    help="sim-seconds per GIF-second (1.0 = real time, 5 = 5x sped up)")
     ap.add_argument("--title", default="Kart sim")
     args = ap.parse_args()
 
@@ -208,5 +234,6 @@ if __name__ == "__main__":
         mpc_params=mpc_params,
         fps=args.fps,
         max_frames=args.max_frames,
+        realtime_factor=args.realtime_factor,
         title=args.title,
     )

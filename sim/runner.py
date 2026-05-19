@@ -187,7 +187,10 @@ def _add_one_parser(sub):
     p.add_argument("--out-dir", default=None)
     p.add_argument("--render", action="store_true")
     p.add_argument("--fps", type=int, default=30)
-    p.add_argument("--max-frames", type=int, default=300)
+    p.add_argument("--max-frames", type=int, default=5000,
+                   help="hard cap on GIF frames (default 5000)")
+    p.add_argument("--realtime-factor", type=float, default=1.0,
+                   help="sim-seconds per GIF-second; 1.0=real time, 10=10x sped up")
 
 
 def cmd_one(args):
@@ -262,6 +265,7 @@ def cmd_one(args):
             mpc_params=mpc_params,
             fps=args.fps,
             max_frames=args.max_frames,
+            realtime_factor=args.realtime_factor,
             title=f"{args.sim} sim — {result.completed_laps} laps, {result.avg_lap_time_s:.1f}s/lap",
         )
 
@@ -499,7 +503,10 @@ def _add_render_parser(sub):
     p.add_argument("--params", default=None)
     p.add_argument("--out", required=True)
     p.add_argument("--fps", type=int, default=30)
-    p.add_argument("--max-frames", type=int, default=300)
+    p.add_argument("--max-frames", type=int, default=5000,
+                   help="hard cap on GIF frames (default 5000)")
+    p.add_argument("--realtime-factor", type=float, default=1.0,
+                   help="sim-seconds per GIF-second; 1.0=real time, 10=10x sped up")
     p.add_argument("--title", default="Kart sim")
 
 
@@ -524,6 +531,7 @@ def cmd_render(args):
         mpc_params=mpc_params,
         fps=args.fps,
         max_frames=args.max_frames,
+        realtime_factor=args.realtime_factor,
         title=args.title,
     )
 

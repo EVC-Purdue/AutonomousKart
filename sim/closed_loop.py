@@ -109,7 +109,16 @@ DEFAULT_MPC = {
     "proj_window_back": 5,
     "proj_window_fwd": 60,
     "frenet_v_window_s": 0.3,
-    "target_speed_pct": 1.0,
+    # NOTE: the planner reads `target_speed_mps` (a literal m/s cap), NOT a
+    # percentage. The kart's actual speed is min(line's per-tick vx_mps,
+    # target_speed_mps). For line6.csv vx_mps=6 throughout, so this number IS
+    # the effective speed limit. Bag 231452 was driven at ~1 m/s average, so
+    # the identified kart dynamics are most accurate near that speed; pushing
+    # the sim past ~3 m/s makes the kart drift wide on tight figure-8 turns
+    # because the identified steer_gain (0.245) and steer_rate_max (30 deg/s)
+    # were bound-pinned during system ID on the dynamics-poor bag data.
+    "target_speed_mps": 3.0,
+    "target_speed_pct": 1.0,  # unused by planner; kept for backward compat
     "track_half_width_m": 2.0,
     "safety_margin_m": 0.5,
     "kart_half_width_m": 0.5025,

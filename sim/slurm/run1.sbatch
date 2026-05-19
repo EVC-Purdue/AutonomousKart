@@ -37,10 +37,18 @@ mkdir -p "$OUT_DIR"
 mkdir -p "${SCRATCH}/logs"
 
 # Write MPC params overlay to a temp file — edit these values as needed.
+#
+# target_speed_mps: kart's actual max speed cap.  Bag 231452 was recorded at
+#   ~1 m/s mean; the identified kart dynamics are most accurate near that
+#   speed.  Pushing past ~3 m/s makes the sim kart drift wide on tight figure-8
+#   turns because the system-ID was bound-pinned (steer_gain=0.245,
+#   steer_rate_max=30 deg/s) on dynamics-poor bag data.  Try 1.5 to reproduce
+#   bag-realistic line tracking (max|d| ~0.5 m), 3.0 for a moderate test.
 PARAMS_JSON="$(mktemp --suffix=.json)"
 cat > "$PARAMS_JSON" <<'PARAMS_EOF'
 {
-  "residual.mode": "apply"
+  "residual.mode": "apply",
+  "target_speed_mps": 1.5
 }
 PARAMS_EOF
 

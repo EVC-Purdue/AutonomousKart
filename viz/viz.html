@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Kart Sim</title>
+<title>Kart Sim - Track Intersection Vision</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
   * { margin:0; padding:0; box-sizing:border-box; }
@@ -12,10 +12,11 @@
     position:fixed; top:16px; left:16px;
     background:rgba(10,10,15,0.85); border:1px solid #222;
     padding:12px 16px; border-radius:6px; font-size:12px; line-height:1.8;
-    min-width:220px; backdrop-filter:blur(8px);
+    min-width:240px; backdrop-filter:blur(8px);
   }
   #hud .label { color:#666; }
   #hud .val { color:#e0e0e0; font-weight:700; }
+  #hud .vision-val { color:#a78bfa; font-weight:700; }
   #costs {
     position:fixed; bottom:16px; right:16px;
     background:rgba(10,10,15,0.85); border:1px solid #222;
@@ -31,7 +32,6 @@
   #costs td.val { color:#e0e0e0; text-align:right; font-variant-numeric:tabular-nums; width:64px; white-space:nowrap; }
   #costs .barfill { height:6px; background:#60a5fa; border-radius:2px; }
   #costs .barfill.neg { background:#4ade80; }
-  #costs .empty { color:#444; font-style:italic; }
   #hud .state { display:inline-block; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:700; }
   #hud .state.IDLE { background:#333; color:#888; }
   #hud .state.MANUAL { background:#1a3a1a; color:#4ade80; }
@@ -64,6 +64,9 @@
   <div><span class="label">YAW   </span><span id="h-yaw" class="val">—</span></div>
   <div><span class="label">SPEED </span><span id="h-spd" class="val">—</span></div>
   <div><span class="label">CMD   </span><span id="h-cmd" class="val">—</span></div>
+  <hr style="border:0; border-top:1px solid #222; margin:6px 0;">
+  <div><span class="label">INTERSECT L </span><span id="h-cam-l" class="vision-val">—</span></div>
+  <div><span class="label">INTERSECT R </span><span id="h-cam-r" class="vision-val">—</span></div>
 </div>
 
 <div id="status" class="err">disconnected</div>
@@ -90,25 +93,27 @@ const API = `http://${location.hostname || 'localhost'}:8000`;
 const C = document.getElementById('c');
 const ctx = C.getContext('2d');
 
-// ── State ──
 let racingLine = [];
+let leftTrackEdge = [];
+let rightTrackEdge = [];
+const TRACK_WIDTH = 3.0; // Total track width in meters
+
 let trail = [];
 const MAX_TRAIL = 3000;
-let odom = { x:0, y:0, yaw:0, speed:0, motor:0, steer:0, state:'IDLE' };
+let odom = { x:0, y:0, yaw:0, speed:0, motor:0, steer:0, state:'IDLE', track_angles:[0.0, 0.0] };
+let currentComputedAngles = [22.5, 22.5]; // Default fallback values
+
 let connected = false;
 let mpcStatus = null;
-let dynamicLine = null;  // {active, strategy, merge_idx, points: [[x,y], ...]}
+let dynamicLine = null;
 
-// ── Camera ──
 let cam = { x:0, y:0, zoom:4, targetZoom:4 };
 let dragging = false, dragStart = {x:0,y:0}, camStart = {x:0,y:0};
 
-// ── Resize ──
 function resize() { C.width = innerWidth; C.height = innerHeight; }
 addEventListener('resize', resize);
 resize();
 
-// ── Input ──
 C.addEventListener('wheel', e => {
   e.preventDefault();
   cam.targetZoom *= e.deltaY > 0 ? 0.9 : 1.1;
@@ -127,9 +132,8 @@ addEventListener('mousemove', e => {
 });
 addEventListener('mouseup', () => dragging = false);
 
-// ── Manual driving (WASD / arrow keys, active in MANUAL state) ──
-const MANUAL_SPEED_PCT = 30;   // forward throttle %
-const MANUAL_STEER_PCT = 60;   // L/R steer %
+const MANUAL_SPEED_PCT = 30;
+const MANUAL_STEER_PCT = 60;
 const heldDriveKeys = new Set();
 let manualSendInterval = null;
 
@@ -147,12 +151,23 @@ async function sendManual(speed, steer) {
   } catch(e) {}
 }
 
+// ─── NEW FUNCTION: CHANNELS DISCOVERED INTERSECTIONS TO MASTER API ───
+async function publishCameraVision(leftAngle, rightAngle) {
+  if (odom.state !== 'AUTONOMOUS') return;
+  try {
+    await fetch(API + '/camera_angles', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ left_angle: leftAngle, right_angle: rightAngle }),
+    });
+  } catch(e) {}
+}
+
 function computeManualCmd() {
   let speed = 0, steer = 0;
   if (heldDriveKeys.has('w') || heldDriveKeys.has('arrowup'))    speed += MANUAL_SPEED_PCT;
   if (heldDriveKeys.has('a') || heldDriveKeys.has('arrowleft'))  steer -= MANUAL_STEER_PCT;
   if (heldDriveKeys.has('d') || heldDriveKeys.has('arrowright')) steer += MANUAL_STEER_PCT;
-  // 's' / down stops (no reverse on the kart side).
   return { speed, steer };
 }
 
@@ -162,13 +177,12 @@ function startManualSending() {
     if (odom.state !== 'MANUAL') return;
     const { speed, steer } = computeManualCmd();
     sendManual(speed, steer);
-  }, 50);  // 20 Hz — well under the 0.5 s server timeout
+  }, 50);
 }
 function stopManualSending() {
   if (!manualSendInterval) return;
   clearInterval(manualSendInterval);
   manualSendInterval = null;
-  // Final stop frame so the kart doesn't coast on the last cached value.
   sendManual(0, 0);
 }
 
@@ -179,7 +193,7 @@ addEventListener('keydown', e => {
   }
   const k = e.key.toLowerCase();
   if (isDriveKey(k)) {
-    if (e.repeat) return;     // ignore OS auto-repeat
+    if (e.repeat) return;
     heldDriveKeys.add(k);
     startManualSending();
     e.preventDefault();
@@ -198,15 +212,44 @@ addEventListener('blur', () => {
   stopManualSending();
 });
 
-// ── World → Screen ──
 function w2s(wx, wy) {
   return [
     C.width/2  + (wx - cam.x) * cam.zoom,
-    C.height/2 - (wy - cam.y) * cam.zoom   // flip Y
+    C.height/2 - (wy - cam.y) * cam.zoom
   ];
 }
 
-// ── Fetch ──
+// Generates explicit parallel tracking boundaries out of centerline points
+function generateTrackEdges() {
+  if (racingLine.length < 2) return;
+  leftTrackEdge = [];
+  rightTrackEdge = [];
+  const halfWidth = TRACK_WIDTH / 2.0;
+
+  for (let i = 0; i < racingLine.length; i++) {
+    let next = racingLine[(i + 1) % racingLine.length];
+    let prev = racingLine[(i - 1 + racingLine.length) % racingLine.length];
+    let curr = racingLine[i];
+
+    // Compute tangent vector
+    let dx = next[0] - prev[0];
+    let dy = next[1] - prev[1];
+    let len = Math.sqrt(dx*dx + dy*dy);
+    if (len < 1e-6) {
+      leftTrackEdge.push([curr[0], curr[1]]);
+      rightTrackEdge.push([curr[0], curr[1]]);
+      continue;
+    }
+    
+    // Normal unit vectors
+    let nx = -dy / len;
+    let ny = dx / len;
+
+    leftTrackEdge.push([curr[0] + nx * halfWidth, curr[1] + ny * halfWidth]);
+    rightTrackEdge.push([curr[0] - nx * halfWidth, curr[1] - ny * halfWidth]);
+  }
+}
+
 async function fetchOdom() {
   try {
     const [odomRes, stateRes] = await Promise.all([
@@ -217,9 +260,13 @@ async function fetchOdom() {
     const s = await stateRes.json();
     odom = d;
     odom.state = s.state || d.state || 'IDLE';
+    
     trail.push({x:d.x, y:d.y});
     if (trail.length > MAX_TRAIL) trail.shift();
     connected = true;
+    
+    // Fire calculated vision parameters back into the ROS/Python system loop
+    publishCameraVision(currentComputedAngles[0], currentComputedAngles[1]);
   } catch(e) { connected = false; }
 }
 
@@ -227,7 +274,10 @@ async function fetchLine() {
   try {
     const r = await fetch(API + '/racing_line');
     const d = await r.json();
-    if (d.points) racingLine = d.points;
+    if (d.points && d.points.length > 1) {
+        racingLine = d.points;
+        generateTrackEdges();
+    }
   } catch(e) {}
 }
 
@@ -247,7 +297,6 @@ async function fetchLines() {
   } catch(e) { dynamicLine = null; }
 }
 
-// Display order roughly groups: line-tracking, speed, control, safety, reward.
 const COST_ROWS = [
   ['d',                'lateral d',     '#60a5fa'],
   ['terminal_d',       'term d',        '#60a5fa'],
@@ -260,7 +309,7 @@ const COST_ROWS = [
   ['edge',             'edge (inner)',  '#fb7185'],
   ['boundary',         'corridor',      '#f87171'],
   ['a_lat',            'a_lat',         '#f87171'],
-  ['progress',         'progress',      '#4ade80'],  // negative = reward
+  ['progress',         'progress',      '#4ade80'],
 ];
 
 function renderCosts() {
@@ -289,7 +338,6 @@ function renderCosts() {
     const sign = v < 0 ? '−' : '';
 
     const tr = document.createElement('tr');
-
     const tdName = document.createElement('td');
     tdName.className = 'name';
     tdName.textContent = label;
@@ -313,14 +361,24 @@ function renderCosts() {
   }
 }
 
-// ── Draw ──
+// Deterministic Line segment intersection check (returns [x,y] or null)
+function findLineIntersection(p0_x, p0_y, p1_x, p1_y, p2_x, p2_y, p3_x, p3_y) {
+  let s1_x = p1_x - p0_x, s1_y = p1_y - p0_y;
+  let s2_x = p3_x - p2_x, s2_y = p3_y - p2_y;
+
+  let s = (-s1_y * (p0_x - p2_x) + s1_x * (p0_y - p2_y)) / (-s2_x * s1_y + s1_x * s2_y);
+  let t = ( s2_x * (p0_y - p2_y) - s2_y * (p0_x - p2_x)) / (-s2_x * s1_y + s1_x * s2_y);
+
+  if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+    return [p0_x + (t * s1_x), p0_y + (t * s1_y)];
+  }
+  return null;
+}
+
 function draw() {
   requestAnimationFrame(draw);
-
-  // Smooth zoom
   cam.zoom += (cam.targetZoom - cam.zoom) * 0.15;
 
-  // Auto-follow if not dragging
   if (!dragging) {
     cam.x += (odom.x - cam.x) * 0.05;
     cam.y += (odom.y - cam.y) * 0.05;
@@ -329,41 +387,9 @@ function draw() {
   ctx.fillStyle = '#0a0a0f';
   ctx.fillRect(0, 0, C.width, C.height);
 
-  // Grid
   drawGrid();
+  drawTrackBorders();
 
-  // Racing line
-  if (racingLine.length > 1) {
-    ctx.beginPath();
-    ctx.strokeStyle = '#1a2a3a';
-    ctx.lineWidth = Math.max(1, 2 * cam.zoom);
-    ctx.setLineDash([8, 6]);
-    let [sx, sy] = w2s(racingLine[0][0], racingLine[0][1]);
-    ctx.moveTo(sx, sy);
-    for (let i = 1; i < racingLine.length; i++) {
-      [sx, sy] = w2s(racingLine[i][0], racingLine[i][1]);
-      ctx.lineTo(sx, sy);
-    }
-    ctx.closePath();
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  // Bezier rejoin overlay (when active — this is what MPC is actually tracking)
-  if (dynamicLine && dynamicLine.active && dynamicLine.points && dynamicLine.points.length > 1) {
-    ctx.beginPath();
-    ctx.strokeStyle = '#f59e0b';
-    ctx.lineWidth = Math.max(2, 2.5 * cam.zoom);
-    let [bx, by] = w2s(dynamicLine.points[0][0], dynamicLine.points[0][1]);
-    ctx.moveTo(bx, by);
-    for (let i = 1; i < dynamicLine.points.length; i++) {
-      [bx, by] = w2s(dynamicLine.points[i][0], dynamicLine.points[i][1]);
-      ctx.lineTo(bx, by);
-    }
-    ctx.stroke();
-  }
-
-  // Trail (gradient fade)
   if (trail.length > 1) {
     for (let i = 1; i < trail.length; i++) {
       const alpha = (i / trail.length) * 0.7;
@@ -378,10 +404,10 @@ function draw() {
     }
   }
 
-  // Kart
-  drawKart(odom.x, odom.y, odom.yaw);
+  // Calculate and Draw Raycast Intersection lines
+  computeAndDrawRaycasts(odom.x, odom.y, odom.yaw);
 
-  // HUD
+  drawKart(odom.x, odom.y, odom.yaw);
   updateHUD();
 }
 
@@ -389,7 +415,6 @@ function drawGrid() {
   const step = cam.zoom > 8 ? 5 : cam.zoom > 2 ? 10 : cam.zoom > 0.8 ? 50 : 100;
   ctx.strokeStyle = '#111118';
   ctx.lineWidth = 0.5;
-  // Visible world bounds
   const wLeft   = cam.x - C.width / 2 / cam.zoom;
   const wRight  = cam.x + C.width / 2 / cam.zoom;
   const wBottom = cam.y - C.height / 2 / cam.zoom;
@@ -406,29 +431,177 @@ function drawGrid() {
   }
 }
 
+function drawTrackBorders() {
+  if (leftTrackEdge.length < 2) return;
+
+  // Draw Left Edge (Solid Dark Blue Line)
+  ctx.beginPath();
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 2;
+  let [sx, sy] = w2s(leftTrackEdge[0][0], leftTrackEdge[0][1]);
+  ctx.moveTo(sx, sy);
+  for(let i=1; i<leftTrackEdge.length; i++) {
+    [sx, sy] = w2s(leftTrackEdge[i][0], leftTrackEdge[i][1]);
+    ctx.lineTo(sx, sy);
+  }
+  ctx.closePath();
+  ctx.stroke();
+
+  // Draw Right Edge
+  ctx.beginPath();
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 2;
+  [sx, sy] = w2s(rightTrackEdge[0][0], rightTrackEdge[0][1]);
+  ctx.moveTo(sx, sy);
+  for(let i=1; i<rightTrackEdge.length; i++) {
+    [sx, sy] = w2s(rightTrackEdge[i][0], rightTrackEdge[i][1]);
+    ctx.lineTo(sx, sy);
+  }
+  ctx.closePath();
+  ctx.stroke();
+}
+
+function computeAndDrawRaycasts(x, y, yaw) {
+  const fov_deg = 45.0;
+  const half_fov_rad = (fov_deg / 2.0) * Math.PI / 180.0;
+  const max_ray_len = 25.0;
+  const circle_offset = 1.0;
+
+  // Keep legacy canvas space matching conventions (-yaw and y - sin)
+  const leftYaw = -yaw + half_fov_rad;
+  const rightYaw = -yaw - half_fov_rad;
+
+  // Standard ray targets (clipped by walls during intersection)
+  let leftTargetX = x + max_ray_len * Math.cos(leftYaw);
+  let leftTargetY = y - max_ray_len * Math.sin(leftYaw);
+
+  let rightTargetX = x + max_ray_len * Math.cos(rightYaw);
+  let rightTargetY = y - max_ray_len * Math.sin(rightYaw);
+
+  let finalLeftIntersect = [leftTargetX, leftTargetY];
+  let finalRightIntersect = [rightTargetX, rightTargetY];
+
+  let leftFound = false;
+  let rightFound = false;
+  let minLeftDist = max_ray_len;
+  let minRightDist = max_ray_len;
+
+  const boundaries = [leftTrackEdge, rightTrackEdge];
+
+  for (const edge of boundaries) {
+    if (edge.length < 2) continue;
+    for (let i = 0; i < edge.length; i++) {
+      let p2 = edge[i];
+      let p3 = edge[(i + 1) % edge.length];
+
+      // Evaluate Left Ray Path
+      let hitL = findLineIntersection(x, y, leftTargetX, leftTargetY, p2[0], p2[1], p3[0], p3[1]);
+      if (hitL) {
+        let dist = Math.hypot(hitL[0] - x, hitL[1] - y);
+        if (dist < minLeftDist) {
+          minLeftDist = dist;
+          finalLeftIntersect = hitL;
+          leftFound = true;
+        }
+      }
+
+      // Evaluate Right Ray Path
+      let hitR = findLineIntersection(x, y, rightTargetX, rightTargetY, p2[0], p2[1], p3[0], p3[1]);
+      if (hitR) {
+        let dist = Math.hypot(hitR[0] - x, hitR[1] - y);
+        if (dist < minRightDist) {
+          minRightDist = dist;
+          finalRightIntersect = hitR;
+          rightFound = true;
+        }
+      }
+    }
+  }
+
+  // 1. DYNAMICALLY SCALE CENTER DISTANCE
+  // Calculate center length based on current wall proximity, then add your offset buffer
+  let currentActualForwardDist = (minLeftDist + minRightDist) / 2.0;
+  let dynamicCenterLen = currentActualForwardDist + circle_offset;
+
+  let centerTargetX = x + dynamicCenterLen * Math.cos(-yaw);
+  let centerTargetY = y - dynamicCenterLen * Math.sin(-yaw);
+  let centerTargetIntersect = [centerTargetX, centerTargetY];
+
+  // 2. GENERATE MATCHING PROPORTIONAL OUTER OFFSETS
+  // Scale the unclipped reference offsets using the exact same dynamic length
+  let offsetLeftTargetX = x + dynamicCenterLen * Math.cos(leftYaw);
+  let offsetLeftTargetY = y - dynamicCenterLen * Math.sin(leftYaw);
+  let offsetRightTargetX = x + dynamicCenterLen * Math.cos(rightYaw);
+  let offsetRightTargetY = y - dynamicCenterLen * Math.sin(rightYaw);
+
+  let offsetFinalLeftIntersect = [offsetLeftTargetX, offsetLeftTargetY];
+  let offsetFinalRightIntersect = [offsetRightTargetX, offsetRightTargetY];
+
+  function calculateAngleAtVertex(intersect, offset_pt, straight_pt) {
+    const a = Math.hypot(offset_pt[0] - straight_pt[0], offset_pt[1] - straight_pt[1]); 
+    const b = Math.hypot(intersect[0] - straight_pt[0], intersect[1] - straight_pt[1]); 
+    const c = Math.hypot(offset_pt[0] - intersect[0], offset_pt[1] - intersect[1]); 
+
+    if (a === 0 || b === 0) return 0.0;
+
+    let cosTheta = (a**2 + b**2 - c**2) / (2 * a * b);
+    cosTheta = Math.max(-1.0, Math.min(1.0, cosTheta)); 
+
+    return (Math.acos(cosTheta) * 180.0) / Math.PI;
+  }
+
+  let angleL = leftFound ? calculateAngleAtVertex(finalLeftIntersect, offsetFinalLeftIntersect, centerTargetIntersect) : 22.5;
+  let angleR = rightFound ? calculateAngleAtVertex(finalRightIntersect, offsetFinalRightIntersect, centerTargetIntersect) : 22.5;
+
+  currentComputedAngles = [angleL, angleR];
+
+  // Convert map space coordinates to screen buffer space for drawing traces
+  const [sKartX, sKartY] = w2s(x, y);
+  const [sLeftX, sLeftY] = w2s(finalLeftIntersect[0], finalLeftIntersect[1]);
+  const [sRightX, sRightY] = w2s(finalRightIntersect[0], finalRightIntersect[1]);
+  const [sCenterX, sCenterY] = w2s(centerTargetIntersect[0], centerTargetIntersect[1]);
+
+  // Render Cyan Left System Trace
+  ctx.beginPath();
+  ctx.strokeStyle = leftFound ? '#22d3ee' : 'rgba(167, 139, 250, 0.4)';
+  ctx.lineWidth = leftFound ? 2.5 : 1.0;
+  ctx.moveTo(sKartX, sKartY);
+  ctx.lineTo(sLeftX, sLeftY);
+  ctx.stroke();
+
+  // Render Pink Right System Trace
+  ctx.beginPath();
+  ctx.strokeStyle = rightFound ? '#f43f5e' : 'rgba(244, 63, 94, 0.4)';
+  ctx.lineWidth = rightFound ? 2.5 : 1.0;
+  ctx.moveTo(sKartX, sKartY);
+  ctx.lineTo(sRightX, sRightY);
+  ctx.stroke();
+
+  // Render Amber Center Line Trace (Now moves dynamically with your sensory limits!)
+  ctx.beginPath();
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 2.5;
+  ctx.moveTo(sKartX, sKartY);
+  ctx.lineTo(sCenterX, sCenterY); 
+  ctx.stroke();
+}
+
 function drawKart(x, y, yaw) {
   const [sx, sy] = w2s(x, y);
-  const len = Math.max(12, 1.05 * cam.zoom * 2);  // wheelbase-ish
+  const len = Math.max(12, 1.05 * cam.zoom * 2);
   const wid = len * 0.5;
 
   ctx.save();
   ctx.translate(sx, sy);
-  ctx.rotate(-yaw);  // canvas Y is flipped
+  ctx.rotate(-yaw);
 
-  // Body
   ctx.fillStyle = '#e0e0e0';
   ctx.beginPath();
-  ctx.moveTo(len * 0.6, 0);            // nose
-  ctx.lineTo(-len * 0.4, -wid * 0.5);  // rear left
-  ctx.lineTo(-len * 0.3, 0);           // rear center notch
-  ctx.lineTo(-len * 0.4, wid * 0.5);   // rear right
+  ctx.moveTo(len * 0.6, 0);
+  ctx.lineTo(-len * 0.4, -wid * 0.5);
+  ctx.lineTo(-len * 0.3, 0);
+  ctx.lineTo(-len * 0.4, wid * 0.5);
   ctx.closePath();
-  ctx.fill();
-
-  // Direction indicator
-  ctx.fillStyle = '#f87171';
-  ctx.beginPath();
-  ctx.arc(len * 0.35, 0, 2.5, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
@@ -443,11 +616,15 @@ function updateHUD() {
   document.getElementById('h-yaw').textContent = `${(odom.yaw * 180 / Math.PI).toFixed(1)}°`;
   document.getElementById('h-spd').textContent = `${odom.speed.toFixed(2)} m/s`;
   document.getElementById('h-cmd').textContent = `M:${(odom.motor||0).toFixed(0)}% S:${(odom.steer||0).toFixed(1)}°`;
+  
+  document.getElementById('h-cam-l').textContent = `${currentComputedAngles[0].toFixed(1)}°`;
+  document.getElementById('h-cam-r').textContent = `${currentComputedAngles[1].toFixed(1)}°`;
 
   const s = document.getElementById('status');
   s.textContent = connected ? 'connected' : 'disconnected';
   s.className = connected ? 'ok' : 'err';
 }
+
 async function setState(state) {
   try {
     await fetch(API + '/set_state', {
@@ -455,15 +632,14 @@ async function setState(state) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({state}),
     });
-  } catch(e) { console.error('setState failed', e); }
+  } catch(e) {}
 }
 
-// ── Init ──
 fetchLine();
-setInterval(fetchOdom, 50);          // 20Hz polling
-setInterval(fetchLine, 5000);        // refresh line occasionally
-setInterval(fetchMpcStatus, 100);    // 10Hz MPC cost breakdown
-setInterval(fetchLines, 200);        // 5Hz dynamic-line (bezier rejoin) overlay
+setInterval(fetchOdom, 50);
+setInterval(fetchLine, 5000);
+setInterval(fetchMpcStatus, 100);
+setInterval(fetchLines, 200);
 draw();
 </script>
 </body>

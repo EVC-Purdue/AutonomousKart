@@ -13,33 +13,21 @@ class OpenCVPlanner(Planner):
     def __init__(self, params: dict, kart: KartConstants, racing_line: list, logger=None, node=None):
         super().__init__(params, kart, racing_line, logger, node=node)
         self.prev_angles = None
-        # self.prev_steering = None
-        # self.angle_threshold = float(params.get("angle_threshold", 5.0))
+        self.angle_threshold = float(params.get("angle_threshold", 5.0))
         self.steer_max_deg = float(params.get("steer_max_deg", 25.0))
         self.throttle_mps= float(params.get("throttle_mps", 5.0))
         self.mode = params.get("mode", "absolute")
-        
-    def compute_deltas(self, cur_angles):
-        if self.prev_angles is None:
-            self.prev_angles = cur_angles
-            return 0.0
-        
-        left_delta: float = cur_angles[0] - self.prev_angles[0]
-        right_delta: float = cur_angles[1] - self.prev_angles[1]
-
-        angle_delta: float = left_delta - right_delta
-
-        steering = (angle_delta / self.steer_max_deg)
-
-        self.prev_angles = cur_angles
-        return max(-1.0, min(steering, 1.0))
 
     def compute_angle(self, cur_angles):
-        angle: float = cur_angles[0] - cur_angles[1]
+        angle_dif: float = cur_angles[0] - cur_angles[1]
+        self.prev_angles = angle_dif
 
-        steering = angle / self.steer_max_deg
+        kp = 3.5
 
-        return max(-1.0, min(steering, 1.0))
+        if angle_dif <= self.angle_threshold and angle_dif > 1e-6:
+            return self.prev_angles
+
+        return angle_dif / kp
         
     
     def plan(self, inputs: PlannerInputs) -> Optional[Tuple[float, float]]:
@@ -47,16 +35,10 @@ class OpenCVPlanner(Planner):
             self.logger.warning("Inputs or inputs.track_angles is invalid")
             return 0.0, 0.0
         
-        steering_deg = None
-        match self.mode:
-            case "absolute":
-                steering_deg = self.compute_angle(inputs.track_angles)
-            case "delta":
-                steering_deg = self.compute_deltas(inputs.track_angles)
-            case _:
-                self.logger.warning("This Mode Does Not Exist (options are abs. or delta)")
-                raise RuntimeError("This Mode Does Not Exist (options are abs. or delta)")
+        self.logger.info(f"{inputs.track_angles}")
         
+        steering_deg = self.compute_angle(inputs.track_angles)
+    
         if steering_deg is None:
             self.logger.warning("Degrees Was Never Changed")
             steering_deg = 0.0

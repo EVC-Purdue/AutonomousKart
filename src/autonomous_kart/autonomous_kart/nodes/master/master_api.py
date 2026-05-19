@@ -7,6 +7,7 @@ from rclpy.executors import ExternalShutdownException
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
+from std_msgs.msg import Float32MultiArray # <-- Added ROS2 message type
 from .master_node import MasterNode, STATES
 
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
@@ -14,6 +15,7 @@ logging.getLogger("werkzeug").setLevel(logging.ERROR)
 app = Flask(__name__)
 CORS(app)
 master_node: MasterNode | None = None
+sim_angle_pub = None # <-- Added global publisher variable
 
 @app.after_request
 def cors(response):
@@ -27,10 +29,6 @@ def ping():
 _STATIC_LINE_CACHE = None
 
 def _load_static_line(path):
-    """
-    Load racing line once
-    returns: list of full waypoint dicts
-    """
     global _STATIC_LINE_CACHE
     if _STATIC_LINE_CACHE is not None:
         return _STATIC_LINE_CACHE
@@ -54,6 +52,7 @@ def _load_static_line(path):
                     continue
     _STATIC_LINE_CACHE = rows
     return rows
+
 @app.route("/get_logs", methods=["GET"])
 def get_logs():
     if not master_node:
@@ -66,10 +65,8 @@ def manual_control():
     data = request.get_json()
     if not isinstance(data, dict):
         return jsonify({"error": "invalid or missing JSON body"}), 400
-
     if "speed" not in data or "steering" not in data:
         return jsonify({"error": "missing 'speed' or 'steering' field"}), 400
-
     speed, steering = float(data["speed"]), float(data["steering"])
     master_node.manual_control(speed, steering)
     return jsonify({"success": "ok"})
@@ -80,13 +77,11 @@ def set_state():
     data = request.get_json()
     if not isinstance(data, dict):
         return jsonify({"error": "invalid or missing JSON body"}), 400
-
     if "state" not in data:
         return jsonify({"error": "state field not present"})
     state = data["state"]
     if state not in [s.value for s in STATES]:
         return jsonify({"error": f"state {state} is not a valid state."})
-
     master_node.update_state(state)
     return jsonify({"success": "ok"})
 
@@ -222,6 +217,32 @@ def lines_endpoint():
         "dynamic": master_node.get_dynamic_line(),
     })
 
+# ─── UPDATED FLASK ROUTE (USES GLOBAL API NODE PUBLISHER) ───
+@app.route("/camera_angles", methods=["POST"])
+def receive_camera_angles():
+    global sim_angle_pub, master_node
+    if not master_node or not sim_angle_pub:
+        return jsonify({"error": "ROS elements not fully initialized"}), 500
+        
+    data = request.get_json(silent=True) or {}
+    left_angle = data.get("left_angle", 22.5)
+    right_angle = data.get("right_angle", 22.5)
+
+    print(f"[DEBUG] Received Frontend Angles -> L: {left_angle:.2f}°, R: {right_angle:.2f}°", flush=True)
+    
+    # Pack up the ROS2 message right here inside the API thread
+    msg = Float32MultiArray()
+    msg.data = [float(left_angle), float(right_angle)]
+    
+    # Publish directly via the global publisher attached to master_node
+    sim_angle_pub.publish(msg)
+    
+    return jsonify({
+        "status": "published", 
+        "left": left_angle, 
+        "right": right_angle
+    })
+
 
 def start(node: MasterNode) -> None:
     try:
@@ -229,22 +250,35 @@ def start(node: MasterNode) -> None:
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
-        # Take the whole process down so Flask doesn't keep serving stale ROS state.
         os._exit(0)
 
 
 def main():
-    global master_node
+    global master_node, sim_angle_pub
 
     rclpy.init()
     master_node = MasterNode()
-    ros_thread = threading.Thread(target=start, args=(master_node,), daemon=True)
+    
+    sim_angle_pub = master_node.create_publisher(
+        Float32MultiArray, 
+        "sim/camera_angles", 
+        10
+    )
+
+    ros_thread = threading.Thread(target=rclpy.spin, args=(master_node,), daemon=True)
     ros_thread.start()
 
-    app.run(host="0.0.0.0", port=8000, debug=False)
-
-    rclpy.shutdown()
-
+    try:
+        # Enforce threaded execution to handle high-frequency raycasts asynchronously
+        app.run(host="0.0.0.0", port=8000, debug=False, threaded=True)
+    except Exception as e:
+        print(f"Flask server failed to start: {e}")
+    finally:
+        # ─── SAFE SHUTDOWN SEQUENCE ───
+        # Destroy the node to shake rclpy.spin() loose before tearing down the context
+        if 'master_node' in locals():
+            master_node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == "__main__":
     main()

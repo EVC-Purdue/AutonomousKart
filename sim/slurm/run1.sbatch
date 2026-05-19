@@ -48,6 +48,7 @@ echo "Job ${SLURM_JOB_ID:-local}: one/20-lap run -> $OUT_DIR"
 
 python3 "${REPO_ROOT}/sim/runner.py" one \
     --sim datasim \
+    --no-mlp \
     --laps 20 \
     --seed 0 \
     --torch-threads "${SLURM_CPUS_PER_TASK:-64}" \

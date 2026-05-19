@@ -164,6 +164,8 @@ class ImuNode(Node):
     def _sample_indicates_motion(self, accel, gyro):
         # Compare against running mean so a constant chip bias doesn't
         # look like motion. First sample has no mean yet → trivially passes.
+        # Per-sample |accel| is too noisy on this chip; mean |accel| vs |g|
+        # is checked once at finish instead.
         with self._lock:
             count = self._calib_count
             gyro_mean = (
@@ -172,9 +174,6 @@ class ImuNode(Node):
         for axis, val, mean in zip(("x", "y", "z"), gyro, gyro_mean):
             if abs(val - mean) > self.gyro_motion_thresh:
                 return f"gyro {axis} delta={val - mean:.3f} rad/s exceeds {self.gyro_motion_thresh}"
-        accel_mag = math.sqrt(sum(a * a for a in accel))
-        if abs(accel_mag - abs(self.default_g)) > self.accel_motion_thresh:
-            return f"|accel|={accel_mag:.3f} m/s^2 deviates from g by > {self.accel_motion_thresh}"
         return None
 
     def _accumulate(self, accel, gyro):
@@ -189,6 +188,20 @@ class ImuNode(Node):
             count = self._calib_count
             gyro_bias = [s / count for s in self._calib_sum]
             accel_mean_raw = np.array([s / count for s in self._calib_accel_sum])
+        # Reject the run if the averaged |accel| is far from |g| - kart wasn't
+        # actually at rest (or sensor is badly miscalibrated). Tolerant because
+        # this chip's scale factor can be off by several percent.
+        accel_mean_mag = float(np.linalg.norm(accel_mean_raw))
+        g_mag = abs(self.default_g)
+        if abs(accel_mean_mag - g_mag) > self.accel_motion_thresh:
+            reason = (
+                f"mean |accel|={accel_mean_mag:.3f} deviates from |g|={g_mag:.3f} "
+                f"by > {self.accel_motion_thresh}"
+            )
+            self.logger.warning(f"Calibration aborted at finish: {reason}")
+            self._reset_calibration(reason)
+            return
+        with self._lock:
             # Level correction: any x/y component in the measured gravity after R_MOUNT is residual chassis tilt
             a_post_mount = R_MOUNT @ accel_mean_raw
             target_z = math.copysign(abs(self.default_g), a_post_mount[2])

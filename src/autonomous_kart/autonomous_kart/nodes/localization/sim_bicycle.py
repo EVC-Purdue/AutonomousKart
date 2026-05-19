@@ -15,12 +15,17 @@ class BicycleModel:
         steer_max_deg: float,
         accel_tau: float = 0.5,
         brake_tau: float = 0.3,
+        steer_slop_deg: float = 0.0,
     ):
         self.wheelbase = wheelbase_m
         self.v_max = v_max_mps
         self.steer_max_rad = math.radians(steer_max_deg)
         self.accel_tau = accel_tau
         self.brake_tau = brake_tau
+        # Half-width of the steering deadzone (backlash). Actual wheel angle
+        # only updates when the command moves more than this past it.
+        self.steer_slop_rad = math.radians(max(0.0, steer_slop_deg))
+        self.delta_actual_rad = 0.0
 
         self.x = 0.0
         self.y = 0.0
@@ -32,6 +37,7 @@ class BicycleModel:
         self.y = y
         self.yaw = yaw
         self.speed = 0.0
+        self.delta_actual_rad = 0.0
 
     def step(self, target_mps: float, steer_deg: float, dt: float):
         """Advance one timestep. Returns (x, y, yaw, speed)."""
@@ -42,9 +48,18 @@ class BicycleModel:
         alpha = dt / (tau + dt)
         self.speed += alpha * (target_v - self.speed)
 
-        # Clamp steering
-        delta = math.radians(steer_deg)
-        delta = max(-self.steer_max_rad, min(self.steer_max_rad, delta))
+        # Clamp commanded steering
+        delta_cmd = math.radians(steer_deg)
+        delta_cmd = max(-self.steer_max_rad, min(self.steer_max_rad, delta_cmd))
+
+        # Mechanical slop / backlash: the actual wheel angle only changes
+        # when the command moves past the deadzone band around it.
+        slop = self.steer_slop_rad
+        if delta_cmd > self.delta_actual_rad + slop:
+            self.delta_actual_rad = delta_cmd - slop
+        elif delta_cmd < self.delta_actual_rad - slop:
+            self.delta_actual_rad = delta_cmd + slop
+        delta = self.delta_actual_rad
 
         # Bicycle kinematics
         self.x += self.speed * math.cos(self.yaw) * dt

@@ -20,7 +20,7 @@ from std_msgs.msg import Float32, Float32MultiArray
 from geometry_msgs.msg import Quaternion, TransformStamped
 from tf2_ros import TransformBroadcaster
 
-from .ekf import LocalizationEKF
+from .ekf import LocalizationEKF, _wrap
 from .sim_bicycle import BicycleModel
 
 
@@ -53,15 +53,18 @@ class LocalizationNode(Node):
         steer_max = float(self.get_parameter("steer_max_deg").value)
         hz = float(self.get_parameter("system_frequency").value)
 
-        self.model = BicycleModel(wheelbase, v_max, steer_max)
+        # Sim noise + actuator delay
+        def _np(name, default):
+            return float(self._param(name, default))
+
+        steer_slop_deg = _np("sim_steer_slop_deg", 0.0)
+        self.model = BicycleModel(
+            wheelbase, v_max, steer_max, steer_slop_deg=steer_slop_deg,
+        )
         self.dt = 1.0 / hz
 
         # Spawn at racing line start if available
         self._auto_spawn()
-
-        # Sim noise + actuator delay
-        def _np(name, default):
-            return float(self._param(name, default))
 
         self._sim_delay_s = _np("sim_actuator_delay_s", 0.0)
         self._sim_motor_std = _np("sim_cmd_motor_noise_mps", 0.0)
@@ -178,12 +181,19 @@ class LocalizationNode(Node):
         self._last_gps_t = None
         self._imu_seen = False
         self._last_imu_stamp_s = None
+        self._last_wheel_v = None
 
         self.create_subscription(Odometry, "gps", self.gps_callback, 10)
         self.create_subscription(Imu, "imu", self._imu_cb, 5)
         self.create_subscription(
             Float32, "e_comms/kart_speed_m_per_s", self._wheel_speed_cb, 5
         )
+
+        # For snapshotting the EKF before / after GPS event to get accuracy
+        self.gps_event_pub = self.create_publisher(
+            Float32MultiArray, "localization/gps_event", 10,
+        )
+        self._gps_event_seq = 0
 
         # 1 Hz watchdog
         self.create_timer(1.0, self._imu_watchdog)
@@ -223,9 +233,10 @@ class LocalizationNode(Node):
         return cov
 
     def _wheel_speed_cb(self, msg: Float32):
+        self._last_wheel_v = float(msg.data)
         if not self.ekf.initialized:
             return
-        self.ekf.update_speed(float(msg.data), self.wheel_speed_var)
+        self.ekf.update_speed(self._last_wheel_v, self.wheel_speed_var)
 
     def _imu_cb(self, msg: Imu):
         stamp_s = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
@@ -250,10 +261,11 @@ class LocalizationNode(Node):
             )
             return
 
-        omega_z = float(msg.angular_velocity.z)
         accel_x = float(msg.linear_acceleration.x)
-        omega_var = float(msg.angular_velocity_covariance[8])
         accel_var = float(msg.linear_acceleration_covariance[0])
+        # gyro_z published by imu_node has the wrong sign for our chassis
+        omega_z = -float(msg.angular_velocity.z)
+        omega_var = float(msg.angular_velocity_covariance[8])
 
         self.ekf.predict(dt, omega_z, accel_x, omega_var, accel_var)
 
@@ -302,6 +314,21 @@ class LocalizationNode(Node):
         var_v = float(msg.twist.covariance[0])
         have_yaw = var_yaw < self.vtg_yaw_var_max
         have_speed = var_v < self.vtg_speed_var_max
+        # VTG track is course-over-ground = direction of motion. If the kart
+        # is rolling in reverse (wheel speed negative), COG points 180° from
+        # the body yaw so flip it so EKF is accurate
+        if have_yaw:
+            # VTG speed is unsigned (magnitude), so prefer a signed source for
+            # the reverse-motion sign: latest VESC wheel speed, then EKF v,
+            # then fall back to VTG magnitude.
+            if self._last_wheel_v is not None:
+                v_for_sign = self._last_wheel_v
+            elif self.ekf.initialized:
+                v_for_sign = float(self.ekf.x[3])
+            else:
+                v_for_sign = v_meas if have_speed else 0.0
+            if v_for_sign < 0.0:
+                yaw_meas = _wrap(yaw_meas + math.pi)
 
         if not self.ekf.initialized:
             if not self._imu_seen:
@@ -323,13 +350,34 @@ class LocalizationNode(Node):
             self._last_gps_t = t
             return
 
-        # Already initialized: run corrections, do NOT publish
+        # Already initialized: run corrections then publish.
+        # Snapshot the EKF state (IMU+wheel predict only) just before GPS is
+        # folded in, and the posterior after, so /localization/gps_event lets
+        # offline analysis see how far IMU+wheel dead-reckoning had drifted.
+        prior = self.ekf.x.copy()
         self.ekf.update_gps_xy(x, y, R_xy)
         if have_yaw:
             self.ekf.update_heading(yaw_meas, var_yaw)
         if have_speed:
             self.ekf.update_speed(v_meas, var_v)
+        post = self.ekf.x.copy()
         self._last_gps_t = t
+
+        px, py, yaw, v = self.ekf.x
+        cov = self._odom_cov_from_P(self.ekf.P)
+        self._publish_odom(px, py, yaw, v, cov=cov, speed_var=float(self.ekf.P[3, 3]))
+
+        self._gps_event_seq += 1
+        self.gps_event_pub.publish(Float32MultiArray(data=[
+            float(self._gps_event_seq),
+            float(x), float(y), float(yaw_meas), float(v_meas),
+            1.0 if have_yaw else 0.0,
+            1.0 if have_speed else 0.0,
+            float(prior[0]), float(prior[1]),
+            float(prior[2]), float(prior[3]),
+            float(post[0]), float(post[1]),
+            float(post[2]), float(post[3]),
+        ]))
 
     def _publish_odom(self, x: float, y: float, yaw: float, speed: float,
                       cov=None, speed_var=None):

@@ -51,6 +51,12 @@ jobs:
           cp -a "${GITHUB_WORKSPACE}/ws-src/requirements.txt" /ws/requirements.txt || true
           ls /ws
 
+      - name: Install Python requirements
+        shell: bash
+        run: |
+          set -exo pipefail
+          pip install --no-cache-dir -r /ws/requirements.txt
+
       - name: Restore colcon build cache
         id: colcon-cache
         uses: actions/cache@v4

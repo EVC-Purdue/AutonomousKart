@@ -75,6 +75,10 @@ class MPCPlanner(Planner):
         # Below this speed, dpsi = v/L*tan(delta) ~= 0 so the cost can't
         # distinguish steering choices — hold delta at 0 until v crosses the gate.
         self.steer_observability_v = float(g("steer_observability_v_mps", 0.5))
+        # Elite-mean fraction: instead of argmin over K samples, average the
+        # top `mppi_elite_frac × K` samples' first actions. Cuts per-tick noise
+        # without the phase-lag cost of a 1st-order filter. 1.0/K = pure argmin (no smoothing).
+        self.mppi_elite_frac = float(g("mppi_elite_frac", 0.1))
 
         # Corridor (centerline = racing line)
         tw = float(g("track_half_width_m", 2.5))
@@ -133,6 +137,9 @@ class MPCPlanner(Planner):
         # State carried between ticks
         self.closest_idx = 0  # idx into the ACTIVE reference (line or bezier)
         self.static_closest_idx = 0  # idx into the static racing line (for CTE gate)
+        # First plan() does an O(n) nearest search so a kart spawned mid-track
+        # isn't pinned near idx 0 by _frenet's wrap-aware resync gate.
+        self.initial_sync_done = False
         self.delta_prev = 0.0
         self.a_prev = 0.0
         self.u_mean = np.zeros((2, self.N))  # warm-start [delta(N), accel(N)]
@@ -147,7 +154,10 @@ class MPCPlanner(Planner):
             if k.startswith("residual.")
         }
         # Shared ResidualLearner survives planner / line swaps so training state persists
-        self.residual = residual if residual is not None else ResidualLearner(residual_params, solve_dt)
+        s_total = float(self._static_arrays["s"][-1])
+        self.residual = residual if residual is not None else ResidualLearner(
+            residual_params, solve_dt, s_total=s_total,
+        )
         self._nom_steps = max(1, int(round(self.residual.target_horizon_s / self.dt)))
         self._last_motor_mps = 0.0
         self._train_dt = solve_dt
@@ -165,16 +175,56 @@ class MPCPlanner(Planner):
         # Reusable rng
         self._rng = np.random.default_rng(0)
 
+        # Latest raw GPS pose snapshot — appended to status payload so the
+        # mpc/status log alone is enough to diff EKF vs raw GPS offline.
+        self._gps_x = math.nan
+        self._gps_y = math.nan
+        self._gps_yaw = math.nan
+        self._gps_v = math.nan
+        # Wheel speed (m/s) + last-GPS-event EKF prior/posterior snapshot.
+        # Drives the offline EKF-innovation analysis: prior is the IMU+wheel
+        # dead-reckoned state right before GPS fused in; post is after.
+        self._wheel_v = math.nan
+        self._gps_event_seq = 0.0
+        self._gps_have_yaw = 0.0
+        self._gps_have_speed = 0.0
+        self._ekf_prior_x = math.nan
+        self._ekf_prior_y = math.nan
+        self._ekf_prior_yaw = math.nan
+        self._ekf_prior_v = math.nan
+        self._ekf_post_x = math.nan
+        self._ekf_post_y = math.nan
+        self._ekf_post_yaw = math.nan
+        self._ekf_post_v = math.nan
+
     # plan
     def plan(self, inputs: PlannerInputs) -> Optional[Tuple[float, float]]:
         t0 = time.perf_counter()
         x, y = inputs.pose_xy
         yaw = inputs.yaw_rad
         v = max(0.0, inputs.speed_mps)
+        self._gps_x, self._gps_y = inputs.gps_xy
+        self._gps_yaw = inputs.gps_yaw_rad
+        self._gps_v = inputs.gps_speed_mps
+        self._wheel_v = inputs.wheel_speed_mps
+        self._gps_event_seq = inputs.gps_event_seq
+        self._gps_have_yaw = inputs.gps_have_yaw
+        self._gps_have_speed = inputs.gps_have_speed
+        self._ekf_prior_x, self._ekf_prior_y = inputs.ekf_prior_xy
+        self._ekf_prior_yaw = inputs.ekf_prior_yaw_rad
+        self._ekf_prior_v = inputs.ekf_prior_v
+        self._ekf_post_x, self._ekf_post_y = inputs.ekf_post_xy
+        self._ekf_post_yaw = inputs.ekf_post_yaw_rad
+        self._ekf_post_v = inputs.ekf_post_v
 
         # Frenet against the STATIC racing line so the rejoin gate uses
         #    CTE-to-line, not CTE-to-overlay.
         self._set_active_line(self._static_arrays)
+        if not self.initial_sync_done:
+            d2 = (self.l_x - x) ** 2 + (self.l_y - y) ** 2
+            self.static_closest_idx = int(np.argmin(d2))
+            self.closest_idx = self.static_closest_idx
+            self.initial_sync_done = True
         _, d_static, j_static, _, _ = self._frenet(x, y, self.static_closest_idx)
         self.static_closest_idx = j_static
 
@@ -283,7 +333,11 @@ class MPCPlanner(Planner):
         )
         self.residual.push(phi, s, d, nom_s - s, nom_d - d, v)
         self.residual.step(s, d)
-        res_ps, res_pd = self.residual.predict(phi)
+        res_ps, res_pd, _residual_source = self.residual.predict(phi)
+        # effective_mode gating: zero the residual any time we're not yet in apply
+        # so future consumers automatically see (0, 0) until the apply gate opens.
+        if self.residual.effective_mode() != "apply":
+            res_ps, res_pd = 0.0, 0.0
 
         # Telemetry
         margin_min = self.corridor_half - float(np.max(np.abs(traj["d"])))
@@ -518,11 +572,20 @@ class MPCPlanner(Planner):
         cost = (c_d + c_h + c_v + c_delta + c_drate + c_accel
                 + c_bnd + c_edge + c_prog + c_term_d + c_term_h + c_alat)
 
-        # Corridor enforcement is a soft quadratic penalty (c_bnd above)
-        best = int(np.argmin(cost))
+        # Corridor enforcement is a soft quadratic penalty (c_bnd above).
+        # Pick the action by averaging the top `mppi_elite_frac × K` samples'
+        # control sequences (CEM-style elite mean). The reported "best"
+        # cost is still the elite minimum so feasibility / failsafe still
+        # gate on the truly-best trajectory.
+        n_elite = max(1, int(round(self.mppi_elite_frac * self.K)))
+        elite_idx = np.argpartition(cost, n_elite - 1)[:n_elite]
+        best = int(elite_idx[np.argmin(cost[elite_idx])])
         best_cost = float(cost[best])
         feasible = best_cost < self.feasibility_threshold
-        u = np.stack([delta_seq[best], accel_seq[best]], axis=0)
+        u = np.stack([
+            np.mean(delta_seq[elite_idx, :], axis=0),
+            np.mean(accel_seq[elite_idx, :], axis=0),
+        ], axis=0)
         traj = {"d": d[best], "s": s[best]}
         breakdown = (
             float(c_d[best]), float(c_h[best]), float(c_v[best]),
@@ -544,6 +607,7 @@ class MPCPlanner(Planner):
         self.line_manager.register(RejoinStrategy(**self._rejoin_kwargs))
         self.closest_idx = 0
         self.static_closest_idx = 0
+        self.initial_sync_done = False
         self._reset_warm_start()
         self._pose_hist.clear()
 
@@ -551,6 +615,9 @@ class MPCPlanner(Planner):
                    x: float, y: float, yaw: float, v: float, now_ns: int) -> None:
         """Drive the residual learner from another planner's commands so it
         keeps training when MPC isn't the active planner."""
+        # Sync MPC's internal control state to what was actually executed.
+        self.delta_prev = math.radians(steering_deg)
+        self.u_mean[0, :] = self.delta_prev
         if not self.residual.enabled:
             return
         t0 = time.perf_counter()
@@ -574,7 +641,10 @@ class MPCPlanner(Planner):
         )
         self.residual.push(phi, s, d, nom_s - s, nom_d - d, v)
         self.residual.step(s, d)
-        res_ps, res_pd = self.residual.predict(phi)
+        res_ps, res_pd, _residual_source = self.residual.predict(phi)
+        # effective_mode gating: zero the residual any time we're not yet in apply
+        if self.residual.effective_mode() != "apply":
+            res_ps, res_pd = 0.0, 0.0
         self._publish_status(
             self.mode, True, t0, s, d, psi_track, v, self.target_speed,
             delta_rad, accel, 0.0, self.corridor_half,
@@ -604,6 +674,8 @@ class MPCPlanner(Planner):
             return
         solve_ms = (time.perf_counter() - t0) * 1000.0
         nom_s, nom_d, res_es, res_ed = self.residual.mean_error()
+        trainer = self.residual.trainer
+        last = trainer.snapshot_models()[2] if trainer else None
         payload = [
             float(mode), 1.0 if success else 0.0, solve_ms,
             float(s), float(d), float(psi_track), float(v), float(v_target),
@@ -623,7 +695,49 @@ class MPCPlanner(Planner):
             float({"off": 0, "shadow": 1, "apply": 2}.get(self.residual.mode, 1)),
             float(np.linalg.norm(self.residual.theta_s)),
             float(np.linalg.norm(self.residual.theta_d)),
+            # Raw GPS pose (EKF-vs-GPS diff). NaN until first /gps fix.
+            float(self._gps_x), float(self._gps_y),
+            float(self._gps_yaw), float(self._gps_v),
+            # Wheel speed + last-GPS-event EKF prior/posterior. seq lets the
+            # analyst dedupe MPC ticks (60 Hz) against GPS events (10 Hz).
+            float(self._wheel_v), float(self._gps_event_seq),
+            float(self._gps_have_yaw), float(self._gps_have_speed),
+            float(self._ekf_prior_x), float(self._ekf_prior_y),
+            float(self._ekf_prior_yaw), float(self._ekf_prior_v),
+            float(self._ekf_post_x), float(self._ekf_post_y),
+            float(self._ekf_post_yaw), float(self._ekf_post_v),
+            # ---- Phase 1 residual telemetry (Phase 2 fields stay 0/NaN here) ----
+            float(self.residual.buffer.size if self.residual.buffer is not None else 0),
+            float(self.residual.buffer.capacity if self.residual.buffer is not None else 0),
+            float(last.train_wall_ms if last is not None else float("nan")),
+            float(last.n_samples if last is not None else 0),
+            float(trainer.train_seq if trainer else 0),
+            float(last.train_mae_s if last is not None else float("nan")),
+            float(last.train_mae_d if last is not None else float("nan")),
+            float(last.val_mae_s if last is not None else float("nan")),
+            float(last.val_mae_d if last is not None else float("nan")),
+            float(last.rls_val_mae_s if last is not None else float("nan")),
+            float(last.rls_val_mae_d if last is not None else float("nan")),
+            float(self.residual.last_active_model),  # active_model
+            float(self.residual.last_pred_clipped),
+            float(self.residual.clip_rate()),
+            float(self.residual.outliers_dropped),
+            float(self.residual.off_line_skipped),
+            float(self.residual.divergence_resets),
+            float(self.residual.samples_trained),
+            float(self.residual.revert_count),
+            float(self.residual.checkpoint_ring.best_recent().val_mae_s
+                  if self.residual.checkpoint_ring and not self.residual.checkpoint_ring.is_empty()
+                  else float("nan")),
+            float(self.residual.checkpoint_ring.best_recent().val_mae_d
+                  if self.residual.checkpoint_ring and not self.residual.checkpoint_ring.is_empty()
+                  else float("nan")),
+            float(1.0 if self.residual.cache_loaded else 0.0),
+            float(1.0 if self.residual.samples_trained >= self.residual.rls_warmup_samples else 0.0),
+            float({"off": 0, "shadow": 1, "apply": 2}.get(self.residual.effective_mode(), 1)),
+            float(self.residual.samples_accepted_this_run),
         ]
+        assert len(payload) == 88, f"mpc/status payload must be 88 floats, got {len(payload)}"
         self.status_pub.publish(Float32MultiArray(data=payload))
 
     def dynamic_line_state(self) -> Optional[dict]:

@@ -33,6 +33,10 @@ class MasterNode(Node):
         assert self.state in [s.value for s in STATES]
 
         self._lock = threading.Lock()
+        # Residual training-event log queue (capped at 200)
+        self._residual_log: list[dict] = []
+        self._residual_log_max = 200
+        self._last_train_seq = -1
         self._pub_lock = threading.Lock()
         self._logs = []
 
@@ -131,6 +135,7 @@ class MasterNode(Node):
         self.residual_mode_publisher = self.create_publisher(String, "mpc/residual_mode", 1)
         self.planner_publisher = self.create_publisher(String, "pathfinder/planner", 1)
         self.line_publisher = self.create_publisher(String, "pathfinder/line_path", 1)
+        self.residual_revert_publisher = self.create_publisher(Empty, "mpc/residual_revert", 1)
 
         # IMU calibration plumbing
         self.imu_calibrate_publisher = self.create_publisher(Empty, "imu/calibrate", 1)
@@ -164,8 +169,10 @@ class MasterNode(Node):
 
     def _mpc_status_callback(self, msg: Float32MultiArray):
         data = list(msg.data)
-        if len(data) < 44:
+        if len(data) < 63:
             return
+        # Phase-1 residual telemetry lives in cols 63..87 of the new 88-col payload.
+        # Legacy 63-col logs still parse; the extras stay empty in that case.
         snapshot = {
             "received": True,
             "mode": int(data[0]),
@@ -214,7 +221,79 @@ class MasterNode(Node):
             "kappa_local": float(data[41]),
             "consec_failures": int(data[42]),
             "corridor_half": float(data[43]),
+            # GPS pose passthrough (indices 47..50; 44..46 are residual telemetry).
+            "gps_x": float(data[47]),
+            "gps_y": float(data[48]),
+            "gps_yaw_rad": float(data[49]),
+            "gps_v": float(data[50]),
+            # Wheel speed + last-GPS-event EKF prior/posterior snapshot.
+            # gps_event_seq increments per /localization/gps_event publish.
+            "wheel_speed_mps": float(data[51]),
+            "gps_event_seq": int(data[52]),
+            "gps_have_yaw": bool(data[53] > 0.5),
+            "gps_have_speed": bool(data[54] > 0.5),
+            "ekf_prior_x": float(data[55]),
+            "ekf_prior_y": float(data[56]),
+            "ekf_prior_yaw_rad": float(data[57]),
+            "ekf_prior_v": float(data[58]),
+            "ekf_post_x": float(data[59]),
+            "ekf_post_y": float(data[60]),
+            "ekf_post_yaw_rad": float(data[61]),
+            "ekf_post_v": float(data[62]),
         }
+        if len(data) >= 88:
+            snapshot["train_buffer_size"] = int(data[63])
+            snapshot["train_buffer_capacity"] = int(data[64])
+            snapshot["last_train_wall_ms"] = float(data[65])
+            snapshot["last_train_n_samples"] = int(data[66])
+            snapshot["train_seq"] = int(data[67])
+            snapshot["last_train_mae_s"] = float(data[68])
+            snapshot["last_train_mae_d"] = float(data[69])
+            snapshot["last_val_mae_s"] = float(data[70])
+            snapshot["last_val_mae_d"] = float(data[71])
+            snapshot["last_rls_val_mae_s"] = float(data[72])
+            snapshot["last_rls_val_mae_d"] = float(data[73])
+            snapshot["active_model"] = int(data[74])
+            snapshot["pred_clipped"] = int(data[75])
+            snapshot["clip_rate_window"] = float(data[76])
+            snapshot["outliers_dropped_total"] = int(data[77])
+            snapshot["off_line_skipped_total"] = int(data[78])
+            snapshot["divergence_resets_total"] = int(data[79])
+            snapshot["samples_accepted_total"] = int(data[80])
+            snapshot["revert_count_total"] = int(data[81])
+            snapshot["best_val_mae_s"] = float(data[82])
+            snapshot["best_val_mae_d"] = float(data[83])
+            snapshot["cache_loaded"] = int(data[84])
+            snapshot["rls_warmed_up"] = int(data[85])
+            snapshot["effective_mode"] = int(data[86])
+            snapshot["samples_accepted_this_run"] = int(data[87])
+        if "train_seq" in snapshot:
+            seq = int(snapshot["train_seq"])
+            if seq > self._last_train_seq:
+                event = {
+                    "t_wall_ns": int(self.get_clock().now().nanoseconds),
+                    "train_seq": seq,
+                    "n_samples": snapshot.get("last_train_n_samples", 0),
+                    "train_wall_ms": snapshot.get("last_train_wall_ms", float("nan")),
+                    "train_mae_s": snapshot.get("last_train_mae_s", float("nan")),
+                    "train_mae_d": snapshot.get("last_train_mae_d", float("nan")),
+                    "val_mae_s": snapshot.get("last_val_mae_s", float("nan")),
+                    "val_mae_d": snapshot.get("last_val_mae_d", float("nan")),
+                    "rls_val_mae_s": snapshot.get("last_rls_val_mae_s", float("nan")),
+                    "rls_val_mae_d": snapshot.get("last_rls_val_mae_d", float("nan")),
+                    "active_model": "gbm" if snapshot.get("active_model") == 1 else "rls",
+                    "buffer_size": snapshot.get("train_buffer_size", 0),
+                    "outliers_dropped_total": snapshot.get("outliers_dropped_total", 0),
+                    "off_line_skipped_total": snapshot.get("off_line_skipped_total", 0),
+                    "divergence_resets_total": snapshot.get("divergence_resets_total", 0),
+                    "samples_accepted_total": snapshot.get("samples_accepted_total", 0),
+                    "revert_count_total": snapshot.get("revert_count_total", 0),
+                }
+                with self._lock:
+                    self._residual_log.insert(0, event)
+                    if len(self._residual_log) > self._residual_log_max:
+                        self._residual_log = self._residual_log[: self._residual_log_max]
+                self._last_train_seq = seq
         with self._lock:
             self.mpc_status_data = snapshot
 
@@ -370,6 +449,19 @@ class MasterNode(Node):
     def get_gps_status(self):
         with self._lock:
             return dict(self.gps_status_data)
+
+    def get_residual_log(self, limit: int = 50) -> list[dict]:
+        with self._lock:
+            return list(self._residual_log[: max(0, limit)])
+
+    def get_residual_status(self) -> dict | None:
+        with self._lock:
+            if not self.mpc_status_data:
+                return None
+            return dict(self.mpc_status_data)
+
+    def trigger_residual_revert(self) -> None:
+        self.residual_revert_publisher.publish(Empty())
 
 
 def main(args=None):

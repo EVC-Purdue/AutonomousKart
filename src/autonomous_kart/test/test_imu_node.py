@@ -246,6 +246,60 @@ def test_calibration_aborts_on_accel_anomaly(imu_factory):
 # --------------------------------------------------- happy-path calibration
 
 
+def test_calibration_levels_accel_xy(imu_factory, tmp_path):
+    """Tilted chassis: accel calibration must rotate measured gravity onto +Z.
+
+    Pick a raw accel that, after R_MOUNT (diag(1, -1, -1)), points slightly off
+    +Z. After calibration the published accel should land at (0, 0, +|g|).
+    """
+    import numpy as np
+
+    cache = tmp_path / "out.json"
+    # Tilted chassis: |raw| == 16384 (i.e. magnitude |g|), but split between
+    # x and z. (4000, 0, 15873) gives ~14 deg tilt around the chip's +Y.
+    raw_ax, raw_az = 4000, 15873
+    with imu_factory(cache_path=cache, calibration_samples=6) as (node, bus, _rclpy):
+        bus.next_read = _make_burst(accel_raw=(raw_ax, 0, raw_az), gyro_raw=(0, 0, 0))
+
+        for _ in range(6):
+            node.publish_imu()
+
+        assert node.state == CALIBRATED, node.last_error
+        # Apply learned R to the same raw accel: x/y must zero out and z must
+        # carry the full magnitude (level rotation preserves length).
+        accel_m = np.array([raw_ax, 0, raw_az]) / 16384.0 * node.default_g
+        corrected = node.R @ accel_m
+        assert corrected[0] == pytest.approx(0.0, abs=1e-6)
+        assert corrected[1] == pytest.approx(0.0, abs=1e-6)
+        assert abs(corrected[2]) == pytest.approx(np.linalg.norm(accel_m), rel=1e-9)
+
+        # Cache round-trips R.
+        payload = json.loads(cache.read_text())
+        assert "R" in payload
+        assert np.allclose(np.asarray(payload["R"]), node.R)
+
+
+def test_cache_round_trip_restores_R(imu_factory, tmp_path):
+    """A cached R must be reloaded so the kart doesn't have to re-level."""
+    import numpy as np
+
+    cache = tmp_path / "cal.json"
+    R_saved = [
+        [0.9848, 0.0, 0.1736],
+        [0.0, 1.0, 0.0],
+        [-0.1736, 0.0, 0.9848],
+    ]
+    cache.write_text(json.dumps({
+        "gyro_bias": [0.0, 0.0, 0.0],
+        "R": R_saved,
+        "samples": 200,
+        "timestamp": 0.0,
+    }))
+    with imu_factory(cache_path=cache) as (node, _bus, _rclpy):
+        assert node.state == CALIBRATED
+        assert np.allclose(node.R, np.asarray(R_saved))
+
+
 def test_calibration_completes_and_writes_cache(imu_factory, tmp_path):
     cache = tmp_path / "out.json"
     # Tiny non-zero gyro so the bias is testable, well below motion threshold.

@@ -38,11 +38,13 @@ pathfinder_node:
     pure_pursuit.rejoin_cte_activate: 3.0
     pure_pursuit.rejoin_cte_deactivate: 1.0
     pure_pursuit.rejoin_merge_lookahead_m: 15.0
-    pure_pursuit.latency_s: 0.3
+    pure_pursuit.latency_s: 0.4
+    pure_pursuit.steering_gain: 3.0
 
     # opencv
 
     # mpc: sampling MPC
+    mpc.steering_gain: 2.0
     mpc.horizon_steps: 20
     mpc.dt_s: 0.05
     mpc.num_samples: 164
@@ -88,6 +90,41 @@ pathfinder_node:
     mpc.residual.initial_cov: 1000.0
     mpc.residual.min_train_speed_mps: 0.5
     mpc.residual.error_window: 200
+    # tight so model loss does not explode
+    mpc.residual.outlier_threshold_m: 2.0
+    # refuses to train when |d| >= this so proj is not too noisy
+    mpc.residual.max_train_d_m: 3.0
+    mpc.residual.max_p_trace: 100000.0
+    mpc.residual.max_theta_norm: 50.0
+    # below this many RLS updates, predict() returns (0, 0) so MPC sees no noise
+    mpc.residual.rls_warmup_samples: 50
+#    GBM parms
+    mpc.residual.gbm_enabled: false
+    mpc.residual.gbm_buffer_capacity: 18000
+    mpc.residual.gbm_max_iter: 60
+    mpc.residual.gbm_max_depth: 3
+    mpc.residual.gbm_learning_rate: 0.1
+    mpc.residual.gbm_min_samples_leaf: 20
+    mpc.residual.gbm_retrain_secs: 10.0
+    mpc.residual.gbm_min_samples_to_train: 1200
+    mpc.residual.gbm_retrain_every_samples: 1200
+    mpc.residual.gbm_select_eps_s_m: 0.0
+    mpc.residual.gbm_select_eps_d_m: 0.005
+    mpc.residual.gbm_predict_clip_m: 0.5
+    # Checkpoints + revert
+    mpc.residual.checkpoint_ring_size: 5
+    mpc.residual.checkpoint_keep_factor: 1.5
+    mpc.residual.revert_clip_rate_window: 600
+    mpc.residual.revert_clip_rate_threshold: 0.30
+    mpc.residual.regime_dv_tol_mps: 1.0
+    mpc.residual.regime_dd_tol_m: 0.3
+    mpc.residual.regime_dkappa_rel_tol: 0.5
+    # Apply-mode gate (effective_mode = shadow until this many accepted samples this run)
+    mpc.residual.apply_min_samples_this_run: 1200
+    # Disk cache (used in Phase 2 task wiring; default on)
+    mpc.residual.cache_enabled: true
+    mpc.residual.cache_dir: /root/.cache/residual_cache
+    mpc.residual.cache_load_on_start: true
 
     #  safety wrapper 
     safety.enabled: true

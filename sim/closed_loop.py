@@ -92,6 +92,9 @@ class SimResult:
     vs: np.ndarray       # (N,) m/s
     ds: np.ndarray       # (N,) signed lateral offset from racing line
     times: np.ndarray    # (N,) seconds
+    # Diagnostics captured from the planner's residual learner at end of run.
+    # Empty dict if planner/learner missing or capture failed.
+    residual_stats: dict = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +342,7 @@ def simulate(
                 vs=np.asarray(vs),
                 ds=np.asarray(ds_list),
                 times=np.asarray(times),
+                residual_stats=_capture_residual_stats(planner),
             )
 
         motor_pct, steer_deg = cmd
@@ -379,6 +383,7 @@ def simulate(
                 vs=np.asarray(vs),
                 ds=np.asarray(ds_list),
                 times=np.asarray(times),
+                residual_stats=_capture_residual_stats(planner),
             )
 
         # Cumulative arc-length with wrap-aware delta.
@@ -422,7 +427,70 @@ def simulate(
         vs=vs_a,
         ds=ds_a,
         times=times_a,
+        residual_stats=_capture_residual_stats(planner),
     )
+
+
+def _capture_residual_stats(planner) -> dict:
+    """Snapshot the planner's residual learner at end of run.
+
+    Returns a dict suitable for JSON serialisation. Best-effort: any attribute
+    that's missing on the user's local fork is silently skipped. Empty dict if
+    the planner has no residual learner at all.
+    """
+    out: dict = {}
+    r = getattr(planner, "residual", None)
+    if r is None:
+        return out
+    for attr in (
+        "mode", "use_gbm", "samples_trained", "samples_accepted_this_run",
+        "outliers_dropped", "off_line_skipped", "divergence_resets",
+        "revert_count", "rls_warmup_samples", "apply_min_samples_this_run",
+        "gbm_enabled", "last_active_model", "last_pred_clipped",
+    ):
+        if hasattr(r, attr):
+            v = getattr(r, attr)
+            try:
+                out[attr] = bool(v) if isinstance(v, (bool, np.bool_)) else (
+                    int(v) if isinstance(v, (int, np.integer)) else
+                    float(v) if isinstance(v, (float, np.floating)) else
+                    str(v)
+                )
+            except Exception:
+                pass
+    # Effective mode (gated)
+    if hasattr(r, "effective_mode"):
+        try:
+            out["effective_mode"] = str(r.effective_mode())
+        except Exception:
+            pass
+    # Theta norms
+    try:
+        import numpy as _np
+        if hasattr(r, "theta_s"):
+            out["theta_s_norm"] = float(_np.linalg.norm(r.theta_s))
+        if hasattr(r, "theta_d"):
+            out["theta_d_norm"] = float(_np.linalg.norm(r.theta_d))
+    except Exception:
+        pass
+    # Mean error window (nominal vs residual)
+    if hasattr(r, "mean_error"):
+        try:
+            nom_s, nom_d, res_s, res_d = r.mean_error()
+            out["mean_err_nom_s"] = float(nom_s)
+            out["mean_err_nom_d"] = float(nom_d)
+            out["mean_err_res_s"] = float(res_s)
+            out["mean_err_res_d"] = float(res_d)
+        except Exception:
+            pass
+    # Last-prediction snapshot (helpful to see what magnitude residual is firing)
+    for attr in ("last_pred_s", "last_pred_d"):
+        if hasattr(r, attr):
+            try:
+                out[attr] = float(getattr(r, attr))
+            except Exception:
+                pass
+    return out
 
 
 if __name__ == "__main__":

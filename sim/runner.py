@@ -533,14 +533,27 @@ def cmd_render(args):
 # ---------------------------------------------------------------------------
 
 # Mode -> param overrides applied on top of the user's --params-json overlay.
+# IMPORTANT: keys go straight to MPCPlanner, which only keeps those starting
+# with `residual.` (mpc.py:153 strips that exact prefix). Do NOT use the
+# `mpc.residual.*` form used in the yaml — those reach the planner only via
+# the ROS node's prefix-rewriting, which doesn't run in this standalone path.
+#
+# `apply_min_samples_this_run` lowered from its 1200 default so apply mode
+# kicks in within the first few seconds of the comparison run; otherwise the
+# learner stays gated in shadow mode for ~20s and the comparison is mute.
+_APPLY_GATE_OVERRIDES = {
+    "residual.apply_min_samples_this_run": 200,
+    # Allow training samples even when the kart drifts somewhat off the line
+    # — the comparison runs see |d| up to ~8 m and the default 3 m rejects too
+    # much.
+    "residual.max_train_d_m": 10.0,
+}
 _RESIDUAL_MODE_OVERRIDES = {
     "off":    {"residual.mode": "off"},
-    "rls":    {"residual.mode": "apply", "mpc.residual.use_gbm_on_select": False,
-               "mpc.residual.gbm_enabled": False},
-    "gbm":    {"residual.mode": "apply", "mpc.residual.use_gbm_on_select": True,
-               "mpc.residual.gbm_enabled": True},
-    "both":   {"residual.mode": "apply", "mpc.residual.gbm_enabled": True},
-    "shadow": {"residual.mode": "shadow"},
+    "rls":    {"residual.mode": "apply", "residual.gbm_enabled": False, **_APPLY_GATE_OVERRIDES},
+    "gbm":    {"residual.mode": "apply", "residual.gbm_enabled": True,  **_APPLY_GATE_OVERRIDES},
+    "both":   {"residual.mode": "apply", "residual.gbm_enabled": True,  **_APPLY_GATE_OVERRIDES},
+    "shadow": {"residual.mode": "shadow", **_APPLY_GATE_OVERRIDES},
 }
 
 _ALL_MODES = list(_RESIDUAL_MODE_OVERRIDES.keys())
@@ -598,12 +611,22 @@ def _run_one_compare(mode: str, seed: int, args_dict: dict) -> dict:
         result = None
         print(f"  [{mode} seed{seed}] EXCEPTION:\n{_tb.format_exc()}", flush=True)
 
+    # Hash the trajectory so we can detect identical runs across modes (the
+    # smoking gun if param overrides aren't reaching the planner).
+    import hashlib as _hashlib
+    traj_hash = ""
+    residual_stats: dict = {}
     if result is not None:
         np.savez(
             os.path.join(run_dir, "trajectory.npz"),
             xs=result.xs, ys=result.ys, yaws=result.yaws,
             vs=result.vs, ds=result.ds, times=result.times,
         )
+        h = _hashlib.sha1()
+        for arr in (result.xs, result.ys, result.yaws, result.vs):
+            h.update(np.ascontiguousarray(arr, dtype=np.float64).tobytes())
+        traj_hash = h.hexdigest()[:16]
+        residual_stats = dict(result.residual_stats or {})
         metrics = {
             "completed_laps": result.completed_laps,
             "total_time_s": result.total_time_s,
@@ -612,6 +635,8 @@ def _run_one_compare(mode: str, seed: int, args_dict: dict) -> dict:
             "avg_speed": result.avg_speed,
             "safe": result.safe,
             "aborted": result.aborted,
+            "trajectory_hash": traj_hash,
+            "residual_stats": residual_stats,
         }
     else:
         metrics = {
@@ -622,6 +647,8 @@ def _run_one_compare(mode: str, seed: int, args_dict: dict) -> dict:
             "avg_speed": 0.0,
             "safe": False,
             "aborted": True,
+            "trajectory_hash": traj_hash,
+            "residual_stats": residual_stats,
         }
     with open(os.path.join(run_dir, "metrics.json"), "w") as f:
         json.dump(metrics, f, indent=2)
@@ -630,6 +657,24 @@ def _run_one_compare(mode: str, seed: int, args_dict: dict) -> dict:
     saved_params["_meta"] = {"mode": mode, "seed": seed}
     with open(os.path.join(run_dir, "params.json"), "w") as f:
         json.dump(saved_params, f, indent=2)
+
+    # One-line per-run diagnostic so the SLURM .out log tells the whole story.
+    rs = residual_stats
+    print(
+        f"  [{mode:<6} seed{seed}] "
+        f"residual.mode={mpc_params.get('residual.mode', '?'):<6} "
+        f"gbm_enabled={mpc_params.get('residual.gbm_enabled', '?')} "
+        f"-> effective={rs.get('effective_mode', '?'):<6} "
+        f"trained={rs.get('samples_trained', '?')} "
+        f"accepted={rs.get('samples_accepted_this_run', '?')} "
+        f"use_gbm={rs.get('use_gbm', '?')} "
+        f"|theta_s|={rs.get('theta_s_norm', 0.0):.3f} "
+        f"last_pred=({rs.get('last_pred_s', 0.0):+.3f},{rs.get('last_pred_d', 0.0):+.3f}) "
+        f"max|d|={metrics['max_abs_d']:.2f} "
+        f"laps={metrics['completed_laps']} "
+        f"hash={traj_hash}",
+        flush=True,
+    )
 
     if result is not None and aborted and result.ds.size:
         abort_step = len(result.ds) - 1
@@ -650,6 +695,8 @@ def _run_one_compare(mode: str, seed: int, args_dict: dict) -> dict:
         "lap_time": lap_time,
         "avg_speed": avg_speed,
         "total_time": total_time,
+        "trajectory_hash": traj_hash,
+        "residual_stats": residual_stats,
         "result": result,  # kept in-process for render; not serialised by joblib
     }
 
@@ -767,6 +814,88 @@ def cmd_compare_residuals(args):
         json.dump(summary, f, indent=2)
     with open(os.path.join(out_dir, "failure_points.json"), "w") as f:
         json.dump(failure_points, f, indent=2)
+
+    # Cross-mode trajectory-hash check + per-mode learner-state aggregation.
+    # Even when the planner doesn't yet fold residual predictions back into
+    # its command output (current state of mpc.py — res_ps/res_pd reach
+    # telemetry only), the *learners* still differ across modes: off trains
+    # nothing, rls trains RLS, gbm trains both and may flip via the selector.
+    # Surface those differences so the comparison is informative even when
+    # trajectories collide.
+    hashes_per_mode: dict[str, set[str]] = {}
+    for mode in args.modes:
+        s = {r.get("trajectory_hash", "") for r in mode_results[mode] if r.get("trajectory_hash")}
+        if s:
+            hashes_per_mode[mode] = s
+    duplicate_pairs = []
+    mode_list = list(hashes_per_mode.keys())
+    for i, m1 in enumerate(mode_list):
+        for m2 in mode_list[i + 1:]:
+            shared = hashes_per_mode[m1] & hashes_per_mode[m2]
+            if shared:
+                duplicate_pairs.append((m1, m2))
+    if duplicate_pairs:
+        print(
+            "\nNOTE: some modes produced byte-identical trajectories. Predictions",
+            flush=True,
+        )
+        print(
+            "      reach telemetry but mpc.py does not yet fold res_ps/res_pd into",
+            flush=True,
+        )
+        print(
+            "      throttle/steering — the planner's control output is the same",
+            flush=True,
+        )
+        print(
+            "      across modes. Compare learner stats below for the real signal.",
+            flush=True,
+        )
+        for m1, m2 in duplicate_pairs:
+            print(f"      {m1} <-> {m2} share trajectories", flush=True)
+    else:
+        print("\nAll modes produced distinct trajectories.", flush=True)
+
+    # Aggregate residual-learner state per mode and write to summary.
+    learner_summary = {}
+    for mode in args.modes:
+        rs_list = [r.get("residual_stats") or {} for r in mode_results[mode]]
+        if not rs_list:
+            continue
+
+        def _avg(key, cast=float, default=0.0):
+            vals = [cast(rs[key]) for rs in rs_list if key in rs]
+            return float(np.mean(vals)) if vals else default
+
+        learner_summary[mode] = {
+            "effective_mode": rs_list[0].get("effective_mode", "?"),
+            "samples_trained_mean": _avg("samples_trained"),
+            "samples_accepted_mean": _avg("samples_accepted_this_run"),
+            "theta_s_norm_mean": _avg("theta_s_norm"),
+            "theta_d_norm_mean": _avg("theta_d_norm"),
+            "use_gbm_any": any(bool(rs.get("use_gbm")) for rs in rs_list),
+            "last_pred_s_mean": _avg("last_pred_s"),
+            "last_pred_d_mean": _avg("last_pred_d"),
+            "outliers_dropped_mean": _avg("outliers_dropped"),
+            "off_line_skipped_mean": _avg("off_line_skipped"),
+        }
+    with open(os.path.join(out_dir, "learner_summary.json"), "w") as f:
+        json.dump(learner_summary, f, indent=2)
+
+    print("\nResidual-learner state per mode (mean across seeds):", flush=True)
+    print(f"  {'mode':<8}{'eff':<8}{'trained':>9}{'accepted':>10}{'|theta_s|':>10}{'|theta_d|':>10}{'pred_s':>8}{'pred_d':>8}{'use_gbm':>8}", flush=True)
+    for mode, ls in learner_summary.items():
+        print(
+            f"  {mode:<8}{ls['effective_mode']:<8}"
+            f"{ls['samples_trained_mean']:>9.0f}"
+            f"{ls['samples_accepted_mean']:>10.0f}"
+            f"{ls['theta_s_norm_mean']:>10.3f}"
+            f"{ls['theta_d_norm_mean']:>10.3f}"
+            f"{ls['last_pred_s_mean']:>+8.3f}"
+            f"{ls['last_pred_d_mean']:>+8.3f}"
+            f"{str(ls['use_gbm_any']):>8}",
+            flush=True,
+        )
 
     # Summary table
     col_w = 10

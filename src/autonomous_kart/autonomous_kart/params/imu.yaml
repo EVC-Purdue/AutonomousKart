@@ -12,7 +12,7 @@ imu_node:
     gyro_lsb_per_dps: 131.0
 
     # Motion guards used during calibration per sample to force retry
-    gyro_motion_thresh: 0.02      # rad/s, ~1.1 deg/s of jitter allowed
+    gyro_motion_thresh: 0.08      # rad/s, ~4.6 deg/s of jitter allowed
     accel_motion_thresh: 0.6      # m/s^2 deviation from |g|
 
     cmd_vel_zero_eps: 0.01        # m/s

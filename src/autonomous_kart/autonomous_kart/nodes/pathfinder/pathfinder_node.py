@@ -109,6 +109,13 @@ class PathfinderNode(Node):
             raise ValueError(
                 f"Unknown planner '{self.active_planner_name}'. Available: {list(PLANNERS)}"
             )
+        # Per-planner steering gain (planner-deg -> hardware-deg). Applied
+        # before publishing cmd_drive so downstream (e_comms, sim bicycle)
+        # sees hardware-frame steering regardless of which planner is active.
+        self._planner_gains = {
+            name: self._param(f"{name}.steering_gain", 1.0, float) for name in PLANNERS
+        }
+        self.steering_gain = self._planner_gains[self.active_planner_name]
         self.planners: dict = {}
         if self.racing_line:
             self.planners = self._build_planners()
@@ -216,6 +223,7 @@ class PathfinderNode(Node):
             self.logger.warning(f"pathfinder/planner: '{name}' not constructed")
             return
         self.active_planner_name = name
+        self.steering_gain = self._planner_gains.get(name, 1.0)
         self.logger.info(f"active planner -> {name}")
 
     def _on_line_swap(self, msg: String):
@@ -300,7 +308,7 @@ class PathfinderNode(Node):
         motor_mps, steering_deg = safe
         self.cmd_count += 1
         self.drive_publisher.publish(
-            Float32MultiArray(data=[float(motor_mps), float(steering_deg)])
+            Float32MultiArray(data=[float(motor_mps), float(steering_deg * self.steering_gain)])
         )
         # Keep training the shared residual under non-MPC planners
         if self.active_planner_name != MPCPlanner.name and mpc is not None:

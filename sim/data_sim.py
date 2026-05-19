@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from collections import deque
 from typing import Deque, Tuple
 
@@ -17,18 +18,34 @@ from sim.noise_model import NoiseModel
 class DataSim:
     def __init__(
         self,
-        params_path: str,
-        noise_path: str,
+        params_path: str | None = None,
+        noise_path: str | None = None,
         mlp_path: str | None = None,
         norm_path: str | None = None,
         clamp_path: str | None = None,
         residual_emp_path: str | None = None,
         noise_mode: str = "none",
         rng_seed: int = 0,
+        bicycle_params: BicycleParams | None = None,
     ):
-        with open(params_path) as f:
-            self.params = BicycleParams(**json.load(f)["params"])
-        self.noise = NoiseModel.load(noise_path)
+        # Bicycle physics — preferred order:
+        #   1. explicit bicycle_params= (a KartPhysics-derived dataclass)
+        #   2. params_path JSON (legacy bag-fit; kept for back-compat)
+        #   3. yaml-aligned KartPhysics defaults
+        if bicycle_params is not None:
+            self.params = bicycle_params
+        elif params_path is not None and os.path.isfile(params_path):
+            with open(params_path) as f:
+                self.params = BicycleParams(**json.load(f)["params"])
+        else:
+            from sim.kart_params import KartPhysics
+            self.params = KartPhysics().to_bicycle_params()
+        # Noise model: optional (synth ticks if no file).
+        if noise_path is not None and os.path.isfile(noise_path):
+            self.noise = NoiseModel.load(noise_path)
+        else:
+            self.noise = NoiseModel(sigma_v=0.5, sigma_psidot=0.05,
+                                    sigma_steer_cmd=0.2, sigma_throttle_cmd=0.5)
         if noise_mode not in ("none", "gaussian", "bootstrap"):
             raise ValueError(f"unknown noise_mode {noise_mode!r}")
         self.noise_mode = noise_mode
@@ -150,7 +167,31 @@ class DataSim:
         # Noise — see _draw_noise.
         n_dv, n_psi = self._draw_noise()
 
-        self.v += (dv_struct + d_dv + n_dv) * dt
+        # --- tire grip saturation ---
+        # The kinematic bicycle has infinite grip — it'll happily turn at any
+        # a_lat. Real karts can't. Above tire_a_lat_max, the tire saturates:
+        # actual a_lat is capped (kart understeers) and forward speed bleeds
+        # toward the grip-limited cap v_grip = sqrt(grip·L / |tan(δ)|).
+        # Calibrated from bag 231452: at κ=0.14 kart steady-states at v≈4.38,
+        # giving a_lat ≈ 2.7 m/s².  Set tire_a_lat_max_mps2=inf to disable.
+        tan_d_abs = abs(math.tan(delta))
+        grip_slip_decel = 0.0
+        if (p.tire_a_lat_max_mps2 != float("inf")
+                and tan_d_abs > 1e-4
+                and p.wheelbase_m > 1e-6):
+            a_lat_demand = self.v * self.v * tan_d_abs / p.wheelbase_m
+            if a_lat_demand > p.tire_a_lat_max_mps2:
+                v_grip = math.sqrt(p.tire_a_lat_max_mps2 * p.wheelbase_m / tan_d_abs)
+                if self.v > v_grip:
+                    # Bleed excess speed toward v_grip with tau_slip.
+                    grip_slip_decel = (self.v - v_grip) / max(p.tire_slip_tau_s, 1e-6)
+                # Cap actual yaw rate so a_lat doesn't exceed grip: ω·v ≤ grip
+                psi_dot_grip = p.tire_a_lat_max_mps2 / max(self.v, 0.1)
+                psi_dot_struct = math.copysign(
+                    min(abs(psi_dot_struct), psi_dot_grip), psi_dot_struct
+                )
+
+        self.v += (dv_struct + d_dv + n_dv - grip_slip_decel) * dt
         self.v = max(0.0, min(p.v_max_mps, self.v))
         psi_dot = psi_dot_struct + d_psi + n_psi
         self.yaw += psi_dot * dt

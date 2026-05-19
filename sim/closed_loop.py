@@ -111,13 +111,9 @@ DEFAULT_MPC = {
     "frenet_v_window_s": 0.3,
     # NOTE: the planner reads `target_speed_mps` (a literal m/s cap), NOT a
     # percentage. The kart's actual speed is min(line's per-tick vx_mps,
-    # target_speed_mps). For line6.csv vx_mps=6 throughout, so this number IS
-    # the effective speed limit. Bag 231452 was driven at ~1 m/s average, so
-    # the identified kart dynamics are most accurate near that speed; pushing
-    # the sim past ~3 m/s makes the kart drift wide on tight figure-8 turns
-    # because the identified steer_gain (0.245) and steer_rate_max (30 deg/s)
-    # were bound-pinned during system ID on the dynamics-poor bag data.
-    "target_speed_mps": 3.0,
+    # target_speed_mps). For line6.csv vx_mps=6 throughout, the line drives
+    # the speed unless target_speed_mps is set lower.
+    "target_speed_mps": 12.0,
     "target_speed_pct": 1.0,  # unused by planner; kept for backward compat
     "track_half_width_m": 2.0,
     "safety_margin_m": 0.5,
@@ -200,16 +196,9 @@ def _signed_d_at(
 
 
 def _kart_from_yaml() -> KartConstants:
-    # Keep in sync with params/pathfinder.yaml /**: block.
-    return KartConstants(
-        v_max_mps=12.0,
-        wheelbase_m=1.05,
-        steer_max_deg=60.0,
-        steer_rate_max_degps=180.0,
-        a_max_mps2=2.0,
-        a_min_mps2=-3.0,
-        a_lat_max_mps2=4.0,
-    )
+    """KartConstants for the MPC planner — sourced from KartPhysics."""
+    from sim.kart_params import KartPhysics
+    return KartPhysics().to_kart_constants()
 
 
 # ---------------------------------------------------------------------------
@@ -270,13 +259,17 @@ def simulate(
         from sim.data_sim import DataSim
         # Resolve relative model dir from repo root
         mdir = datasim_model_dir if os.path.isabs(datasim_model_dir) else os.path.join(REPO, datasim_model_dir)
-        # MLP residual has a small positive dv bias that compounds in closed
-        # loop (kart over-accelerates and drifts off the line). Disable it to
-        # use ID-only DataSim — strictly better than sim_bicycle.py for
-        # closed-loop sims per the validation harness.
+        # Bicycle physics come from KartPhysics (yaml-aligned), not from a
+        # bag-fit JSON. The MLP residual / clamp files (if present) layer on
+        # top to model anything the structured bicycle can't explain. Disable
+        # with datasim_use_mlp=False — recommended in closed loop since the
+        # currently-trained MLP has a positive dv bias that compounds.
         mlp_path = os.path.join(mdir, "mlp.pt") if datasim_use_mlp else None
         norm_path = os.path.join(mdir, "norm.json") if datasim_use_mlp else None
         clamp_path = os.path.join(mdir, "clamp.json") if datasim_use_mlp else None
+        # Optional: a user-supplied kart_params.json overlay in the model dir
+        # bypasses the code-level defaults.  Format: same as KartPhysics fields.
+        kart_params_json = os.path.join(mdir, "kart_params.json")
         model = DataSim(
             params_path=os.path.join(mdir, "bicycle_params.json"),
             noise_path=os.path.join(mdir, "noise.json"),

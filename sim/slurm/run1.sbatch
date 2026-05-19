@@ -22,7 +22,7 @@ if [[ ! -f "${REPO_ROOT}/sim/runner.py" ]]; then
     echo "  Run 'sbatch sim/slurm/run1.sbatch' from the repo root, or set REPO_ROOT explicitly." >&2
     exit 1
 fi
-
+source $SCRATCH/venvs/autonomous-kart/bin/activate
 # Python environment activation.
 # Set SIM_PY_ENV_ACTIVATE=/path/to/venv/bin/activate in your .bashrc or before
 # calling sbatch, e.g.:   SIM_PY_ENV_ACTIVATE=~/venvs/kart/bin/activate sbatch ...

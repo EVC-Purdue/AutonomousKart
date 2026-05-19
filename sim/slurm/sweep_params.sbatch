@@ -12,6 +12,7 @@
 
 # Run a 400-trial Bayesian (Optuna TPE) parameter sweep over MPC weights.
 set -euo pipefail
+source $SCRATCH/venvs/autonomous-kart/bin/activate
 
 # Repo root resolution. SLURM spools the script to /var/spool so "$0" doesn't
 # point at the original path — use $SLURM_SUBMIT_DIR (set to the dir where you

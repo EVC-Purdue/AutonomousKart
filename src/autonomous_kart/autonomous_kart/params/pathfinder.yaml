@@ -19,7 +19,7 @@
 pathfinder_node:
   ros__parameters:
     # Active planner: mpc | opencv | pure_pursuit
-    planner: pure_pursuit
+    planner: mpc
 
     # pure_pursuit
     pure_pursuit.use_velocity_scaled_lookahead: true
@@ -39,7 +39,13 @@ pathfinder_node:
     pure_pursuit.rejoin_cte_deactivate: 1.0
     pure_pursuit.rejoin_merge_lookahead_m: 15.0
     pure_pursuit.latency_s: 0.4
-    pure_pursuit.steering_gain: 3.0
+    # Was 3.0 (default landed in commit 7f34634 on 2026-05-18). Pre-refactor
+    # PP went through e_comms's `steering_deg *= 2`, so the effective net
+    # amplification was ×2. Restoring 2.0 here matches the historical tune;
+    # 3.0 over-gained the steering loop and caused oscillating divergence
+    # at sharp corners (run 20260519_214619 lost the line at the top-left
+    # apex, cmd_steering ringing ±40° before closest_idx wrapped to idx≈3).
+    pure_pursuit.steering_gain: 2.0
 
     # opencv
 

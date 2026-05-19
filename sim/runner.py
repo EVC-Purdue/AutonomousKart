@@ -113,6 +113,7 @@ def _sweep_objective(
     defaults: dict,
     sim_backend: str,
     datasim_model_dir: str,
+    datasim_use_mlp: bool,
     noise_mode: str,
     n_laps: int,
     seeds_per_trial: int,
@@ -130,6 +131,7 @@ def _sweep_objective(
             line, params,
             sim_backend=sim_backend,
             datasim_model_dir=datasim_model_dir,
+            datasim_use_mlp=datasim_use_mlp,
             noise_mode=noise_mode,
             rng_seed=seed,
             n_laps=n_laps,
@@ -175,6 +177,8 @@ def _add_one_parser(sub):
     p.add_argument("--line", default="data/racing_line/line6.csv")
     p.add_argument("--sim", choices=["bicycle", "datasim"], default="datasim")
     p.add_argument("--datasim-model-dir", default="sim/model")
+    p.add_argument("--no-mlp", action="store_true", help="disable MLP residual in DataSim (use ID-only bicycle path). Recommended for closed-loop sims — the MLP has a small positive dv bias that compounds.")
+
     p.add_argument("--noise-mode", choices=["none", "gaussian", "bootstrap"], default="none")
     p.add_argument("--params-json", default=None, help="JSON overlay onto DEFAULT_MPC")
     p.add_argument("--laps", type=int, default=2)
@@ -211,6 +215,7 @@ def cmd_one(args):
         line, mpc_params,
         sim_backend=args.sim,
         datasim_model_dir=args.datasim_model_dir,
+        datasim_use_mlp=not args.no_mlp,
         noise_mode=args.noise_mode,
         rng_seed=args.seed,
         n_laps=args.laps,
@@ -273,6 +278,8 @@ def cmd_one(args):
 def _add_sweep_parser(sub):
     p = sub.add_parser("sweep", help="Optuna sweep over MPC params")
     p.add_argument("--line", default="data/racing_line/line6.csv")
+    p.add_argument("--no-mlp", action="store_true", help="disable MLP residual in DataSim (use ID-only bicycle path). Recommended for closed-loop sims — the MLP has a small positive dv bias that compounds.")
+
     p.add_argument("--sim", choices=["bicycle", "datasim"], default="datasim")
     p.add_argument("--datasim-model-dir", default="sim/model")
     p.add_argument("--noise-mode", choices=["none", "gaussian", "bootstrap"], default="none")
@@ -341,6 +348,7 @@ def cmd_sweep(args):
         defaults=dict(DEFAULT_MPC),
         sim_backend=args.sim,
         datasim_model_dir=args.datasim_model_dir,
+        datasim_use_mlp=not args.no_mlp,
         noise_mode=args.noise_mode,
         n_laps=args.laps,
         seeds_per_trial=args.seeds_per_trial,
@@ -451,6 +459,7 @@ def cmd_sweep(args):
             line, best_params,
             sim_backend=args.sim,
             datasim_model_dir=args.datasim_model_dir,
+            datasim_use_mlp=not args.no_mlp,
             noise_mode=args.noise_mode,
             rng_seed=0,
             n_laps=args.laps,
@@ -560,6 +569,7 @@ def _run_one_compare(mode: str, seed: int, args_dict: dict) -> dict:
             line, mpc_params,
             sim_backend=args_dict["sim"],
             datasim_model_dir=args_dict["datasim_model_dir"],
+            datasim_use_mlp=args_dict.get("datasim_use_mlp", True),
             noise_mode=args_dict["noise_mode"],
             rng_seed=seed,
             n_laps=args_dict["laps"],
@@ -648,6 +658,7 @@ def _add_compare_residuals_parser(sub):
     p = sub.add_parser("compare-residuals",
                        help="compare multiple residual-learner modes side-by-side")
     p.add_argument("--line", default="data/racing_line/line6.csv")
+    p.add_argument("--no-mlp", action="store_true", help="disable MLP residual in DataSim (use ID-only bicycle path). Recommended for closed-loop sims — the MLP has a small positive dv bias that compounds.")
     p.add_argument("--sim", choices=["bicycle", "datasim"], default="datasim")
     p.add_argument("--datasim-model-dir", default="sim/model")
     p.add_argument("--noise-mode", choices=["none", "gaussian", "bootstrap"], default="none")
@@ -690,6 +701,7 @@ def cmd_compare_residuals(args):
         "line_path": line_path,
         "sim": args.sim,
         "datasim_model_dir": args.datasim_model_dir,
+        "datasim_use_mlp": not args.no_mlp,
         "noise_mode": args.noise_mode,
         "params_json": args.params_json,
         "laps": args.laps,

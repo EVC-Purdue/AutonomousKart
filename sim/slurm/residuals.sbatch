@@ -39,6 +39,7 @@ echo "Job ${SLURM_JOB_ID:-local}: residual-compare -> $OUT_DIR"
 
 python3 "${REPO_ROOT}/sim/runner.py" compare-residuals \
     --sim datasim \
+    --no-mlp \
     --laps 5 \
     --seeds 4 \
     --modes off rls gbm both \

@@ -190,9 +190,9 @@ def _signed_d_at(
 def _kart_from_yaml() -> KartConstants:
     # Keep in sync with params/pathfinder.yaml /**: block.
     return KartConstants(
-        v_max_mps=20.0,
+        v_max_mps=12.0,
         wheelbase_m=1.05,
-        steer_max_deg=25.0,
+        steer_max_deg=60.0,
         steer_rate_max_degps=180.0,
         a_max_mps2=2.0,
         a_min_mps2=-3.0,
@@ -209,6 +209,7 @@ def simulate(
     *,
     sim_backend: str = "datasim",
     datasim_model_dir: str = "sim/model",
+    datasim_use_mlp: bool = True,
     noise_mode: str = "none",
     rng_seed: int = 0,
     n_laps: int = 2,
@@ -257,12 +258,19 @@ def simulate(
         from sim.data_sim import DataSim
         # Resolve relative model dir from repo root
         mdir = datasim_model_dir if os.path.isabs(datasim_model_dir) else os.path.join(REPO, datasim_model_dir)
+        # MLP residual has a small positive dv bias that compounds in closed
+        # loop (kart over-accelerates and drifts off the line). Disable it to
+        # use ID-only DataSim — strictly better than sim_bicycle.py for
+        # closed-loop sims per the validation harness.
+        mlp_path = os.path.join(mdir, "mlp.pt") if datasim_use_mlp else None
+        norm_path = os.path.join(mdir, "norm.json") if datasim_use_mlp else None
+        clamp_path = os.path.join(mdir, "clamp.json") if datasim_use_mlp else None
         model = DataSim(
             params_path=os.path.join(mdir, "bicycle_params.json"),
             noise_path=os.path.join(mdir, "noise.json"),
-            mlp_path=os.path.join(mdir, "mlp.pt"),
-            norm_path=os.path.join(mdir, "norm.json"),
-            clamp_path=os.path.join(mdir, "clamp.json"),
+            mlp_path=mlp_path,
+            norm_path=norm_path,
+            clamp_path=clamp_path,
             residual_emp_path=os.path.join(mdir, "residual_emp.npz"),
             noise_mode=noise_mode,
             rng_seed=rng_seed,

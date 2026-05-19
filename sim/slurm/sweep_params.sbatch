@@ -62,6 +62,7 @@ echo "Job ${SLURM_JOB_ID:-local}: sweep -> $OUT_DIR"
 
 python3 "${REPO_ROOT}/sim/runner.py" sweep \
     --sim datasim \
+    --no-mlp \
     --trials 400 \
     --n-jobs "${SLURM_CPUS_PER_TASK:-64}" \
     --startup 30 \

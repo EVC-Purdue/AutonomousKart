@@ -22,6 +22,11 @@ class BicycleParams:
     steer_rate_max_degps: float = 180.0
     slip_angle_at_v: float = 0.0  # rad/(m/s); negative reduces yaw rate at high v
     v_max_mps: float = 12.0
+    # Lateral grip: max a_lat the tires can sustain.  Above this the kart
+    # slips (understeers) and speed bleeds toward sqrt(grip · L / |tan(δ)|).
+    # Default inf preserves the old kinematic-bicycle (infinite-grip) behavior.
+    tire_a_lat_max_mps2: float = float("inf")
+    tire_slip_tau_s: float = 0.2
 
 
 def _delay_shift(cmd: np.ndarray, delay_s: float, dt: float) -> np.ndarray:

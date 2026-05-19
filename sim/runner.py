@@ -191,6 +191,9 @@ def _add_one_parser(sub):
                    help="hard cap on GIF frames (default 5000)")
     p.add_argument("--realtime-factor", type=float, default=1.0,
                    help="sim-seconds per GIF-second; 1.0=real time, 10=10x sped up")
+    p.add_argument("--bag-npz", default=None, metavar="PATH",
+                   help="aligned bag .npz (sim/load_bags.py output) — overlay real "
+                        "kart trajectory + lateral-offset stats against the sim")
 
 
 def cmd_one(args):
@@ -273,6 +276,117 @@ def cmd_one(args):
         f"one: laps={result.completed_laps} avg_lap={result.avg_lap_time_s:.2f}s "
         f"max|d|={result.max_abs_d:.3f}m avg_v={result.avg_speed:.2f}m/s "
         f"safe={result.safe} aborted={result.aborted} -> {out_dir}"
+    )
+
+    if args.bag_npz:
+        _compare_sim_to_bag(
+            sim_xs=result.xs, sim_ys=result.ys, sim_vs=result.vs, sim_ds=result.ds,
+            bag_npz=args.bag_npz, line_path=line_path, out_dir=out_dir,
+            sim_label=f"{args.sim} sim on {os.path.basename(args.line)}",
+        )
+
+
+def _compare_sim_to_bag(*, sim_xs, sim_ys, sim_vs, sim_ds,
+                        bag_npz: str, line_path: str, out_dir: str,
+                        sim_label: str) -> None:
+    """Overlay sim trajectory against a real bag's /odom on the same line.
+    Writes comparison.png + comparison.json into out_dir."""
+    import csv as _csv
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from sim.load_bags import AlignedBag
+
+    # Load line geometry
+    with open(line_path) as f:
+        rows = list(_csv.reader(f))[1:]
+    lx = np.array([float(r[1]) for r in rows])
+    ly = np.array([float(r[2]) for r in rows])
+    dx = np.empty_like(lx); dy = np.empty_like(ly)
+    dx[1:-1] = lx[2:] - lx[:-2]; dy[1:-1] = ly[2:] - ly[:-2]
+    dx[0] = lx[1] - lx[0]; dy[0] = ly[1] - ly[0]
+    dx[-1] = lx[-1] - lx[-2]; dy[-1] = ly[-1] - ly[-2]
+    L = np.hypot(dx, dy); L = np.where(L < 1e-9, 1.0, L)
+    nx, ny = -dy / L, dx / L  # left-hand normal
+
+    # Load bag
+    bag = AlignedBag.from_npz(bag_npz if os.path.isabs(bag_npz) else os.path.join(REPO, bag_npz))
+    auto = bag.autonomous
+    bag_x, bag_y, bag_v = bag.odom_x[auto], bag.odom_y[auto], bag.v[auto]
+
+    # Global nearest-point projection (figure-8 safe)
+    def _project(xs, ys):
+        out = np.empty(len(xs))
+        for i in range(len(xs)):
+            d = (lx - xs[i]) ** 2 + (ly - ys[i]) ** 2
+            j = int(np.argmin(d))
+            out[i] = (xs[i] - lx[j]) * nx[j] + (ys[i] - ly[j]) * ny[j]
+        return out
+
+    bag_d = _project(bag_x, bag_y)
+    drive_mask = bag_v > 3.0  # filter stops
+
+    # Track edges
+    HW = 2.0
+    left_x = lx + nx * HW; left_y = ly + ny * HW
+    right_x = lx - nx * HW; right_y = ly - ny * HW
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    sim_max_d = float(np.abs(sim_ds).max())
+    bag_max_d = float(np.abs(bag_d).max())
+    sim_mean_d = float(np.abs(sim_ds).mean())
+    bag_mean_d = float(np.abs(bag_d).mean())
+    bag_mean_d_drive = float(np.abs(bag_d[drive_mask]).mean()) if drive_mask.any() else float("nan")
+
+    for ax, label, x, y in [
+        (axes[0],
+         f"{sim_label}\n|d| mean={sim_mean_d:.3f}m  max={sim_max_d:.2f}m  v_mean={sim_vs.mean():.2f} m/s",
+         sim_xs, sim_ys),
+        (axes[1],
+         f"REAL bag {os.path.basename(bag_npz)}\n|d| mean={bag_mean_d:.3f}m  (driving v>3 m/s: {bag_mean_d_drive:.3f}m)  max={bag_max_d:.2f}m",
+         bag_x, bag_y),
+    ]:
+        ax.plot(left_x, left_y, "#444", lw=1.0)
+        ax.plot(right_x, right_y, "#444", lw=1.0)
+        ax.plot(lx, ly, "#999", lw=0.5, ls="--", label="racing line")
+        ax.plot(x, y, "#0a7", lw=0.7, alpha=0.7, label="kart path")
+        ax.set_aspect("equal")
+        ax.set_title(label, fontsize=11)
+        ax.grid(alpha=0.3)
+        ax.legend(loc="lower right", fontsize=8, frameon=False)
+    fig.tight_layout()
+    out_png = os.path.join(out_dir, "comparison.png")
+    fig.savefig(out_png, dpi=120)
+    plt.close(fig)
+
+    stats = {
+        "sim": {
+            "ticks": int(sim_xs.size),
+            "v_mean": float(sim_vs.mean()),
+            "v_max": float(sim_vs.max()),
+            "abs_d_mean": sim_mean_d,
+            "abs_d_max": sim_max_d,
+        },
+        "bag": {
+            "ticks_autonomous": int(auto.sum()),
+            "ticks_driving_v_gt_3": int(drive_mask.sum()),
+            "v_mean_all": float(bag_v.mean()),
+            "v_mean_driving": float(bag_v[drive_mask].mean()) if drive_mask.any() else None,
+            "v_max": float(bag_v.max()),
+            "abs_d_mean_all": bag_mean_d,
+            "abs_d_mean_driving": bag_mean_d_drive,
+            "abs_d_max": bag_max_d,
+        },
+        "line": os.path.basename(line_path),
+        "bag_file": os.path.basename(bag_npz),
+    }
+    with open(os.path.join(out_dir, "comparison.json"), "w") as f:
+        json.dump(stats, f, indent=2)
+
+    print(
+        f"compare-to-bag: sim |d|_mean={sim_mean_d:.3f}m max={sim_max_d:.2f}m"
+        f"  |  bag(driving) |d|_mean={bag_mean_d_drive:.3f}m max={bag_max_d:.2f}m"
+        f"  -> {out_png}"
     )
 
 

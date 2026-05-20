@@ -13,9 +13,11 @@ def generate_launch_description():
     safety_yaml = os.path.join(pkg_share, "params", "safety.yaml")
     system_yaml = os.path.join(pkg_share, "params", "system.yaml")
     pathfinder_yaml = os.path.join(pkg_share, "params", "pathfinder.yaml")
-    localization_yaml = os.path.join(pkg_share, "params", "localization.yaml")
     imu_yaml = os.path.join(pkg_share, "params", "imu.yaml")
     e_comms_yaml = os.path.join(pkg_share, "params", "e_comms.yaml")
+    actuators_yaml = os.path.join(pkg_share, "params", "actuators.yaml")
+    localization_yaml = os.path.join(pkg_share, "params", "localization.yaml")
+    opencv_yaml = os.path.join(pkg_share, "params", "opencv_pathfinder.yaml")
 
     sim_mode = LaunchConfiguration("simulation_mode")
 
@@ -34,12 +36,6 @@ def generate_launch_description():
                     ),
                     Node(
                         package="autonomous_kart",
-                        executable="opencv_pathfinder_node",
-                        name="opencv_pathfinder_node",
-                        parameters=[gps_yaml],
-                    ),
-                    Node(
-                        package="autonomous_kart",
                         executable="localization_node",
                         name="localization_node",
                         parameters=[pathfinder_yaml, localization_yaml],
@@ -48,7 +44,7 @@ def generate_launch_description():
                         package="autonomous_kart",
                         executable="e_comms_node",
                         name="e_comms_node",
-                        parameters=[e_comms_yaml],
+                        parameters=[e_comms_yaml, actuators_yaml, pathfinder_yaml],
                     ),
                     Node(
                         package="autonomous_kart",

@@ -107,6 +107,7 @@ class PathfinderNode(Node):
         self.create_subscription(Float32MultiArray, "track_angles", self._on_track_angles, 5)
         self.create_subscription(String, "system_state", self.update_state, 10)
         self.create_subscription(Float32MultiArray, "manual_commands", self.manual_loop, 5)
+        self.create_subscription(Float32MultiArray, "track_angles", self._on_track_angles, 5)
         self.create_subscription(String, "mpc/residual_mode", self._on_residual_mode, 1)
         self.create_subscription(String, "pathfinder/planner", self._on_planner_swap, 1)
         self.create_subscription(String, "pathfinder/line_path", self._on_line_swap, 1)

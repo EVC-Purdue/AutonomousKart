@@ -67,7 +67,7 @@ pathfinder_node:
     # 0.20 is the lowest safe value for the on-line corner test across plant
     # α in [0.20, 1.00]. Lower this if MPC visibly oversteers; raise it
     # toward the measured PP ratio if MPC visibly undersuits.
-    mpc.actuator_gain: 0.20
+    mpc.actuator_gain: 0.30
     mpc.track_half_width_m: 2.0
     mpc.safety_margin_m: 0.5
     mpc.kart_half_width_m: 0.5025

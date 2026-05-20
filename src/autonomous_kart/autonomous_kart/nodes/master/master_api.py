@@ -128,6 +128,24 @@ def mpc_residual_mode():
     return jsonify({"success": "ok", "mode": reason})
 
 
+@app.route("/mpc/actuator_gain", methods=["GET"])
+def mpc_actuator_gain_get():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify(master_node.get_actuator_gain())
+
+
+@app.route("/mpc/actuator_gain", methods=["POST"])
+def mpc_actuator_gain_set():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    data = request.get_json(silent=True) or {}
+    ok, reason = master_node.set_actuator_gain(data.get("value"))
+    if not ok:
+        return jsonify({"error": reason}), 400
+    return jsonify({"success": "ok", "value": reason})
+
+
 @app.route("/pathfinder/planner", methods=["POST"])
 def pathfinder_planner():
     if not master_node:

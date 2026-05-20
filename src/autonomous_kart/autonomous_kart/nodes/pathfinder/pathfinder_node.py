@@ -72,18 +72,16 @@ class PathfinderNode(Node):
         self.current_speed_mps = 0.0
         self._latest_track_angles: Optional[Tuple[float, ...]] = None
 
-        # Shared ResidualLearner — persists across planner / line swaps so the
-        # residual keeps training while pure_pursuit drives, and survives a
-        # planner switch to MPC. Constructed once here, passed by reference
-        # to every (re)built MPCPlanner instance.
+        # Shared residual learner — survives planner / line swaps so training
+        # state persists across mode changes.
         residual_params = {
             k: p.value
             for k, p in self.get_parameters_by_prefix("mpc.residual").items()
         }
-        from autonomous_kart.nodes.pathfinder.planners.mpc_residual import ResidualLearner
         self.shared_residual = ResidualLearner(residual_params, 1.0 / self.system_frequency)
 
-        # Active planner (and the others — all built, only one drives commands).
+        # All planners are constructed; `active_planner_name` selects which
+        # one drives cmd_drive. MPC still ticks every frame for telemetry.
         self.active_planner_name = self._param("planner", "pure_pursuit", str)
         if self.active_planner_name not in PLANNERS:
             raise ValueError(
@@ -109,7 +107,6 @@ class PathfinderNode(Node):
         self.create_subscription(Float32MultiArray, "track_angles", self._on_track_angles, 5)
         self.create_subscription(String, "system_state", self.update_state, 10)
         self.create_subscription(Float32MultiArray, "manual_commands", self.manual_loop, 5)
-        self.create_subscription(Float32MultiArray, "track_angles", self._on_track_angles, 5)
         self.create_subscription(String, "mpc/residual_mode", self._on_residual_mode, 1)
         self.create_subscription(String, "pathfinder/planner", self._on_planner_swap, 1)
         self.create_subscription(String, "pathfinder/line_path", self._on_line_swap, 1)
@@ -166,8 +163,7 @@ class PathfinderNode(Node):
             return
         self.line_path = path
         self.racing_line = new_line
-        # Rebuild all planners on the new line. The shared residual is passed
-        # to the new MPCPlanner, so theta / training samples are preserved.
+        # Rebuild planners on the new line; shared residual persists.
         self.planners = self._build_planners()
         self.logger.info(f"line -> {path} ({len(new_line)} pts)")
 
@@ -199,10 +195,8 @@ class PathfinderNode(Node):
             track_angles=self._latest_track_angles,
             now_ns=self.get_clock().now().nanoseconds,
         )
-        # Always run MPC.plan() every tick so mpc/status keeps flowing for
-        # telemetry, regardless of system state or which planner is active.
-        # The return value is only used to drive cmd_drive when MPC is active
-        # AND state == AUTONOMOUS; otherwise it's discarded.
+
+        # Always run MPC.plan() so mpc/status keeps flowing for telemetry, regardless of state or active planner
         mpc = self.planners.get(MPCPlanner.name)
         mpc_proposed = None
         if mpc is not None:
@@ -230,19 +224,17 @@ class PathfinderNode(Node):
         self.drive_publisher.publish(
             Float32MultiArray(data=[float(motor_mps), float(steering_deg)])
         )
-        # Residual training runs every tick. If MPC is the active planner, its
-        # own plan() already pushed/stepped — skip to avoid double-counting.
-        if self.active_planner_name != MPCPlanner.name:
-            if mpc is not None:
-                try:
-                    mpc.train_step(
-                        motor_mps, steering_deg,
-                        self.current_xy[0], self.current_xy[1],
-                        self.current_yaw, self.current_speed_mps,
-                        inputs.now_ns,
-                    )
-                except Exception:
-                    self.logger.error(f"Residual train_step error:\n{traceback.format_exc()}")
+        # Keep training the shared residual under non-MPC planners
+        if self.active_planner_name != MPCPlanner.name and mpc is not None:
+            try:
+                mpc.train_step(
+                    motor_mps, steering_deg,
+                    self.current_xy[0], self.current_xy[1],
+                    self.current_yaw, self.current_speed_mps,
+                    inputs.now_ns,
+                )
+            except Exception:
+                self.logger.error(f"Residual train_step error:\n{traceback.format_exc()}")
 
     # Manual mode
     #
@@ -325,9 +317,8 @@ class PathfinderNode(Node):
         return rows
 
     def _build_planners(self) -> dict:
-        """Construct every registered planner against the current racing line.
-        The MPC instance receives the shared ResidualLearner so training state
-        survives planner / line swaps."""
+        """Construct every registered planner. MPC gets the shared residual
+        so training survives planner / line swaps."""
         out: dict = {}
         for name, cls in PLANNERS.items():
             planner_params = {

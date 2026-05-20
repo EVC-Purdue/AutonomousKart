@@ -7,6 +7,6 @@ opencv_pathfinder_node:
     bottom_per: 0.0 #Bottom percent to exclude
     pixel_range: 3
     capture_frequency: 100
-    use_sim_vision: true
+    use_sim_vision: false
     
     

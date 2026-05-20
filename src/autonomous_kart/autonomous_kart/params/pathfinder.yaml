@@ -60,7 +60,7 @@ pathfinder_node:
     mpc.proj_window_fwd: 37
     mpc.frenet_v_window_s: 0.3
     mpc.target_speed_mps: 6.0
-    mpc.steer_observability_v_mps: 2.0
+    mpc.steer_observability_v_mps: 0.5
     # Actuator gain assumed inside MPC's bicycle rollout (yaw = v/L·tan(α·δ)).
     # Code default is 0.10 (fit to 5/19 bags, when linkage was very degraded).
     # Current hardware shows PP works with mild deviation -> real α ≥ ~0.20.

@@ -9,3 +9,4 @@ opencv_pathfinder_node:
     capture_frequency: 100
     use_sim_vision: true
     
+    

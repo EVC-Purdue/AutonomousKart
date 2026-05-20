@@ -304,12 +304,9 @@ class LocalizationNode(Node):
         have_speed = var_v < self.vtg_speed_var_max
 
         if not self.ekf.initialized:
-            if not self._imu_seen:
-                # Wait for IMU before seeding the filter the predict path
-                return
-            # Seed position from the first fix; if VTG yaw/speed aren't
-            # trusted, init them at 0 with large variance and let updates
-            # pull them in.
+            # Seed position from the first fix unconditionally so /odom starts
+            # publishing. Use VTG yaw/speed when trusted; otherwise leave them
+            # at 0 with a large variance and let later updates pull them in.
             yaw0 = yaw_meas if have_yaw else 0.0
             var_yaw0 = var_yaw if have_yaw else (math.pi ** 2)
             v0 = v_meas if have_speed else 0.0

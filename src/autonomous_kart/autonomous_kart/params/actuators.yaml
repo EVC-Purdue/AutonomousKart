@@ -2,5 +2,5 @@
 e_comms_node:
   ros__parameters:
     min_speed: 0.0        # m/s
-    max_steering: 100.0   # %
-    min_steering: -100.0  # %
+    max_steering: 65.0   # %
+    min_steering: -65.0  # %

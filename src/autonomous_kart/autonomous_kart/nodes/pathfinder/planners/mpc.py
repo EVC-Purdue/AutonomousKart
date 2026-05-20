@@ -41,7 +41,7 @@ class MPCPlanner(Planner):
     name = "mpc"
 
     def __init__(self, params: dict, kart: KartConstants, racing_line: list,
-                 logger=None, node=None, residual: Optional[ResidualLearner] = None):
+                 logger=None, node=None, residual: Optional["ResidualLearner"] = None):
         super().__init__(params, kart, racing_line, logger, node=node)
 
         if not racing_line:
@@ -73,7 +73,8 @@ class MPCPlanner(Planner):
         self.a_lat_max = kart.a_lat_max_mps2
         self.target_speed = float(g("target_speed_mps", 6.0))
         # Below this speed, dpsi = v/L*tan(delta) ~= 0 so the cost can't
-        # distinguish steering choices — hold delta at 0 until v crosses the gate.
+        # distinguish steering choices and the argmin picks noise. Hold delta
+        # at 0 and reset the warm-start steering until v crosses this gate.
         self.steer_observability_v = float(g("steer_observability_v_mps", 0.5))
 
         # Corridor (centerline = racing line)
@@ -146,9 +147,11 @@ class MPCPlanner(Planner):
             k[len("residual."):]: v for k, v in params.items()
             if k.startswith("residual.")
         }
-        # Shared ResidualLearner survives planner / line swaps so training state persists
+        # Accept a shared ResidualLearner so training survives planner swaps.
         self.residual = residual if residual is not None else ResidualLearner(residual_params, solve_dt)
         self._nom_steps = max(1, int(round(self.residual.target_horizon_s / self.dt)))
+        # Last commanded throttle (m/s), used to derive accel for train_step
+        # when an external planner drove the kart this tick.
         self._last_motor_mps = 0.0
         self._train_dt = solve_dt
         self._steer_hist = deque([0.0] * NUM_STEER_HIST, maxlen=NUM_STEER_HIST)
@@ -328,8 +331,9 @@ class MPCPlanner(Planner):
             all_dy = self.l_y - y
             all_d2 = all_dx * all_dx + all_dy * all_dy
             j_full = int(np.argmin(all_d2))
-            # Wrap-aware index-distance gate: on a closed loop, reject jumps
-            # to a geometrically-near-but-arc-far segment.
+            # Index-distance gate (wrap-aware): on a closed loop, reject jumps
+            # to a geometrically-near-but-arc-far segment — keeps the planner
+            # from tracking the wrong section when the kart drifts off.
             n = self.line_n
             idx_dist = min((j_full - hint) % n, (hint - j_full) % n)
             if idx_dist < n // 4 and float(all_d2[j_full]) + 1e-6 < best_d2:
@@ -387,6 +391,68 @@ class MPCPlanner(Planner):
         self.l_vx = arrays["vx"]
         self.l_psi = arrays["psi"]
         self.line_closed = bool(arrays.get("closed", False))
+
+    def set_racing_line(self, racing_line: list) -> None:
+        """Swap in a new racing line at runtime. Residual state is preserved
+        (features are kart-state relative, not line-position absolute) but
+        Frenet / warm-start carry stale info from the old line, so reset."""
+        self.racing_line = racing_line
+        self._static_arrays = self._build_line_arrays(racing_line)
+        self._bezier_arrays = None
+        self._set_active_line(self._static_arrays)
+        self.line_manager = DynamicLineManager(racing_line, logger=self.logger)
+        self.line_manager.register(RejoinStrategy(**self._rejoin_kwargs))
+        self.closest_idx = 0
+        self.static_closest_idx = 0
+        self._reset_warm_start()
+        self._pose_hist.clear()
+
+    def train_step(self, motor_mps: float, steering_deg: float,
+                   x: float, y: float, yaw: float, v: float, now_ns: int) -> None:
+        """Update the residual learner using actual motion vs nominal prediction.
+        Callable when MPC is NOT the active planner so the residual keeps
+        training under pure_pursuit / opencv. Publishes a /mpc/status frame so
+        the frontend sees samples_trained / theta norms / errors update."""
+        if not self.residual.enabled:
+            return
+        t0 = time.perf_counter()
+        self._set_active_line(self._static_arrays)
+        s, d, j_now, psi_track, _ = self._frenet(x, y, self.closest_idx)
+        self.closest_idx = j_now
+        self._pose_hist.append((now_ns, s, d))
+        v_s, v_d = self._frenet_velocity()
+        delta_rad = math.radians(steering_deg)
+        # Approximate accel from speed-command delta (pure_pursuit publishes
+        # m/s, not m/s^2 — keep feature units consistent with MPC's plan()).
+        accel = (motor_mps - self._last_motor_mps) / max(self._train_dt, 1e-3)
+        self._last_motor_mps = motor_mps
+        self._steer_hist.appendleft(delta_rad)
+        self._throttle_hist.appendleft(accel)
+        nom_x, nom_y = self._hold_rollout(x, y, yaw, v, delta_rad, accel, self._nom_steps)
+        nom_s, nom_d, _, _, _ = self._frenet(nom_x, nom_y, j_now)
+        kappa_local = self._curvature_at(j_now)
+        phi = _features(
+            d, v_s, v_d, kappa_local,
+            tuple(self._steer_hist), tuple(self._throttle_hist),
+            nom_s - s, nom_d - d,
+        )
+        self.residual.push(phi, s, d, nom_s - s, nom_d - d, v)
+        self.residual.step(s, d)
+        res_ps, res_pd = self.residual.predict(phi)
+        self._publish_status(
+            self.mode, True, t0, s, d, psi_track, v, self.target_speed,
+            delta_rad, accel, 0.0, self.corridor_half,
+            res_ps, res_pd,
+            breakdown=(0.0,) * 12,
+            x=x, y=y, yaw_rad=yaw,
+            throttle_mps_out=motor_mps, v_s=v_s, v_d=v_d,
+            closest_idx_active=j_now,
+            closest_idx_static=j_now,
+            rejoin_active=False, merge_idx=-1,
+            kappa_local=kappa_local,
+            consec_failures=0,
+            corridor_half=self.corridor_half,
+        )
 
     def _reset_warm_start(self) -> None:
         self.u_mean[:] = 0.0
@@ -620,6 +686,7 @@ class MPCPlanner(Planner):
             1.0 if rejoin_active else 0.0, float(merge_idx),
             float(kappa_local), float(consec_failures),
             float(corridor_half),
+            # Residual diagnostics: mode (0=off,1=shadow,2=apply), theta norms.
             float({"off": 0, "shadow": 1, "apply": 2}.get(self.residual.mode, 1)),
             float(np.linalg.norm(self.residual.theta_s)),
             float(np.linalg.norm(self.residual.theta_d)),

@@ -3,7 +3,7 @@ services:
   dev:
     image: ghcr.io/evc-purdue/ros2-humble-dev:main
     container_name: ros2-dev
-    hostname: ros2-dev
+    hostname: "${TARGET_DEVICE:-jetson}-dev"
     volumes:
       - ../:/ws
       - ros_cache:/root/.cache
@@ -11,14 +11,15 @@ services:
     environment:
       - ROS_DISTRO=humble
       - ROS_DOMAIN_ID=42
-      - ROS_LOCALHOST_ONLY=1
+      - ROS_LOCALHOST_ONLY=0
       - CYCLONEDDS_URI=file:///ws/docker/cyclonedds.xml
-    ports:
-      - "8000:8000"
-    devices:
-      - "/dev/ttyACM0:/dev/ttyACM0"
-      - "/dev/ttyTHS1:/dev/ttyTHS1"         # GPS
-      - "/dev/i2c-7:/dev/i2c-7"
+      - TARGET_DEVICE=${TARGET_DEVICE:-jetson}
+      - ROS_NETWORK_INTERFACE=${ROS_NETWORK_INTERFACE:-enP8p1s0}
+#    devices:
+#      - "/dev/ttyACM0:/dev/ttyACM0" # canable
+#      - "/dev/ttyTHS1:/dev/ttyTHS1" # GPS
+#      - "/dev/i2c-7:/dev/i2c-7"     # IMU
+#      - "/dev/video0:/dev/video0"   # camera
     stdin_open: true
     tty: true
     restart: always

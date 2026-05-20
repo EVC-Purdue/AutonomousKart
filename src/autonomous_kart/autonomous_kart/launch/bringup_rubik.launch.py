@@ -29,6 +29,11 @@ def generate_launch_description():
                         name="camera_node",
                         parameters=[camera_yaml],
                     ),
+                    Node(
+                        package="autonomous_kart",
+                        executable="master_api",
+                        name="master_api",
+                    ),
                 ]
             ),
         ]

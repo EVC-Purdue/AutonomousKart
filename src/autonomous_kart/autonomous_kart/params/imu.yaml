@@ -2,18 +2,18 @@
 imu_node:
   ros__parameters:
     imu_frequency: 100  # Hz
-    default_g: -9.80665  # m/s^2
+    default_g: -9.80236  # m/s^2
     i2c_bus: 7
     i2c_address: 0x68
     calibration_samples: 200   # ~2s
-    accel_variance: 0.01  # m²/s⁴   (~0.1 m/s^2 stddev)
+    accel_variance: 0.01  # m^2/s^4   (~0.1 m/s^2 stddev)
     gyro_variance: 0.001  # rad^2/s^2 (~0.03 rad/s stddev)
     accel_per_g: 16384.0
     gyro_lsb_per_dps: 131.0
 
     # Motion guards used during calibration per sample to force retry
-    gyro_motion_thresh: 0.05      # rad/s, ~3 deg/s of jitter allowed
-    accel_motion_thresh: 0.5      # m/s^2 deviation from |g|
+    gyro_motion_thresh: 0.08      # rad/s, ~4.6 deg/s of jitter allowed
+    accel_motion_thresh: 1.5      # m/s^2 tolerance for mean |accel| vs |g| (checked at end of calibration)
 
     cmd_vel_zero_eps: 0.01        # m/s
     cmd_vel_max_age_s: 1.0
@@ -21,12 +21,3 @@ imu_node:
     calibration_cache_path: imu_calibration.json
 
     status_frequency: 1.0  # Hz
-
-master_api:
-  ros__parameters:
-    # IMU yaw-calibration drive
-    yaw_cal_speed: 10.0
-    yaw_cal_duration_s: 5.0
-    yaw_cal_tick_dt: 0.05    # seconds between manual_commands publishes / sample snapshots
-    yaw_cal_accel_floor: 0.3 # m/s^2; only samples with horizontal accel above this are used
-    yaw_cal_min_samples: 30

@@ -19,15 +19,16 @@ class PurePursuitPlanner(Planner):
 
         self.use_velocity_scaled_lookahead = bool(params.get("use_velocity_scaled_lookahead", True))
         self.lookahead_time_s = float(params.get("lookahead_time_s", 1.0))
+        self.latency_s = float(params.get("latency_s", 0.0))
         self.min_lookahead_m = float(params.get("min_lookahead_m", 0.6))
         self.max_lookahead_m = float(params.get("max_lookahead_m", 3.0))
 
         self.use_curvature_regulation = bool(params.get("use_curvature_regulation", True))
         self.min_radius_m = float(params.get("min_radius_m", 2.0))
-        self.min_reg_speed_pct = float(params.get("min_reg_speed_pct", 0.20))
+        self.min_reg_speed_mps = float(params.get("min_reg_speed_mps", 4.0))
 
         self.approach_dist_m = float(params.get("approach_dist_m", 1.0))
-        self.min_approach_speed_pct = float(params.get("min_approach_speed_pct", 0.05))
+        self.min_approach_speed_mps = float(params.get("min_approach_speed_mps", 1.0))
 
         self.search_window = int(params.get("search_window", 80))
         self.max_resync_dist = float(params.get("max_resync_dist", 80.0))
@@ -49,14 +50,14 @@ class PurePursuitPlanner(Planner):
         if not racing_line:
             return None
 
-        current_xy = inputs.pose_xy
-        v_max = self.kart.v_max_mps
-
-        speed_pct = inputs.speed_mps / v_max if v_max > 1e-6 else 1.0
-        if speed_pct < 0.0:
-            speed_pct = 0.0
-        elif speed_pct > 1.0:
-            speed_pct = 1.0
+        if self.latency_s > 0.0:
+            x, y = inputs.pose_xy
+            current_xy = (
+                x + inputs.speed_mps * math.cos(inputs.yaw_rad) * self.latency_s,
+                y + inputs.speed_mps * math.sin(inputs.yaw_rad) * self.latency_s,
+            )
+        else:
+            current_xy = inputs.pose_xy
 
         if self.use_velocity_scaled_lookahead:
             lookahead_m = inputs.speed_mps * self.lookahead_time_s
@@ -98,7 +99,7 @@ class PurePursuitPlanner(Planner):
         if self.line_manager.is_active:
             dyn_line, dyn_idx = self.line_manager.get_line_and_idx()
             if not dyn_line or dyn_idx < 0:
-                target_xy, speed_ref_pct = self._pick_lookahead_point(
+                target_xy, speed_ref_mps = self._pick_lookahead_point(
                     racing_line, self.closest_idx, lookahead_m, current_xy
                 )
             else:
@@ -106,35 +107,35 @@ class PurePursuitPlanner(Planner):
                     dyn_line, current_xy, dyn_idx,
                     window=self.search_window, allow_wrap=False,
                 )
-                target_xy, speed_ref_pct = self._pick_lookahead_point(
+                target_xy, speed_ref_mps = self._pick_lookahead_point(
                     dyn_line, dyn_idx, lookahead_m, current_xy
                 )
                 self.line_manager.set_dynamic_closest_idx(dyn_idx)
         else:
-            target_xy, speed_ref_pct = self._pick_lookahead_point(
+            target_xy, speed_ref_mps = self._pick_lookahead_point(
                 racing_line, self.closest_idx, lookahead_m, current_xy
             )
 
-        motor_pct, steering_pct = pathfinder(
+        motor_mps, steering_deg = pathfinder(
             current_xy=current_xy,
             target_xy=target_xy,
             yaw_rad=inputs.yaw_rad,
-            speed_pct=speed_pct,
+            speed_mps=inputs.speed_mps,
             wheelbase_m=self.kart.wheelbase_m,
             v_max_mps=self.kart.v_max_mps,
             steer_max_deg=self.kart.steer_max_deg,
-            desired_speed_pct=speed_ref_pct,
+            desired_speed_mps=speed_ref_mps,
             use_velocity_scaled_lookahead=self.use_velocity_scaled_lookahead,
             lookahead_time_s=self.lookahead_time_s,
             min_lookahead_m=self.min_lookahead_m,
             max_lookahead_m=self.max_lookahead_m,
             use_curvature_regulation=self.use_curvature_regulation,
             min_radius_m=self.min_radius_m,
-            min_reg_speed_pct=self.min_reg_speed_pct,
+            min_reg_speed_mps=self.min_reg_speed_mps,
             approach_dist_m=self.approach_dist_m,
-            min_approach_speed_pct=self.min_approach_speed_pct,
+            min_approach_speed_mps=self.min_approach_speed_mps,
         )
-        return motor_pct, steering_pct
+        return motor_mps, steering_deg
 
     def dynamic_line_state(self) -> Optional[dict]:
         if self.line_manager.is_active:
@@ -157,11 +158,11 @@ class PurePursuitPlanner(Planner):
 
     @staticmethod
     def _nearest_idx_forward(
-        line: list,
-        xy: Tuple[float, float],
-        start_idx: int,
-        window: int,
-        allow_wrap: bool,
+            line: list,
+            xy: Tuple[float, float],
+            start_idx: int,
+            window: int,
+            allow_wrap: bool,
     ) -> int:
         n = len(line)
         if n == 0:
@@ -206,11 +207,11 @@ class PurePursuitPlanner(Planner):
         return best_i
 
     def _pick_lookahead_point(
-        self,
-        line: list,
-        closest_idx: int,
-        lookahead_m: float,
-        current_xy: Tuple[float, float],
+            self,
+            line: list,
+            closest_idx: int,
+            lookahead_m: float,
+            current_xy: Tuple[float, float],
     ) -> Tuple[Tuple[float, float], float]:
         n = len(line)
         if n == 0:
@@ -227,7 +228,7 @@ class PurePursuitPlanner(Planner):
 
         s_end = float(line[-1][0])
         closed = s_end > 0.0 and (
-            math.hypot(line[0][1] - line[-1][1], line[0][2] - line[-1][2]) <= self.max_closed_dist
+                math.hypot(line[0][1] - line[-1][1], line[0][2] - line[-1][2]) <= self.max_closed_dist
         )
 
         if closed and s_target > s_end:
@@ -247,7 +248,5 @@ class PurePursuitPlanner(Planner):
         tx = float(line[j][1])
         ty = float(line[j][2])
         vx_mps = float(line[j][5]) if len(line[j]) > 5 else 0.0
-        v_max = self.kart.v_max_mps
-        speed_ref_pct = self._clamp01(vx_mps / v_max) if v_max > 1e-6 else 0.0
 
-        return (tx, ty), speed_ref_pct
+        return (tx, ty), vx_mps

@@ -1,0 +1,48 @@
+{
+  "params": {
+    "accel_tau": 0.6,
+    "brake_tau": 0.4,
+    "throttle_delay_s": 1e-10,
+    "steer_delay_s": 1e-10,
+    "steer_gain": 1.0,
+    "steer_slop_deg": 0.7913420097618941,
+    "wheelbase_m": 1.1003142014724272,
+    "steer_rate_max_degps": 180.0,
+    "slip_angle_at_v": -0.1884535407901888,
+    "v_max_mps": 12.0
+  },
+  "fit_info": {
+    "cost": 85958.63796924372,
+    "nfev": 15,
+    "success": true,
+    "sigma_v_rough": 1.1269939613139455,
+    "sigma_p_rough": 0.3576502527752695,
+    "param_order": [
+      "accel_tau",
+      "brake_tau",
+      "throttle_delay_s",
+      "steer_delay_s",
+      "steer_gain",
+      "steer_slop_deg",
+      "wheelbase_m",
+      "steer_rate_max_degps",
+      "slip_angle_at_v"
+    ],
+    "x_final": [
+      4.935379602520705,
+      4.999999998747633,
+      1e-10,
+      1e-10,
+      0.24489874243929322,
+      0.7913420097618941,
+      1.1003142014724272,
+      30.00000017051059,
+      -0.1884535407901888
+    ],
+    "manual_overrides_note": "Several params overridden post-fit because the training bag was 74% stops (v < 0.5 m/s), which dragged the regression away from the kart's actual high-speed driving behavior. Reverted to bicycle defaults / pathfinder.yaml values:  steer_gain=1.0 (was 0.245), steer_rate_max_degps=180 (was 30), accel_tau=0.6 (was 4.9), brake_tau=0.4 (was 5.0). Re-identify these with stops filtered out for a cleaner fit; for now this gives a sim that tracks the line at 6 m/s to match the real kart's normal operation."
+  },
+  "training_bags": [
+    "docs/superpowers/data_sim/cache/215024.npz",
+    "docs/superpowers/data_sim/cache/232625.npz"
+  ]
+}

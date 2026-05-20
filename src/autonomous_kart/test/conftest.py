@@ -1,12 +1,5 @@
 """
 Shared test fixtures.
-
-The production nodes declare their parameters via
-`automatically_declare_parameters_from_overrides=True` and their
-`__init__` methods take no args, so we can't pass `parameter_overrides`
-at construction. Instead we seed the rclpy context with global
-`--ros-args -p key:=value` overrides before creating nodes — this is
-the same mechanism launch files use via `SetParameter`.
 """
 import os
 import sys
@@ -50,7 +43,7 @@ def _format_param_value(value):
         return "true" if value else "false"
     if isinstance(value, (int, float)):
         return repr(value)
-    # Strings — wrap in double quotes so special chars in paths survive.
+    # Strings wrap in double quotes so special chars in paths survive.
     return '"' + str(value).replace('"', '\\"') + '"'
 
 

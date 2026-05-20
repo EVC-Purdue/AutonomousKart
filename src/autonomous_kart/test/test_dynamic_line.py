@@ -99,7 +99,7 @@ def test_activation_generates_dynamic_line_and_calls_hooks():
     assert idx == 0
 
 
-def test_deactivation_restores_racing_line_and_snaps_idx():
+def test_deactivation_restores_racing_line_and_does_not_snap_idx():
     m = DynamicLineManager(_straight_line())
     strat = _AlwaysOn()  # activates then immediately wants out
     m.register(strat)
@@ -108,8 +108,9 @@ def test_deactivation_restores_racing_line_and_snaps_idx():
     m.update(state)  # activate
     m.update(state)  # deactivate on next tick
     assert not m.is_active
-    # The manager should snap state.closest_idx to merge_idx (4) on handoff.
-    assert state.closest_idx == 4
+    # Deactivation leaves the caller's closest_idx untouched; the planner
+    # owns re-syncing onto the racing line on the next tick.
+    assert state.closest_idx == 0
 
 
 def test_end_of_dynamic_line_forces_deactivation():

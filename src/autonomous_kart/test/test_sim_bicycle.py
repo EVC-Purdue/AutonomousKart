@@ -29,7 +29,7 @@ def test_reset_places_pose_and_zeros_speed():
 def test_zero_motor_does_not_move():
     m = _mk()
     for _ in range(100):
-        m.step(motor_pct=0.0, steer_deg=0.0, dt=0.02)
+        m.step(target_mps=0.0, steer_deg=0.0, dt=0.02)
     assert m.x == pytest.approx(0.0, abs=1e-9)
     assert m.y == pytest.approx(0.0, abs=1e-9)
     assert m.speed == pytest.approx(0.0, abs=1e-9)
@@ -61,7 +61,7 @@ def test_motor_is_clamped_to_nonnegative_and_v_max():
 def test_steering_clamped_to_physical_limit():
     m = _mk(steer_max_deg=25.0)
     m.speed = 5.0
-    # Command 90 deg but physical max is 25 deg → yaw rate should match 25 deg
+    # Command 90 deg but physical max is 25 deg -> yaw rate should match 25 deg
     m_ref = _mk(steer_max_deg=25.0)
     m_ref.speed = 5.0
     for _ in range(10):

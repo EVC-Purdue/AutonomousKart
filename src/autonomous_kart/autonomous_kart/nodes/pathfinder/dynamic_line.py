@@ -123,8 +123,7 @@ class DynamicLineManager:
                 self.active_strategy.on_deactivate(state)
                 self.active_strategy = None
                 self.dynamic_line = []
-                # Snap closest_idx to merge point so racing line resumes smoothly
-                state.closest_idx = self.merge_idx
+                # Do NOT snap closest_idx
                 return
 
         # If no strategy is active, check if any should activate (priority order)

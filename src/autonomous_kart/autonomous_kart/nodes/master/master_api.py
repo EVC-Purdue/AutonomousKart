@@ -110,6 +110,46 @@ def e_comms():
     return jsonify(master_node.get_e_comms())
 
 
+@app.route("/mpc_status", methods=["GET"])
+def mpc_status():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify(master_node.get_mpc_status())
+
+
+@app.route("/mpc/residual_mode", methods=["POST"])
+def mpc_residual_mode():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    data = request.get_json(silent=True) or {}
+    ok, reason = master_node.set_residual_mode(data.get("mode", ""))
+    if not ok:
+        return jsonify({"error": reason}), 400
+    return jsonify({"success": "ok", "mode": reason})
+
+
+@app.route("/pathfinder/planner", methods=["POST"])
+def pathfinder_planner():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    data = request.get_json(silent=True) or {}
+    ok, reason = master_node.set_planner(data.get("planner", ""))
+    if not ok:
+        return jsonify({"error": reason}), 400
+    return jsonify({"success": "ok", "planner": reason})
+
+
+@app.route("/pathfinder/line_path", methods=["POST"])
+def pathfinder_line_path():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    data = request.get_json(silent=True) or {}
+    ok, reason = master_node.set_line(data.get("path", ""))
+    if not ok:
+        return jsonify({"error": reason}), 400
+    return jsonify({"success": "ok", "path": reason})
+
+
 @app.route("/gps", methods=["GET"])
 def gps_status():
     if not master_node:
@@ -122,16 +162,6 @@ def imu_calibrate():
     if not master_node:
         return jsonify({"error": "not initialized"}), 500
     master_node.trigger_imu_calibration()
-    return jsonify({"success": "ok"})
-
-
-@app.route("/imu/calibrate_yaw", methods=["POST"])
-def imu_calibrate_yaw():
-    if not master_node:
-        return jsonify({"error": "not initialized"}), 500
-    ok, reason = master_node.start_yaw_calibration()
-    if not ok:
-        return jsonify({"error": reason}), 409
     return jsonify({"success": "ok"})
 
 
@@ -238,6 +268,57 @@ def jetson_rebuild():
     return jsonify({
         "message": "jetson rebuild started"
     })
+
+
+@app.route("/residual/status", methods=["GET"])
+def residual_status():
+    if not master_node:
+        return jsonify({"error": "master node not initialized"}), 500
+    snap = master_node.get_residual_status()
+    if snap is None:
+        return jsonify({"status": "no /mpc/status received yet"}), 200
+    return jsonify(snap), 200
+
+
+@app.route("/residual/log", methods=["GET"])
+def residual_log():
+    if not master_node:
+        return jsonify({"error": "master node not initialized"}), 500
+    try:
+        limit = int(request.args.get("limit", 50))
+    except ValueError:
+        limit = 50
+    return jsonify({"events": master_node.get_residual_log(limit=limit)}), 200
+
+
+@app.route("/residual/log/stream", methods=["GET"])
+def residual_log_stream():
+    if not master_node:
+        return ("master node not initialized", 500)
+    from flask import Response
+    import json as _json
+    import time as _time
+
+    def gen():
+        last_seen = -1
+        while True:
+            events = master_node.get_residual_log(limit=200)
+            # events are newest-first; emit oldest-of-the-new-ones first
+            new = [e for e in reversed(events) if e["train_seq"] > last_seen]
+            for e in new:
+                yield f"event: train\ndata: {_json.dumps(e)}\n\n"
+                last_seen = e["train_seq"]
+            _time.sleep(1.0)
+
+    return Response(gen(), mimetype="text/event-stream")
+
+
+@app.route("/residual/revert", methods=["POST"])
+def residual_revert():
+    if not master_node:
+        return jsonify({"error": "master node not initialized"}), 500
+    master_node.trigger_residual_revert()
+    return ("", 202)
 
 
 def start(node: MasterNode) -> None:

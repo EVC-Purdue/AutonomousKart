@@ -155,7 +155,7 @@ def run_sim(line, params, dt=1.0/60, max_steps=100000, n_laps=2):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--line", default="/ws/data/racing_line/line14.csv")
+    parser.add_argument("--line", default="/ws/data/racing_line/line6.csv")
     parser.add_argument("--laps", type=int, default=2)
     args = parser.parse_args()
 

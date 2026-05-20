@@ -156,7 +156,7 @@ def running_stack():
 
         # Split listeners: high-rate /odom gets its own node + executor so
         # it can't starve the low-rate manual_commands / cmd_drive callbacks.
-        # Also use depth=1 for odom — we only need "did it arrive", not a
+        # Also use depth=1 for odom we only need "did it arrive", not a
         # backlog.
         from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
@@ -287,7 +287,7 @@ def running_stack():
 
 
 # ---------------------------------------------------------------------------
-# API tests — ordered so state transitions compound naturally.
+# API tests ordered so state transitions compound naturally.
 # ---------------------------------------------------------------------------
 
 

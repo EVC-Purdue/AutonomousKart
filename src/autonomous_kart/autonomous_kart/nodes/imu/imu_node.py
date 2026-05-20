@@ -32,6 +32,10 @@ def _level_rotation(g, target):
     K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     return np.eye(3) + K + (K @ K) / (1.0 + c)
 
+# IMU mounted +X forward, +Y right; chip is right-handed so +Z physically
+# points down. Rotate 180° about +X to land in base_link FLU (det = +1).
+R_MOUNT = np.diag([1.0, -1.0, -1.0])
+
 
 class ImuNode(Node):
     def __init__(self):
@@ -75,7 +79,7 @@ class ImuNode(Node):
         # state goes through this lock.
         self._lock = threading.Lock()
         self.gyro_bias = [0.0, 0.0, 0.0]
-        self.R = np.eye(3)
+        self.R = R_MOUNT.copy()
         self._calib_sum = [0.0, 0.0, 0.0]
         self._calib_accel_sum = [0.0, 0.0, 0.0]
         self._calib_count = 0
@@ -89,9 +93,8 @@ class ImuNode(Node):
         self.imu_publisher = self.create_publisher(Imu, "imu", 10)
         self.status_publisher = self.create_publisher(String, "imu/calibration_status", 1)
 
-        self.create_subscription(Float32MultiArray, "cmd_drive", self._cmd_vel_callback, 5)
+        self.create_subscription(Float32, "e_comms/kart_speed_m_per_s", self._cmd_vel_callback, 5)
         self.create_subscription(Empty, "imu/calibrate", self._calibrate_trigger, 1)
-        self.create_subscription(Float32, "imu/yaw_offset", self._yaw_offset_callback, 1)
 
         self.logger.info(f"IMU Node started - Mode: {'SIM' if self.sim_mode else 'REAL'}")
 
@@ -129,23 +132,13 @@ class ImuNode(Node):
         )
         return accel, gyro
 
-    def _cmd_vel_callback(self, msg: Float32MultiArray):
-        if not msg.data:
-            return
-        self._last_cmd_vel = float(msg.data[0])
+    def _cmd_vel_callback(self, msg: Float32):
+        self._last_cmd_vel = float(msg.data)
         self._last_cmd_vel_t = time.time()
 
     def _calibrate_trigger(self, _msg: Empty):
         self.logger.info("Calibration trigger received - resetting calibration state")
         self._reset_calibration("triggered")
-
-    def _yaw_offset_callback(self, msg: Float32):
-        c, s = math.cos(msg.data), math.sin(msg.data)
-        Rz = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
-        with self._lock:
-            self.R = Rz @ self.R
-        self._save_cache()
-        self.logger.info(f"Applied yaw offset {msg.data:.4f} rad")
 
     def _reset_calibration(self, reason: str):
         with self._lock:
@@ -169,12 +162,18 @@ class ImuNode(Node):
         return True
 
     def _sample_indicates_motion(self, accel, gyro):
-        for axis, val in zip(("x", "y", "z"), gyro):
-            if abs(val) > self.gyro_motion_thresh:
-                return f"gyro {axis}={val:.3f} rad/s exceeds {self.gyro_motion_thresh}"
-        accel_mag = math.sqrt(sum(a * a for a in accel))
-        if abs(accel_mag - abs(self.default_g)) > self.accel_motion_thresh:
-            return f"|accel|={accel_mag:.3f} m/s^2 deviates from g by > {self.accel_motion_thresh}"
+        # Compare against running mean so a constant chip bias doesn't
+        # look like motion. First sample has no mean yet → trivially passes.
+        # Per-sample |accel| is too noisy on this chip; mean |accel| vs |g|
+        # is checked once at finish instead.
+        with self._lock:
+            count = self._calib_count
+            gyro_mean = (
+                [s / count for s in self._calib_sum] if count > 0 else list(gyro)
+            )
+        for axis, val, mean in zip(("x", "y", "z"), gyro, gyro_mean):
+            if abs(val - mean) > self.gyro_motion_thresh:
+                return f"gyro {axis} delta={val - mean:.3f} rad/s exceeds {self.gyro_motion_thresh}"
         return None
 
     def _accumulate(self, accel, gyro):
@@ -186,15 +185,38 @@ class ImuNode(Node):
 
     def _finish_calibration(self):
         with self._lock:
-            self.gyro_bias = [s / self._calib_count for s in self._calib_sum]
-            accel_mean = np.array([s / self._calib_count for s in self._calib_accel_sum])
-            self.R = _level_rotation(accel_mean, np.array([0.0, 0.0, self.default_g]))
+            count = self._calib_count
+            gyro_bias = [s / count for s in self._calib_sum]
+            accel_mean_raw = np.array([s / count for s in self._calib_accel_sum])
+        # Reject the run if the averaged |accel| is far from |g| - kart wasn't
+        # actually at rest (or sensor is badly miscalibrated). Tolerant because
+        # this chip's scale factor can be off by several percent.
+        accel_mean_mag = float(np.linalg.norm(accel_mean_raw))
+        g_mag = abs(self.default_g)
+        if abs(accel_mean_mag - g_mag) > self.accel_motion_thresh:
+            reason = (
+                f"mean |accel|={accel_mean_mag:.3f} deviates from |g|={g_mag:.3f} "
+                f"by > {self.accel_motion_thresh}"
+            )
+            self.logger.warning(f"Calibration aborted at finish: {reason}")
+            self._reset_calibration(reason)
+            return
+        with self._lock:
+            # Level correction: any x/y component in the measured gravity after R_MOUNT is residual chassis tilt
+            a_post_mount = R_MOUNT @ accel_mean_raw
+            target_z = math.copysign(abs(self.default_g), a_post_mount[2])
+            target = np.array([0.0, 0.0, target_z])
+            R_level = _level_rotation(a_post_mount, target)
+            R_full = R_level @ R_MOUNT
+            a_corrected = R_full @ accel_mean_raw
+            self.gyro_bias = gyro_bias
+            self.R = R_full
             self.state = CALIBRATED
             self.last_error = ""
-            count = self._calib_count
-            bias_snapshot = list(self.gyro_bias)
+            bias_snapshot = list(gyro_bias)
         self.logger.info(
-            f"Calibration complete after {count} samples. gyro_bias={bias_snapshot}"
+            f"Calibration complete after {count} samples. "
+            f"gyro_bias={bias_snapshot}  accel_after_R={a_corrected.tolist()}"
         )
         self._save_cache()
         self._publish_status()
@@ -209,17 +231,22 @@ class ImuNode(Node):
             bias = data["gyro_bias"]
             if not (isinstance(bias, list) and len(bias) == 3):
                 raise ValueError("gyro_bias must be a length-3 list")
+
+            R_arr = R_MOUNT.copy()
+            R_data = data.get("R")
+            if R_data is not None:
+                R_arr = np.asarray(R_data, dtype=float)
+                if R_arr.shape != (3, 3):
+                    raise ValueError("R must be 3x3")
             with self._lock:
                 self.gyro_bias = [float(b) for b in bias]
-                R = data.get("R")
-                if R is not None:
-                    R_arr = np.asarray(R, dtype=float)
-                    if R_arr.shape == (3, 3):
-                        self.R = R_arr
+                self.R = R_arr
                 self.state = CALIBRATED
                 bias_snapshot = list(self.gyro_bias)
+                R_snapshot = self.R.tolist()
             self.logger.info(
-                f"Loaded calibration from {self.cache_path}: gyro_bias={bias_snapshot}"
+                f"Loaded calibration from {self.cache_path}: "
+                f"gyro_bias={bias_snapshot}  R={R_snapshot}"
             )
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as e:
             self.logger.warning(
@@ -230,7 +257,7 @@ class ImuNode(Node):
         with self._lock:
             payload = {
                 "gyro_bias": list(self.gyro_bias),
-                "R": self.R.tolist(),
+                "R": np.asarray(self.R).tolist(),
                 "samples": self._calib_count,
                 "timestamp": time.time(),
             }

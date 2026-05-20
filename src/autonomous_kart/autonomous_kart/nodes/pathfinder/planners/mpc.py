@@ -75,6 +75,11 @@ class MPCPlanner(Planner):
         # Below this speed, dpsi = v/L*tan(delta) ~= 0 so the cost can't
         # distinguish steering choices — hold delta at 0 until v crosses the gate.
         self.steer_observability_v = float(g("steer_observability_v_mps", 0.5))
+        # Actuator gain: real-kart wheel angle ≈ actuator_gain × cmd_drive_steer
+        # (fit from PP bags 20260519_15:06/21:46/22:05: slope ≈ 0.10 deg/deg).
+        # Applied inside tan(δ) in the bicycle rollout so MPC's predicted yaw
+        # rate matches the kart instead of overestimating by ~10×.
+        self.actuator_gain = float(g("actuator_gain", 0.10))
         # Elite-mean fraction: instead of argmin over K samples, average the
         # top `mppi_elite_frac × K` samples' first actions. Cuts per-tick noise
         # without the phase-lag cost of a 1st-order filter. 1.0/K = pure argmin (no smoothing).
@@ -469,7 +474,7 @@ class MPCPlanner(Planner):
         for _ in range(n):
             x += self.dt * v * math.cos(yaw)
             y += self.dt * v * math.sin(yaw)
-            yaw += self.dt * v / self.wheelbase * math.tan(delta)
+            yaw += self.dt * v / self.wheelbase * math.tan(self.actuator_gain * delta)
             v = max(0.0, min(self.v_max, v + self.dt * a))
         return x, y
 
@@ -511,7 +516,7 @@ class MPCPlanner(Planner):
             a_k = accel_seq[:, k]
             x = x + dt * v * np.cos(psi)
             y = y + dt * v * np.sin(psi)
-            psi = psi + dt * v / self.wheelbase * np.tan(d_k)
+            psi = psi + dt * v / self.wheelbase * np.tan(self.actuator_gain * d_k)
             v = np.clip(v + dt * a_k, 0.0, v_cap)
             tx[:, k] = x
             ty[:, k] = y
@@ -553,7 +558,7 @@ class MPCPlanner(Planner):
         progress = s[:, -1] - s[:, 0]
 
         # Named cost components also exported for diagnostics.
-        a_lat = tv * tv * np.tan(delta_seq) / self.wheelbase
+        a_lat = tv * tv * np.tan(self.actuator_gain * delta_seq) / self.wheelbase
         edge_excess = np.maximum(0.0, np.abs(d) - self.edge_inner)
         c_d = self.w_d * np.sum(d * d, axis=1)
         c_h = self.w_heading * np.sum(psi_err * psi_err, axis=1)

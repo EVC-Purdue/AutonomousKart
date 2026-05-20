@@ -89,5 +89,9 @@ pathfinder_node:
     mpc.residual.min_train_speed_mps: 0.5
     mpc.residual.error_window: 200
 
+    # opencv
+    opencv.angle_threshold: 5.0
+    opencv.throttle_mps: 5.0
+
     #  safety wrapper 
     safety.enabled: true

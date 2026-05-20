@@ -389,3 +389,92 @@ def test_localization_real_mode_wheel_speed_pins_v_against_accel_bias(ros_ctx):
             )
         finally:
             node.destroy_node()
+
+
+def test_localization_reverse_flip_does_not_fire_during_init(ros_ctx):
+    """Regression for the 2026-05-19 ±π yaw-lock bug.
+
+    When the kart is parked at rest, VESC ERPM noise can briefly push the
+    wheel-speed reading below zero. Before the fix, the VTG reverse-flip
+    rule treated that as 'kart in reverse' and rotated the very first GPS
+    yaw by π, locking the EKF's heading 180° off for the rest of the run.
+
+    The flip MUST NOT fire on the init fix — there is no reliable signed
+    velocity source yet.
+    """
+    import math
+    from std_msgs.msg import Float32
+
+    with ros_ctx(_real_params()) as rclpy:
+        node = LocalizationNode()
+        try:
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=0))
+            # Simulate VESC noise at rest before the first GPS fix.
+            node._wheel_speed_cb(Float32(data=-0.05))
+            # First GPS fix arrives with VTG yaw pointing east-ish.
+            node.gps_callback(_gps_odom(x=0.0, y=0.0, yaw=0.5, speed=0.0))
+            assert node.ekf.initialized
+            yaw = float(node.ekf.x[2])
+            # Yaw should match VTG yaw, NOT VTG yaw + π.
+            assert abs(yaw - 0.5) < 1e-6, (
+                f"EKF init yaw={yaw}, expected ~0.5 (flip must not fire on init)"
+            )
+        finally:
+            node.destroy_node()
+
+
+def test_localization_reverse_flip_ignores_noise_below_deadband(ros_ctx):
+    """Even after init, the flip only fires when wheel_v is clearly in reverse
+    (|v| > reverse_flip_deadband_mps). Tiny negative noise must not flip yaw."""
+    import math
+    from std_msgs.msg import Float32
+
+    with ros_ctx(_real_params()) as rclpy:
+        node = LocalizationNode()
+        try:
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=0))
+            # Init cleanly while moving forward.
+            node.gps_callback(_gps_odom(x=0.0, y=0.0, yaw=0.0, speed=2.0))
+            assert node.ekf.initialized
+            # Now the kart slows to rest; VESC reports noisy ~-0.05 m/s.
+            node._wheel_speed_cb(Float32(data=-0.05))
+            # A new VTG fix with yaw=0.5 should not get flipped.
+            node.gps_callback(_gps_odom(x=0.1, y=0.0, yaw=0.5, speed=0.0))
+            yaw = float(node.ekf.x[2])
+            # Yaw won't equal 0.5 exactly (EKF fuses with prior), but it
+            # must be near 0 / 0.5 — NOT pulled toward π.
+            assert abs(yaw) < 1.0, (
+                f"EKF yaw={yaw}; noise should not have flipped it toward ±π"
+            )
+        finally:
+            node.destroy_node()
+
+
+def test_localization_reverse_flip_does_fire_for_real_reverse(ros_ctx):
+    """The flip must still fire when the kart is genuinely in reverse
+    (signed wheel speed clearly below -deadband)."""
+    import math
+    from std_msgs.msg import Float32
+
+    with ros_ctx(_real_params()) as rclpy:
+        node = LocalizationNode()
+        try:
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=0))
+            # Init cleanly forward.
+            node.gps_callback(_gps_odom(x=0.0, y=0.0, yaw=0.0, speed=2.0))
+            assert node.ekf.initialized
+            # Now kart genuinely reverses: wheel-v = -1.5 m/s, well below the
+            # default 0.3 deadband.
+            node._wheel_speed_cb(Float32(data=-1.5))
+            # A VTG fix arrives with course-over-ground = 0 (because COG is
+            # the direction of motion, which is +x even when kart faces -x).
+            # The flip should rotate yaw_meas to π, and the EKF should pull
+            # toward π (not stay near 0).
+            for _ in range(5):
+                node.gps_callback(_gps_odom(x=0.1, y=0.0, yaw=0.0, speed=1.5))
+            yaw = float(node.ekf.x[2])
+            assert abs(abs(yaw) - math.pi) < 0.5, (
+                f"EKF yaw={yaw}; real reverse should have flipped it toward π"
+            )
+        finally:
+            node.destroy_node()

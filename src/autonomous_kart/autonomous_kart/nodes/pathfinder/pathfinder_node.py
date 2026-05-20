@@ -308,7 +308,7 @@ class PathfinderNode(Node):
         motor_mps, steering_deg = safe
         self.cmd_count += 1
         self.drive_publisher.publish(
-            Float32MultiArray(data=[float(motor_mps), float(steering_deg * self.steering_gain)])
+            Float32MultiArray(data=[float(motor_mps), float(steering_deg)])
         )
         # Keep training the shared residual under non-MPC planners
         if self.active_planner_name != MPCPlanner.name and mpc is not None:

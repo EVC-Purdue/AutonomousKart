@@ -179,6 +179,34 @@ def imu():
     return jsonify(master_node.get_imu())
 
 
+# ─── UPDATED FLASK ROUTE (USES GLOBAL API NODE PUBLISHER) ───
+@app.route("/camera_angles", methods=["POST"])
+def receive_camera_angles():
+    global sim_angle_pub, master_node
+    if not master_node or not sim_angle_pub:
+        return jsonify({"error": "ROS elements not fully initialized"}), 500
+        
+    data = request.get_json(silent=True) or {}
+    left_angle = data.get("left_angle", 22.5)
+    right_angle = data.get("right_angle", 22.5)
+
+    print(f"[DEBUG] Received Frontend Angles -> L: {left_angle:.2f}°, R: {right_angle:.2f}°", flush=True)
+    
+    # Pack up the ROS2 message right here inside the API thread
+    msg = Float32MultiArray()
+    msg.data = [float(left_angle), float(right_angle)]
+    
+    # Publish directly via the global publisher attached to master_node
+    sim_angle_pub.publish(msg)
+    
+    return jsonify({
+        "status": "published", 
+        "left": left_angle, 
+        "right": right_angle
+    })
+
+
+
 @app.route("/racing_line", methods=["GET"])
 def racing_line():
     path = master_node.path

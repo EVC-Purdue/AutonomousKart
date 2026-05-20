@@ -14,6 +14,8 @@ logging.getLogger("werkzeug").setLevel(logging.ERROR)
 app = Flask(__name__)
 CORS(app)
 master_node: MasterNode | None = None
+sim_angle_pub = None # <-- Added global publisher variable
+
 
 @app.after_request
 def cors(response):

@@ -3,6 +3,14 @@
             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
             xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
   <Domain Id="any">
+    <General>
+      <AllowMulticast>true</AllowMulticast>
+
+      <Interfaces>
+        <NetworkInterface name="${ROS_NETWORK_INTERFACE}"/>
+      </Interfaces>
+    </General>
+
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>
       <MaxAutoParticipantIndex>32</MaxAutoParticipantIndex>

@@ -54,7 +54,7 @@ class CameraNode(Node):
                 raise RuntimeError(f"Failed to open video: {video_path}")
 
         else:
-            self.cap = cv2.VideoCapture(0) 
+            self.cap = cv2.VideoCapture('/dev/video0') 
             self.video_fps = self.fps
 
             if not self.cap.isOpened():
@@ -84,6 +84,7 @@ class CameraNode(Node):
                 self.logger.warning("No frame available")
 
         if publish_frame is not None:
+            self.logger.info(f"Publishing frame {self.frame_counter}")
             self.image_pub.publish(publish_frame)
             self.frame_counter += 1
 

@@ -20,6 +20,7 @@ RUN apt-get -o Acquire::http::Pipeline-Depth="0" \
       ros-${ROS_DISTRO}-rclpy ros-${ROS_DISTRO}-ros2bag \
       ros-${ROS_DISTRO}-tf2-tools ros-${ROS_DISTRO}-image-transport \
       ros-${ROS_DISTRO}-cv-bridge \
+      openssh-client \
       git curl nano \
       socat rtklib i2c-tools && \
     rm -rf /var/lib/apt/lists/*

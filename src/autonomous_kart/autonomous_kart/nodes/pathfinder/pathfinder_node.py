@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple
 import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float32, Float32MultiArray, String
 from std_msgs.msg import Empty as _EmptyMsg # naming conflict
 
@@ -152,6 +153,13 @@ class PathfinderNode(Node):
         self.drive_publisher = self.create_publisher(Float32MultiArray, "cmd_drive", 5)
         self.metrics_publisher = self.create_publisher(Float32MultiArray, "pathfinder_params", 5)
         self.dynamic_line_pub = self.create_publisher(String, "pathfinder/dynamic_line", 1)
+        # Latched so a bag started mid-run still captures the current planner.
+        self.active_planner_pub = self.create_publisher(
+            String, "pathfinder/active_planner",
+            QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                       durability=DurabilityPolicy.TRANSIENT_LOCAL),
+        )
+        self.active_planner_pub.publish(String(data=self.active_planner_name))
 
         # Timers
         self.create_timer(1.0 / self.system_frequency, self._autonomous_tick)
@@ -224,6 +232,7 @@ class PathfinderNode(Node):
             return
         self.active_planner_name = name
         self.steering_gain = self._planner_gains.get(name, 1.0)
+        self.active_planner_pub.publish(String(data=name))
         self.logger.info(f"active planner -> {name}")
 
     def _on_line_swap(self, msg: String):

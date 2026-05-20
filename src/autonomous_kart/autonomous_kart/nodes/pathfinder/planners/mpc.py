@@ -177,6 +177,21 @@ class MPCPlanner(Planner):
         if node is not None:
             self.status_pub = node.create_publisher(Float32MultiArray, "mpc/status", 5)
 
+        # Live actuator_gain estimator (telemetry only — NOT fed back into
+        # self.actuator_gain). Each plan() tick, if v and |δ| are above the
+        # filter thresholds, we sample α = atan(yaw_rate · L / v) / δ_cmd_rad
+        # and push to a rolling deque. Median of the deque is the headline
+        # estimate published on mpc/actuator_gain_status as
+        # [current_setting, estimated_median, n_samples].
+        self._alpha_buf = deque(maxlen=300)
+        self._last_yaw_for_alpha = None
+        self._last_t_for_alpha = None
+        self._alpha_pub = None
+        if node is not None:
+            self._alpha_pub = node.create_publisher(
+                Float32MultiArray, "mpc/actuator_gain_status", 5
+            )
+
         # Reusable rng
         self._rng = np.random.default_rng(0)
 
@@ -344,6 +359,9 @@ class MPCPlanner(Planner):
         if self.residual.effective_mode() != "apply":
             res_ps, res_pd = 0.0, 0.0
 
+        # Live actuator_gain estimator (telemetry only — NOT consumed by _solve).
+        self._update_alpha_estimate(yaw, v, delta_cmd, inputs.now_ns)
+
         # Telemetry
         margin_min = self.corridor_half - float(np.max(np.abs(traj["d"])))
         self._publish_status(self.mode, True, t0, s, d, psi_track, v, v_target,
@@ -468,6 +486,41 @@ class MPCPlanner(Planner):
         if dt <= 0.0:
             return 0.0, 0.0
         return (s_now - ref[1]) / dt, (d_now - ref[2]) / dt
+
+    def _update_alpha_estimate(self, yaw, v, delta_cmd, now_ns):
+        """Estimate live actuator_gain from finite-diff yaw rate and δ_cmd.
+
+        Telemetry-only — never written back into self.actuator_gain. Publishes
+        [current_setting, median_estimate, n_samples] on mpc/actuator_gain_status.
+        """
+        now_s = now_ns / 1e9
+        if (self._last_yaw_for_alpha is not None
+                and self._last_t_for_alpha is not None):
+            dt = now_s - self._last_t_for_alpha
+            if 1e-3 < dt < 0.1:
+                dyaw = math.atan2(
+                    math.sin(yaw - self._last_yaw_for_alpha),
+                    math.cos(yaw - self._last_yaw_for_alpha),
+                )
+                yaw_rate = dyaw / dt
+                # Filter: only sample when the kart is moving and steering is
+                # nontrivial, so finite-diff noise doesn't dominate.
+                if v > 2.0 and abs(delta_cmd) > math.radians(5.0):
+                    try:
+                        alpha = math.atan(yaw_rate * self.wheelbase / v) / delta_cmd
+                    except (ZeroDivisionError, ValueError):
+                        alpha = float("nan")
+                    if math.isfinite(alpha) and 0.0 < alpha < 5.0:
+                        self._alpha_buf.append(alpha)
+        self._last_yaw_for_alpha = yaw
+        self._last_t_for_alpha = now_s
+
+        if self._alpha_pub is not None:
+            n = len(self._alpha_buf)
+            median = float(np.median(self._alpha_buf)) if n else float("nan")
+            self._alpha_pub.publish(Float32MultiArray(
+                data=[float(self.actuator_gain), median, float(n)]
+            ))
 
     def _hold_rollout(self, x, y, yaw, v, delta, a, n):
         """Single-trajectory bicycle rollout used by the residual learner."""

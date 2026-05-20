@@ -31,11 +31,14 @@ docker exec -it <container_name> bash
 source /opt/ros/humble/setup.bash
 colcon build
 source install/setup.bash
-ros2 launch autonomous_kart bringup_pi.launch.py
+ros2 launch autonomous_kart bringup_jetson.launch.py
 ```
-
+source /opt/ros/humble/setup.bash
+colcon build
+source install/setup.bash
+ros2 launch autonomous_kart bringup_pi.launch.py
 
 ```bash
-ros2 bag record -s mcap -o /ws/bags/$(date +%Y%m%d_%H%M%S) /mpc/status /mpc/residual_mode /mpc/residual_revert /cmd_drive /odom /gps /imu /imu/calibration_status /e_comms/kart_speed_m_per_s /e_comms/throttle_pwm /e_comms/steering_pwm /e_comms/adcb_state /e_comms/rc_mode /system_state /track_angles /manual_commands /pathfinder_params
+ros2 bag record -s mcap -o /ws/bags/$(date +%Y%m%d_%H%M%S) /mpc/status /mpc/residual_mode /mpc/residual_revert /cmd_drive /odom /gps /imu /imu/calibration_status /e_comms/kart_speed_m_per_s /e_comms/throttle_pwm /e_comms/steering_pwm /e_comms/adcb_state /e_comms/rc_mode /system_state /track_angles /manual_commands /pathfinder_params /pathfinder/active_planner
 ```
 docker cp ros2-dev:/ws/bags .

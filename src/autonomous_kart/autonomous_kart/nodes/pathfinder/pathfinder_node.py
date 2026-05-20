@@ -148,6 +148,7 @@ class PathfinderNode(Node):
         self.create_subscription(_EmptyMsg, "mpc/residual_revert", self._on_residual_revert, 1)
         self.create_subscription(String, "pathfinder/planner", self._on_planner_swap, 1)
         self.create_subscription(String, "pathfinder/line_path", self._on_line_swap, 1)
+        self.create_subscription(Float32, "mpc/set_actuator_gain", self._on_set_actuator_gain, 1)
 
         # Publishers
         self.drive_publisher = self.create_publisher(Float32MultiArray, "cmd_drive", 5)
@@ -213,6 +214,23 @@ class PathfinderNode(Node):
             return
         self.shared_residual.mode = mode
         self.logger.info(f"residual mode -> {mode}")
+
+    def _on_set_actuator_gain(self, msg: Float32):
+        try:
+            value = float(msg.data)
+        except (TypeError, ValueError):
+            self.logger.warning(f"mpc/set_actuator_gain: bad value {msg.data!r}")
+            return
+        if not (0.0 < value < 5.0):
+            self.logger.warning(f"mpc/set_actuator_gain: rejecting {value} (must be in (0, 5))")
+            return
+        mpc = self.planners.get(MPCPlanner.name)
+        if mpc is None:
+            self.logger.warning("mpc/set_actuator_gain: MPC planner not constructed")
+            return
+        old = mpc.actuator_gain
+        mpc.actuator_gain = value
+        self.logger.info(f"mpc.actuator_gain: {old:.3f} -> {value:.3f}")
 
     def _on_residual_revert(self, _msg):
         """Operator-explicit revert. Bypasses regime check."""

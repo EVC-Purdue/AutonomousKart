@@ -7,7 +7,7 @@ import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
-from std_msgs.msg import String, Float32MultiArray, UInt16, Empty
+from std_msgs.msg import String, Float32, Float32MultiArray, UInt16, Empty
 
 
 class STATES(Enum):
@@ -136,6 +136,21 @@ class MasterNode(Node):
         self.planner_publisher = self.create_publisher(String, "pathfinder/planner", 1)
         self.line_publisher = self.create_publisher(String, "pathfinder/line_path", 1)
         self.residual_revert_publisher = self.create_publisher(Empty, "mpc/residual_revert", 1)
+
+        # Live MPC actuator_gain knob + estimator snapshot.
+        # Estimate is observation-only — never wired back into MPC's setting.
+        self.actuator_gain_data = {
+            "current_setting": float("nan"),
+            "estimated_median": float("nan"),
+            "n_samples": 0,
+        }
+        self.actuator_gain_publisher = self.create_publisher(
+            Float32, "mpc/set_actuator_gain", 1
+        )
+        self.create_subscription(
+            Float32MultiArray, "mpc/actuator_gain_status",
+            self._actuator_gain_callback, 5,
+        )
 
         # IMU calibration plumbing
         self.imu_calibrate_publisher = self.create_publisher(Empty, "imu/calibrate", 1)
@@ -411,6 +426,31 @@ class MasterNode(Node):
             return False, f"planner must be mpc|pure_pursuit|opencv (got '{planner}')"
         self.planner_publisher.publish(String(data=name))
         return True, name
+
+    def _actuator_gain_callback(self, msg: Float32MultiArray):
+        data = list(msg.data)
+        if len(data) < 3:
+            return
+        with self._lock:
+            self.actuator_gain_data = {
+                "current_setting": float(data[0]),
+                "estimated_median": float(data[1]),
+                "n_samples": int(data[2]),
+            }
+
+    def get_actuator_gain(self) -> dict:
+        with self._lock:
+            return dict(self.actuator_gain_data)
+
+    def set_actuator_gain(self, value) -> tuple[bool, str]:
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return False, f"value must be a number (got {value!r})"
+        if not (0.0 < v < 5.0):
+            return False, f"value must be in (0, 5) (got {v})"
+        self.actuator_gain_publisher.publish(Float32(data=v))
+        return True, f"{v:.3f}"
 
     def set_line(self, path: str) -> tuple[bool, str]:
         p = (path or "").strip()

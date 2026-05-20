@@ -1,0 +1,76 @@
+rosbag2_bagfile_information:
+  version: 5
+  storage_identifier: mcap
+  duration:
+    nanoseconds: 37000172800
+  starting_time:
+    nanoseconds_since_epoch: 1779060779821694208
+  message_count: 24519
+  topics_with_message_count:
+    - topic_metadata:
+        name: /e_comms/kart_speed_m_per_s
+        type: std_msgs/msg/Float32
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 3700
+    - topic_metadata:
+        name: /odom
+        type: nav_msgs/msg/Odometry
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 4019
+    - topic_metadata:
+        name: /e_comms/throttle_pwm
+        type: std_msgs/msg/UInt16
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 3686
+    - topic_metadata:
+        name: /imu
+        type: sensor_msgs/msg/Imu
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 3681
+    - topic_metadata:
+        name: /e_comms/steering_pwm
+        type: std_msgs/msg/UInt16
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 3686
+    - topic_metadata:
+        name: /mpc/status
+        type: std_msgs/msg/Float32MultiArray
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 3560
+    - topic_metadata:
+        name: /cmd_drive
+        type: std_msgs/msg/Float32MultiArray
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 1780
+    - topic_metadata:
+        name: /gps
+        type: nav_msgs/msg/Odometry
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 370
+    - topic_metadata:
+        name: /imu/calibration_status
+        type: std_msgs/msg/String
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 37
+  compression_format: ""
+  compression_mode: ""
+  relative_file_paths:
+    - mpc_run_20260517_232625_seg1_0.mcap
+  files:
+    - path: mpc_run_20260517_232625_seg1_0.mcap
+      starting_time:
+        nanoseconds_since_epoch: 1779060779821694208
+      duration:
+        nanoseconds: 37000172800
+      message_count: 24519
+  custom_data: {}
+  ros_distro: humble

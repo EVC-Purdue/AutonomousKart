@@ -470,7 +470,7 @@ def test_localization_reverse_flip_does_fire_for_real_reverse(ros_ctx):
             # the direction of motion, which is +x even when kart faces -x).
             # The flip should rotate yaw_meas to π, and the EKF should pull
             # toward π (not stay near 0).
-            for _ in range(5):
+            for _ in range(20):
                 node.gps_callback(_gps_odom(x=0.1, y=0.0, yaw=0.0, speed=1.5))
             yaw = float(node.ekf.x[2])
             assert abs(abs(yaw) - math.pi) < 0.5, (

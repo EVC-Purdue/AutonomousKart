@@ -27,8 +27,8 @@ pathfinder_node:
     pure_pursuit.min_lookahead_m: 3.0
     pure_pursuit.max_lookahead_m: 8.0
     pure_pursuit.use_curvature_regulation: true
-    pure_pursuit.min_radius_m: 8.0
-    pure_pursuit.min_reg_speed_mps: 6.0
+    pure_pursuit.min_radius_m: 7.0
+    pure_pursuit.min_reg_speed_mps: 7.0
     pure_pursuit.approach_dist_m: 1.0
     pure_pursuit.min_approach_speed_mps: 1.0
     pure_pursuit.search_window: 80

@@ -234,10 +234,13 @@ def test_calibration_aborts_on_gyro_motion(imu_factory):
 
 
 def test_calibration_aborts_on_accel_anomaly(imu_factory):
-    with imu_factory() as (node, bus, _rclpy):
+    # |accel| is checked at finish (mean over the full run), so we have to
+    # accumulate calibration_samples worth of bad samples before the abort fires.
+    with imu_factory(calibration_samples=5) as (node, bus, _rclpy):
         # Accel z = 0 means |accel| ~ 0, far from |g|. Gyro still.
         bus.next_read = _make_burst(accel_raw=(0, 0, 0))
-        node.publish_imu()
+        for _ in range(5):
+            node.publish_imu()
 
         assert node.state == WAITING
         assert "|accel|" in node.last_error
@@ -439,17 +442,17 @@ def test_calibrate_trigger_resets_to_waiting(imu_factory, tmp_path, spin_helper)
 
 
 def test_cmd_vel_subscription_updates_internal_state(imu_factory, spin_helper):
-    from std_msgs.msg import Float32MultiArray
+    from std_msgs.msg import Float32
 
     with imu_factory() as (node, _bus, rclpy):
         pub_node = rclpy.create_node("vel_pub")
-        pub = pub_node.create_publisher(Float32MultiArray, "cmd_drive", 5)
+        pub = pub_node.create_publisher(Float32, "e_comms/kart_speed_m_per_s", 5)
         exe = rclpy.executors.SingleThreadedExecutor()
         exe.add_node(node)
         exe.add_node(pub_node)
         try:
             spin_helper(exe, lambda: False, timeout=0.4)
-            pub.publish(Float32MultiArray(data=[2.5, 0.0]))
+            pub.publish(Float32(data=2.5))
             assert spin_helper(exe, lambda: node._last_cmd_vel == 2.5, timeout=2.0)
             assert node._last_cmd_vel_t > 0.0
         finally:

@@ -14,12 +14,12 @@
     steer_rate_max_degps: 180.0 # max steering slew rate (deg/s)
     a_max_mps2: 2.0 # max forward acceleration (m/s^2)
     a_min_mps2: -3.0 # max braking deceleration (m/s^2, negative)
-    a_lat_max_mps2: 4.0 # tire-grip lateral accel cap (m/s^2)
+    a_lat_max_mps2: 8.0 # tire-grip lateral accel cap (m/s^2)
 
 pathfinder_node:
   ros__parameters:
     # Active planner: mpc | opencv | pure_pursuit
-    planner: pure_pursuit
+    planner: mpc
 
     # pure_pursuit
     pure_pursuit.use_velocity_scaled_lookahead: true
@@ -39,10 +39,18 @@ pathfinder_node:
     pure_pursuit.rejoin_cte_deactivate: 1.0
     pure_pursuit.rejoin_merge_lookahead_m: 15.0
     pure_pursuit.latency_s: 0.3
+    # Was 3.0 (default landed in commit 7f34634 on 2026-05-18). Pre-refactor
+    # PP went through e_comms's `steering_deg *= 2`, so the effective net
+    # amplification was ×2. Restoring 2.0 here matches the historical tune;
+    # 3.0 over-gained the steering loop and caused oscillating divergence
+    # at sharp corners (run 20260519_214619 lost the line at the top-left
+    # apex, cmd_steering ringing ±40° before closest_idx wrapped to idx≈3).
+    pure_pursuit.steering_gain: 2.0
 
     # opencv
 
     # mpc: sampling MPC
+    mpc.steering_gain: 3.0
     mpc.horizon_steps: 20
     mpc.dt_s: 0.05
     mpc.num_samples: 164
@@ -53,6 +61,13 @@ pathfinder_node:
     mpc.frenet_v_window_s: 0.3
     mpc.target_speed_mps: 6.0
     mpc.steer_observability_v_mps: 0.5
+    # Actuator gain assumed inside MPC's bicycle rollout (yaw = v/L·tan(α·δ)).
+    # Code default is 0.10 (fit to 5/19 bags, when linkage was very degraded).
+    # Current hardware shows PP works with mild deviation -> real α ≥ ~0.20.
+    # 0.20 is the lowest safe value for the on-line corner test across plant
+    # α in [0.20, 1.00]. Lower this if MPC visibly oversteers; raise it
+    # toward the measured PP ratio if MPC visibly undersuits.
+    mpc.actuator_gain: 0.30
     mpc.track_half_width_m: 2.0
     mpc.safety_margin_m: 0.5
     mpc.kart_half_width_m: 0.5025
@@ -60,14 +75,18 @@ pathfinder_node:
     mpc.w_d: 8.85
     mpc.w_heading: 2.97
     mpc.w_speed: 30.69
-    mpc.w_delta: 5.0
-    mpc.w_delta_rate: 12.02
+    # Rebalanced for actuator_gain=0.10: δ cost is on δ_cmd², but δ_cmd is
+    # now ~10× larger than the wheel angle it produces. To keep the same
+    # equilibrium between control effort and tracking, w_delta and
+    # w_delta_rate scale by actuator_gain² = 0.01. Same logic for w_a_lat.
+    mpc.w_delta: 0.05
+    mpc.w_delta_rate: 0.12
     mpc.w_accel: 2.0
     mpc.w_boundary: 143.22
     mpc.w_progress: 6.23
     mpc.w_terminal_d: 64.86
     mpc.w_terminal_heading: 11.35
-    mpc.w_a_lat: 8.36
+    mpc.w_a_lat: 0.0836
     # Inner-corridor "stay-centered" barrier: zero inside the inner zone,
     # quadratic out to the corridor wall.
     mpc.w_edge: 1456.58
@@ -88,6 +107,41 @@ pathfinder_node:
     mpc.residual.initial_cov: 1000.0
     mpc.residual.min_train_speed_mps: 0.5
     mpc.residual.error_window: 200
+    # tight so model loss does not explode
+    mpc.residual.outlier_threshold_m: 2.0
+    # refuses to train when |d| >= this so proj is not too noisy
+    mpc.residual.max_train_d_m: 3.0
+    mpc.residual.max_p_trace: 100000.0
+    mpc.residual.max_theta_norm: 50.0
+    # below this many RLS updates, predict() returns (0, 0) so MPC sees no noise
+    mpc.residual.rls_warmup_samples: 50
+#    GBM parms
+    mpc.residual.gbm_enabled: false
+    mpc.residual.gbm_buffer_capacity: 18000
+    mpc.residual.gbm_max_iter: 60
+    mpc.residual.gbm_max_depth: 3
+    mpc.residual.gbm_learning_rate: 0.1
+    mpc.residual.gbm_min_samples_leaf: 20
+    mpc.residual.gbm_retrain_secs: 10.0
+    mpc.residual.gbm_min_samples_to_train: 1200
+    mpc.residual.gbm_retrain_every_samples: 1200
+    mpc.residual.gbm_select_eps_s_m: 0.0
+    mpc.residual.gbm_select_eps_d_m: 0.005
+    mpc.residual.gbm_predict_clip_m: 0.5
+    # Checkpoints + revert
+    mpc.residual.checkpoint_ring_size: 5
+    mpc.residual.checkpoint_keep_factor: 1.5
+    mpc.residual.revert_clip_rate_window: 600
+    mpc.residual.revert_clip_rate_threshold: 0.30
+    mpc.residual.regime_dv_tol_mps: 1.0
+    mpc.residual.regime_dd_tol_m: 0.3
+    mpc.residual.regime_dkappa_rel_tol: 0.5
+    # Apply-mode gate (effective_mode = shadow until this many accepted samples this run)
+    mpc.residual.apply_min_samples_this_run: 1200
+    # Disk cache (used in Phase 2 task wiring; default on)
+    mpc.residual.cache_enabled: true
+    mpc.residual.cache_dir: /root/.cache/residual_cache
+    mpc.residual.cache_load_on_start: true
 
     #  safety wrapper 
     safety.enabled: true

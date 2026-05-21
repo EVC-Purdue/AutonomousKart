@@ -116,7 +116,8 @@ class ECommsNode(Node):
             return
         
         data = bytes(msg.data)  # copy, don't hold a reference
-        
+        self.cmd_count += 1
+        # self.logger.info(f"Msg: {msg.arbitration_id:X}")
         if msg.arbitration_id == STATUS_ID:
             self.executor.create_task(lambda: self.handle_adcb_status_msg(data))
         elif msg.arbitration_id == VESC_STATUS_1_ID:
@@ -155,6 +156,7 @@ class ECommsNode(Node):
 
     def convert(self, throttle_m_per_s: float, steering_deg: float) -> tuple[float, float]:
         """Clamp + unit-convert (steering, throttle) for the CAN control frame."""
+        steering_deg *= 2
         clamped_throttle_m_per_s = max(self.min_speed, min(self.max_speed, throttle_m_per_s))
         throttle_erpm = powertrain.speed_to_erpm(clamped_throttle_m_per_s)
 

@@ -128,6 +128,24 @@ def mpc_residual_mode():
     return jsonify({"success": "ok", "mode": reason})
 
 
+@app.route("/mpc/actuator_gain", methods=["GET"])
+def mpc_actuator_gain_get():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify(master_node.get_actuator_gain())
+
+
+@app.route("/mpc/actuator_gain", methods=["POST"])
+def mpc_actuator_gain_set():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    data = request.get_json(silent=True) or {}
+    ok, reason = master_node.set_actuator_gain(data.get("value"))
+    if not ok:
+        return jsonify({"error": reason}), 400
+    return jsonify({"success": "ok", "value": reason})
+
+
 @app.route("/pathfinder/planner", methods=["POST"])
 def pathfinder_planner():
     if not master_node:
@@ -221,6 +239,57 @@ def lines_endpoint():
         "static": static_xy,
         "dynamic": master_node.get_dynamic_line(),
     })
+
+
+@app.route("/residual/status", methods=["GET"])
+def residual_status():
+    if not master_node:
+        return jsonify({"error": "master node not initialized"}), 500
+    snap = master_node.get_residual_status()
+    if snap is None:
+        return jsonify({"status": "no /mpc/status received yet"}), 200
+    return jsonify(snap), 200
+
+
+@app.route("/residual/log", methods=["GET"])
+def residual_log():
+    if not master_node:
+        return jsonify({"error": "master node not initialized"}), 500
+    try:
+        limit = int(request.args.get("limit", 50))
+    except ValueError:
+        limit = 50
+    return jsonify({"events": master_node.get_residual_log(limit=limit)}), 200
+
+
+@app.route("/residual/log/stream", methods=["GET"])
+def residual_log_stream():
+    if not master_node:
+        return ("master node not initialized", 500)
+    from flask import Response
+    import json as _json
+    import time as _time
+
+    def gen():
+        last_seen = -1
+        while True:
+            events = master_node.get_residual_log(limit=200)
+            # events are newest-first; emit oldest-of-the-new-ones first
+            new = [e for e in reversed(events) if e["train_seq"] > last_seen]
+            for e in new:
+                yield f"event: train\ndata: {_json.dumps(e)}\n\n"
+                last_seen = e["train_seq"]
+            _time.sleep(1.0)
+
+    return Response(gen(), mimetype="text/event-stream")
+
+
+@app.route("/residual/revert", methods=["POST"])
+def residual_revert():
+    if not master_node:
+        return jsonify({"error": "master node not initialized"}), 500
+    master_node.trigger_residual_revert()
+    return ("", 202)
 
 
 def start(node: MasterNode) -> None:

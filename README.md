@@ -2,6 +2,23 @@
 
 [![tests](https://github.com/EVC-Purdue/AutonomousKart/actions/workflows/tests.yml/badge.svg)](https://github.com/EVC-Purdue/AutonomousKart/actions/workflows/tests.yml)
 
-Main codebase for the EVC 2025-26 Autonomous kart team!
+Main codebase for the EVC 2025-26 Purdue Autonomous Kart team.
 
-![System Design](docs/README/images/EVC_SD_Software_Autonomous.png)
+
+![Racing line](docs/README/images/racing_line.png)
+
+## Build
+
+```bash
+colcon build --packages-select autonomous_kart
+source install/setup.bash
+colcon test --packages-select autonomous_kart
+```
+
+## Run
+
+```bash
+ros2 launch autonomous_kart bringup_sim.launch.py   # simulation
+ros2 launch autonomous_kart bringup_pi.launch.py    # on-kart
+```
+

@@ -54,7 +54,7 @@ pathfinder_node:
     mpc.horizon_steps: 20
     mpc.dt_s: 0.05
     mpc.num_samples: 1024
-    mpc.steer_sigma_deg: 5.0
+    mpc.steer_sigma_deg: 12.0
     mpc.accel_sigma_mps2: 1.43
     mpc.proj_window_back: 5
     mpc.proj_window_fwd: 37

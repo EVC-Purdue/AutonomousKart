@@ -1092,6 +1092,53 @@ def _render_comparison(raw_results, modes, line_path, out_dir):
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# apex — reproduce the 20260519_214619 corner failure against the live params
+# ---------------------------------------------------------------------------
+def _add_apex_parser(sub):
+    p = sub.add_parser(
+        "apex",
+        help="score the live MPC params against the 20260519_214619 apex failure",
+    )
+    p.add_argument("--baseline", action="store_true",
+                   help="use the 05/19 params instead of the live yaml "
+                        "(checks the repro still reproduces the bag)")
+    p.add_argument("--seeds", type=int, default=8,
+                   help="number of RNG seeds to average over (default 8); "
+                        "the apex outcome is strongly seed-dependent")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VAL",
+                   help="override one mpc param, repeatable "
+                        "(e.g. --set steer_sigma_deg=6.0 --set mppi_elite_frac=0.01)")
+    p.add_argument("--plot", default=None, help="write a PNG of the comparison here")
+    return p
+
+
+def cmd_apex(args):
+    import json
+    from sim import apex_repro
+
+    overrides = {}
+    for item in args.set:
+        if "=" not in item:
+            raise SystemExit(f"--set expects KEY=VAL, got {item!r}")
+        key, val = item.split("=", 1)
+        try:
+            overrides[key] = json.loads(val)
+        except json.JSONDecodeError:
+            overrides[key] = val
+
+    report = apex_repro.run(
+        mpc_overrides=overrides or None,
+        seeds=tuple(range(args.seeds)),
+        baseline=args.baseline,
+    )
+    print(report.summary())
+    if args.plot:
+        apex_repro.plot(report, args.plot)
+        print(f"\nwrote {args.plot}")
+    raise SystemExit(0 if report.passed else 1)
+
+
 # Main dispatch
 # ---------------------------------------------------------------------------
 def main():
@@ -1104,12 +1151,14 @@ def main():
     _add_sweep_parser(sub)
     _add_render_parser(sub)
     _add_compare_residuals_parser(sub)
+    _add_apex_parser(sub)
     args = ap.parse_args()
     {
         "one": cmd_one,
         "sweep": cmd_sweep,
         "render": cmd_render,
         "compare-residuals": cmd_compare_residuals,
+        "apex": cmd_apex,
     }[args.cmd](args)
 
 

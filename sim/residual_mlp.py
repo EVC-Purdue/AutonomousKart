@@ -69,6 +69,8 @@ def _precompute_steer_actual(params, cmd_steer: np.ndarray, dt: float) -> np.nda
     p = params
     slop = np.deg2rad(max(0.0, p.steer_slop_deg))
     rate_lim = np.deg2rad(p.steer_rate_max_degps) * dt
+    tau = max(0.0, p.steer_tau_s)
+    alpha_lag = dt / (tau + dt) if tau > 0.0 else 1.0
     n = cmd_steer.size
     actual_arr = np.empty(n, dtype=np.float64)
     actual = 0.0
@@ -80,7 +82,8 @@ def _precompute_steer_actual(params, cmd_steer: np.ndarray, dt: float) -> np.nda
             target = c + slop
         else:
             target = actual
-        actual += float(np.clip(target - actual, -rate_lim, rate_lim))
+        desired = alpha_lag * (target - actual)
+        actual += float(np.clip(desired, -rate_lim, rate_lim))
         actual_arr[i] = actual
     return actual_arr
 
@@ -94,8 +97,10 @@ def _bicycle_step_stateful(
     p = params
     slop = np.deg2rad(max(0.0, p.steer_slop_deg))
     rate_lim = np.deg2rad(p.steer_rate_max_degps) * dt
+    tau_steer = max(0.0, p.steer_tau_s)
+    alpha_lag = dt / (tau_steer + dt) if tau_steer > 0.0 else 1.0
 
-    target_v = np.clip(cmd_throttle / 100.0, 0.0, 1.0) * p.v_max_mps
+    target_v = np.clip(cmd_throttle, 0.0, p.v_max_mps)
     tau = p.accel_tau if target_v >= v else p.brake_tau
     dv_dt = (target_v - v) / max(tau, 1e-3)
 
@@ -106,7 +111,8 @@ def _bicycle_step_stateful(
         t = c + slop
     else:
         t = steer_actual
-    new_actual = steer_actual + float(np.clip(t - steer_actual, -rate_lim, rate_lim))
+    desired = alpha_lag * (t - steer_actual)
+    new_actual = steer_actual + float(np.clip(desired, -rate_lim, rate_lim))
 
     psi_dot_kin = v * np.tan(new_actual) / max(p.wheelbase_m, 1e-3)
     psi_dot = psi_dot_kin - p.slip_angle_at_v * v * np.sign(new_actual) * new_actual

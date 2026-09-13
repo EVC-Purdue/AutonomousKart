@@ -134,7 +134,10 @@ class DataSim:
         else:
             target_delta = self._delta_actual_rad
         rate_lim = math.radians(p.steer_rate_max_degps) * dt
-        step_delta = max(-rate_lim, min(rate_lim, target_delta - self._delta_actual_rad))
+        tau = max(0.0, p.steer_tau_s)
+        alpha_lag = dt / (tau + dt) if tau > 0.0 else 1.0
+        desired = alpha_lag * (target_delta - self._delta_actual_rad)
+        step_delta = max(-rate_lim, min(rate_lim, desired))
         self._delta_actual_rad += step_delta
         delta = self._delta_actual_rad
 

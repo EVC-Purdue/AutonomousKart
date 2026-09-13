@@ -80,6 +80,12 @@ class MPCPlanner(Planner):
         # Applied inside tan(δ) in the bicycle rollout so MPC's predicted yaw
         # rate matches the kart instead of overestimating by ~10×.
         self.actuator_gain = float(g("actuator_gain", 0.10))
+        # First-order steer lag: actual wheel angle exponentially approaches
+        # commanded with time constant steer_tau_s. Step-response analysis
+        # (docs/superpowers/data_sim_heavy) puts the heavy-kart yaw rise time
+        # at ~300 ms (τ≈0.15 s) vs ~50 ms (τ≈0.03 s) on the light kart. With
+        # τ=0 the rollout is instantaneous (legacy behavior).
+        self.steer_tau_s = float(g("steer_tau_s", 0.0))
         # Elite-mean fraction: instead of argmin over K samples, average the
         # top `mppi_elite_frac × K` samples' first actions. Cuts per-tick noise
         # without the phase-lag cost of a 1st-order filter. 1.0/K = pure argmin (no smoothing).
@@ -564,12 +570,18 @@ class MPCPlanner(Planner):
         y = np.full(K, y0)
         psi = np.full(K, yaw0)
         v = np.full(K, v0)
+        # First-order steer-lag state. Initialise actual=delta_prev so the
+        # rollout starts from the wheel angle the previous command would have
+        # converged to (best proxy when wheel angle isn't measured).
+        delta_actual = np.full(K, self.delta_prev)
+        alpha_lag = dt / (self.steer_tau_s + dt) if self.steer_tau_s > 0.0 else 1.0
         for k in range(N):
             d_k = delta_seq[:, k]
             a_k = accel_seq[:, k]
+            delta_actual = delta_actual + alpha_lag * (d_k - delta_actual)
             x = x + dt * v * np.cos(psi)
             y = y + dt * v * np.sin(psi)
-            psi = psi + dt * v / self.wheelbase * np.tan(self.actuator_gain * d_k)
+            psi = psi + dt * v / self.wheelbase * np.tan(self.actuator_gain * delta_actual)
             v = np.clip(v + dt * a_k, 0.0, v_cap)
             tx[:, k] = x
             ty[:, k] = y

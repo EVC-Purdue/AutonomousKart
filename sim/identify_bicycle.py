@@ -20,6 +20,11 @@ class BicycleParams:
     steer_slop_deg: float = 0.0
     wheelbase_m: float = 1.05
     steer_rate_max_degps: float = 180.0
+    # First-order lag from commanded to actual wheel angle. Step-response
+    # analysis (docs/superpowers/data_sim_heavy) shows the heavy kart's yaw
+    # responds in ~300 ms (τ≈0.15s) while the light kart was ~50 ms (τ≈0.03s).
+    # 0 disables the lag (legacy behavior — apply slop+rate-limit only).
+    steer_tau_s: float = 0.0
     slip_angle_at_v: float = 0.0  # rad/(m/s); negative reduces yaw rate at high v
     v_max_mps: float = 12.0
     # Lateral grip: max a_lat the tires can sustain.  Above this the kart
@@ -43,15 +48,22 @@ def _delay_shift(cmd: np.ndarray, delay_s: float, dt: float) -> np.ndarray:
 def predict_derivatives(
     p: BicycleParams,
     v: np.ndarray,
-    cmd_throttle_pct: np.ndarray,
+    cmd_throttle_mps: np.ndarray,
     cmd_steer_deg: np.ndarray,
     dt: float,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Vectorised one-step bicycle prediction. Returns (dv_dt_model, psi_dot_model)."""
-    throttle = _delay_shift(cmd_throttle_pct, p.throttle_delay_s, dt)
+    """Vectorised one-step bicycle prediction. Returns (dv_dt_model, psi_dot_model).
+
+    cmd_drive[0] is published as m/s (motor_mps) by pathfinder_node — see
+    `Float32MultiArray(data=[float(motor_mps), float(steering_deg)])` in
+    pathfinder_node._cb_drive. DataSim.step already treats it as m/s; this
+    function previously assumed % and divided by 100, which scaled the fitted
+    accel_tau/brake_tau by ~12× away from physical units.
+    """
+    throttle = _delay_shift(cmd_throttle_mps, p.throttle_delay_s, dt)
     steer = _delay_shift(cmd_steer_deg, p.steer_delay_s, dt)
 
-    target_v = np.clip(throttle / 100.0, 0.0, 1.0) * p.v_max_mps
+    target_v = np.clip(throttle, 0.0, p.v_max_mps)
     tau = np.where(target_v >= v, p.accel_tau, p.brake_tau)
     dv_dt_model = (target_v - v) / np.maximum(tau, 1e-3)
 
@@ -60,6 +72,8 @@ def predict_derivatives(
     delta = np.empty_like(delta_cmd_rad)
     actual = 0.0
     rate_lim = np.deg2rad(p.steer_rate_max_degps) * dt
+    tau = max(0.0, p.steer_tau_s)
+    alpha_lag = dt / (tau + dt) if tau > 0.0 else 1.0
     for i in range(delta_cmd_rad.size):
         c = delta_cmd_rad[i]
         if c > actual + slop:
@@ -68,7 +82,9 @@ def predict_derivatives(
             target = c + slop
         else:
             target = actual
-        delta_step = np.clip(target - actual, -rate_lim, rate_lim)
+        # First-order lag toward `target`; rate limit caps the per-tick step.
+        desired_step = alpha_lag * (target - actual)
+        delta_step = np.clip(desired_step, -rate_lim, rate_lim)
         actual += delta_step
         delta[i] = actual
 

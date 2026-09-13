@@ -219,6 +219,7 @@ def simulate(
     track_half_width: float = 2.0,
     kart_half_width: float = 0.5025,
     safety_margin: float = 0.2,
+    steering_gain: float = 1.0,
 ) -> SimResult:
     """Run a closed-loop MPC simulation over `n_laps` of the racing line.
 
@@ -348,7 +349,7 @@ def simulate(
             )
 
         motor_pct, steer_deg = cmd
-        model.step(motor_pct, steer_deg, dt)
+        model.step(motor_pct, steer_deg * steering_gain, dt)
 
         # Forward-windowed nearest-point search
         idxs = (progress_idx + np.arange(-win_back, win_fwd + 1)) % n_line

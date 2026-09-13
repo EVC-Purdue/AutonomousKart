@@ -53,7 +53,7 @@ pathfinder_node:
     mpc.steering_gain: 3.0
     mpc.horizon_steps: 20
     mpc.dt_s: 0.05
-    mpc.num_samples: 164
+    mpc.num_samples: 1024
     mpc.steer_sigma_deg: 4.0
     mpc.accel_sigma_mps2: 1.43
     mpc.proj_window_back: 5

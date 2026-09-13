@@ -15,11 +15,6 @@ app = Flask(__name__)
 CORS(app)
 master_node: MasterNode | None = None
 
-@app.after_request
-def cors(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    return response
-
 @app.route("/", methods=["GET"])
 def ping():
     return jsonify({"ping": "pong"})

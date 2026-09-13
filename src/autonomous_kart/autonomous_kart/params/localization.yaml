@@ -15,9 +15,12 @@ localization_node:
     gps_dropout_warn: 2.0      # s
     sigma_xy_floor: 0.02       # m
 
-    # Wheel-speed (VESC) update variance
-    # 2-sigma = 0.02 m/s
-    wheel_speed_var: 1.0e-4    # (m/s)^2
+    # Wheel-speed (VESC) update variance.
+    # Was 1.0e-4 (2-sigma = 0.02 m/s), which claimed centimetre-per-second
+    # accuracy the sensor does not have: single axle / no diff biases it in
+    # corners, and the loaded rolling diameter varies with load. 1.0e-2 is
+    # 1-sigma = 0.1 m/s, about 1.5% of speed at 6 m/s.
+    wheel_speed_var: 1.0e-2    # (m/s)^2
 
     imu_dropout_warn: 1.0      # s
 

@@ -1,7 +1,8 @@
 """
 - Teeth on motor gear: 15
 - Teeth on axle gear: 65
-- Wheel diameter: 11 inches
+- Wheel diameter: 10.65 inches (loaded rolling diameter, measured from bags;
+  the 11 in nominal read speed 3.3% high)
 - Pole pairs: 4
 - RPM = ERPM / pole_pairs
 - Speed(ERPM) in m/s =
@@ -15,7 +16,7 @@ import math
 
 TEETH_ON_MOTOR_GEAR = 15
 TEETH_ON_AXLE_GEAR = 65
-WHEEL_DIAMETER_INCHES = 11
+WHEEL_DIAMETER_INCHES = 10.65
 POLE_PAIRS = 4
 GEAR_RATIO = TEETH_ON_MOTOR_GEAR / TEETH_ON_AXLE_GEAR
 WHEEL_CIRCUMFERENCE_INCHES = (math.pi * WHEEL_DIAMETER_INCHES)

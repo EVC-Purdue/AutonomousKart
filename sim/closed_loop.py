@@ -100,6 +100,29 @@ class SimResult:
 # ---------------------------------------------------------------------------
 # Default MPC params (from pathfinder.yaml).
 # ---------------------------------------------------------------------------
+# Pure pursuit as params/pathfinder.yaml ships it. `planner: pure_pursuit`
+# there, so this is the controller the kart actually drove all season.
+DEFAULT_PP = {
+    "use_velocity_scaled_lookahead": True,
+    "lookahead_time_s": 0.6,
+    "min_lookahead_m": 3.0,
+    "max_lookahead_m": 8.0,
+    "use_curvature_regulation": True,
+    "min_radius_m": 7.0,
+    "min_reg_speed_mps": 7.0,
+    "approach_dist_m": 1.0,
+    "min_approach_speed_mps": 1.0,
+    "search_window": 80,
+    "initial_sync_done": False,
+    "max_resync_dist": 80,
+    "max_closed_dist": 2,
+    "rejoin_cte_activate": 3.0,
+    "rejoin_cte_deactivate": 1.0,
+    "rejoin_merge_lookahead_m": 15.0,
+    "latency_s": 0.3,
+    "steering_gain": 2.0,
+}
+
 DEFAULT_MPC = {
     "horizon_steps": 20,
     "dt_s": 0.05,
@@ -208,6 +231,7 @@ def simulate(
     line: List[Tuple[float, ...]],
     mpc_params: dict,
     *,
+    planner_kind: str = "mpc",
     sim_backend: str = "datasim",
     datasim_model_dir: str = "sim/model",
     datasim_use_mlp: bool = True,
@@ -228,9 +252,12 @@ def simulate(
     line:
         Racing line as a list of tuples ``(s, x, y, ...)``.
     mpc_params:
-        MPC parameter dict (see DEFAULT_MPC for available keys).
+        Planner parameter dict (see DEFAULT_MPC / DEFAULT_PP).
+    planner_kind:
+        ``"mpc"`` for MPCPlanner, ``"pure_pursuit"`` for PurePursuitPlanner.
     sim_backend:
-        ``"bicycle"`` for BicycleModel, ``"datasim"`` for DataSim.
+        ``"bicycle"`` for BicycleModel, ``"datasim"`` for DataSim, ``"learned"``
+        for LearnedPlant.
     datasim_model_dir:
         Directory containing the DataSim model files
         (``bicycle_params.json``, ``noise.json``, ``mlp.pt``, etc.).
@@ -281,12 +308,32 @@ def simulate(
             noise_mode=noise_mode,
             rng_seed=rng_seed,
         )
+    elif sim_backend == "linear":
+        from sim.learned_plant import LearnedPlant
+        mdir = datasim_model_dir if os.path.isabs(datasim_model_dir) \
+            else os.path.join(REPO, datasim_model_dir)
+        model = LearnedPlant.from_linear(os.path.join(mdir, "plant_linear.json"))
+    elif sim_backend == "learned":
+        from sim.learned_plant import LearnedPlant
+        mdir = datasim_model_dir if os.path.isabs(datasim_model_dir) \
+            else os.path.join(REPO, datasim_model_dir)
+        model = LearnedPlant.from_files(os.path.join(mdir, "plant_nn.pt"),
+                                        os.path.join(mdir, "plant_nn.json"))
     else:
         raise ValueError(f"unknown sim_backend {sim_backend!r}")
 
     node = MockNode(system_frequency=1.0 / dt)
-    planner = MPCPlanner(mpc_params, kart, line, logger=None, node=node)
-    planner._rng = np.random.default_rng(rng_seed)
+    if planner_kind == "pure_pursuit":
+        from autonomous_kart.nodes.pathfinder.planners.pure_pursuit import (
+            PurePursuitPlanner)
+        planner = PurePursuitPlanner(mpc_params, kart, line, logger=None, node=node)
+    elif planner_kind == "mpc":
+        planner = MPCPlanner(mpc_params, kart, line, logger=None, node=node)
+        # Only the sampling planner draws; seeding a deterministic one would
+        # attach an attribute nothing reads.
+        planner._rng = np.random.default_rng(rng_seed)
+    else:
+        raise ValueError(f"unknown planner_kind {planner_kind!r}")
 
     x0, y0 = float(line[0][1]), float(line[0][2])
     yaw0 = math.atan2(float(line[1][2]) - y0, float(line[1][1]) - x0)

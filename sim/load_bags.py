@@ -24,7 +24,7 @@ class AlignedBag:
     cmd_steer_hist: np.ndarray     # (N, NUM_STEER_HIST)
     v: np.ndarray              # (N,) m/s, low-pass filtered wheel speed
     psi_dot: np.ndarray        # (N,) rad/s, bias-corrected gyro_z in base_link FLU
-    accel_x: np.ndarray        # (N,) m/s^2, diagnostic only
+    accel_x: np.ndarray        # (N,) m/s^2, forward accel in FLU; diagnostic only
     dv_dt: np.ndarray          # (N,) m/s^2 (central diff of v)
     state_mode: np.ndarray     # (N,) string-encoded state per CLAUDE.md STATES
     odom_x: np.ndarray         # (N,) m, validation truth
@@ -87,14 +87,20 @@ def make_history(values: np.ndarray, depth: int) -> np.ndarray:
     return out
 
 
-# Mounting rotation matches imu_node R_MOUNT: diag(1, -1, -1).
-# +X forward, +Y left, +Z up in base_link FLU.
-_R_MOUNT = np.diag([1.0, -1.0, -1.0])
+# Recorded /imu has already been rotated by imu_node, so nothing is re-applied
+# to a bag taken after the 2026-09-14 mount fix. Bags before it carry a frame
+# where the gyro z axis is negated and the accelerometer x and y are swapped:
+# the old R_MOUNT had the chip a quarter turn out, and scaling the accelerometer
+# by a negative default_g mirrored it against the gyro.
+LEGACY_IMU_MOUNT = True
 
 
-def rotate_imu(raw_xyz: np.ndarray) -> np.ndarray:
-    """raw_xyz: (N, 3) in chip frame -> (N, 3) in base_link FLU."""
-    return raw_xyz @ _R_MOUNT.T
+def imu_to_flu(gyro_xyz: np.ndarray, accel_xyz: np.ndarray,
+               legacy: bool = LEGACY_IMU_MOUNT):
+    """Published /imu -> (yaw rate, forward acceleration) in base_link FLU."""
+    if legacy:
+        return -gyro_xyz[:, 2], accel_xyz[:, 1]
+    return gyro_xyz[:, 2], accel_xyz[:, 0]
 
 
 def load_gyro_bias(cache_path: str) -> np.ndarray:
@@ -170,10 +176,10 @@ def align_streams(
         [m.linear_acceleration.x, m.linear_acceleration.y, m.linear_acceleration.z]
         for _, m in imu
     ])
-    gyro_xyz = rotate_imu(gyro_xyz_raw - gyro_bias_xyz[None, :])
-    accel_xyz = rotate_imu(accel_xyz_raw)
-    psi_dot = zoh_align(imu_t, gyro_xyz[:, 2], grid)
-    accel_x = zoh_align(imu_t, accel_xyz[:, 0], grid)
+    psi_dot_flu, accel_fwd = imu_to_flu(
+        gyro_xyz_raw - gyro_bias_xyz[None, :], accel_xyz_raw)
+    psi_dot = zoh_align(imu_t, psi_dot_flu, grid)
+    accel_x = zoh_align(imu_t, accel_fwd, grid)
 
     odom_t = np.array([t for t, _ in odom])
     odom_x = zoh_align(odom_t, np.array([m.pose.pose.position.x for _, m in odom]), grid)

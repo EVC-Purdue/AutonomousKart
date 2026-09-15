@@ -1,0 +1,28 @@
+{
+  "params": {
+    "accel_tau": 0.6,
+    "brake_tau": 0.4,
+    "throttle_delay_s": 0.0,
+    "steer_delay_s": 0.0,
+    "steer_gain": 0.1900000000000001,
+    "steer_slop_deg": 0.0,
+    "wheelbase_m": 1.05,
+    "steer_rate_max_degps": 180.0,
+    "steer_tau_s": 0.2,
+    "slip_angle_at_v": 0.0,
+    "v_max_mps": 12.0
+  },
+  "fit_info": {
+    "method": "path-error fit on the logged commands of one bag",
+    "bag": "20260519_214619",
+    "window_s": [
+      2.0,
+      19.0
+    ],
+    "mean_path_err_m": 2.412225591908623,
+    "note": "cmd convention: cmd_drive deg (= 2x planner output on 05/19)"
+  },
+  "training_bags": [
+    "20260519_214619"
+  ]
+}

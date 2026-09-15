@@ -1,0 +1,29 @@
+{
+  "_model": "delta = lag(steer_gain * cmd_drive_deg, steer_tau_s); psi_dot = v*tan(delta)/(wheelbase_m + K_us*v^2)",
+  "_method": "joint fit to IMU yaw rate (sign verified vs GPS course rate), all bags of a day pooled, contiguous chunks with v>3 m/s",
+  "_note": "steer_gain is per cmd_drive degree. cmd_drive = conv x planner output; conv is 2.0 between 2026-05-18 20:19 and 2026-05-20 13:15, else 1.0. K_us pinned at 0.010 for 05/19 because line4 held a constant 4.0 m/s and gain/K_us only separate when speed varies.",
+  "wheelbase_m": 1.05,
+  "days": {
+    "05/17 light": {
+      "steer_gain": 0.3742,
+      "steer_tau_s": 0.1704,
+      "K_us": 0.01,
+      "cmd_conv": 1.0,
+      "steer_gain_per_planner_deg": 0.3742
+    },
+    "05/19 heavy": {
+      "steer_gain": 0.1624,
+      "steer_tau_s": 0.1559,
+      "K_us": 0.01,
+      "cmd_conv": 2.0,
+      "steer_gain_per_planner_deg": 0.3249
+    },
+    "05/20-21 heavy": {
+      "steer_gain": 0.412,
+      "steer_tau_s": 0.1878,
+      "K_us": 0.01,
+      "cmd_conv": 1.0,
+      "steer_gain_per_planner_deg": 0.412
+    }
+  }
+}

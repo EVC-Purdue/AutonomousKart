@@ -32,9 +32,16 @@ def _level_rotation(g, target):
     K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     return np.eye(3) + K + (K @ K) / (1.0 + c)
 
-# IMU mounted +X forward, +Y right; chip is right-handed so +Z physically
-# points down. Rotate 180° about +X to land in base_link FLU (det = +1).
-R_MOUNT = np.diag([1.0, -1.0, -1.0])
+# Chip axes measured against an RTK reference over the 2026-09-13 bags:
+# +X right, +Y forward, +Z up. Published gyro_z regressed on the RTK yaw rate
+# at slope -1.014 (R^2 0.93) and published accel_x on lateral acceleration at
+# slope 0.981, so the old diag(1, -1, -1) had the chip a quarter turn out.
+# Rotate -90° about +Z to land in base_link FLU (+X forward, +Y left, +Z up).
+R_MOUNT = np.array([
+    [0.0, 1.0, 0.0],
+    [-1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0],
+])
 
 
 class ImuNode(Node):
@@ -120,8 +127,12 @@ class ImuNode(Node):
             v = (hi << 8) | lo
             return v - 65536 if v >= 32768 else v
 
+        # abs(): sensor_msgs/Imu wants specific force, so a chip axis pointing
+        # up reads +g. Scaling by a negative default_g mirrored the accelerometer
+        # relative to the gyro, and no single R_MOUNT can serve two frames of
+        # opposite handedness.
         accel = tuple(
-            s16(raw[i], raw[i + 1]) / self.accel_per_g * self.default_g
+            s16(raw[i], raw[i + 1]) / self.accel_per_g * abs(self.default_g)
             for i in (0, 2, 4)
         )
         deg2rad = math.pi / 180.0
@@ -235,6 +246,12 @@ class ImuNode(Node):
             R_arr = R_MOUNT.copy()
             R_data = data.get("R")
             if R_data is not None:
+                # A cached R carries the mount it was levelled against. Restoring
+                # one written under a different R_MOUNT would silently undo a
+                # mount correction on the next boot.
+                mount = data.get("mount")
+                if mount is None or not np.allclose(np.asarray(mount, dtype=float), R_MOUNT):
+                    raise ValueError("cached R was levelled against a different R_MOUNT")
                 R_arr = np.asarray(R_data, dtype=float)
                 if R_arr.shape != (3, 3):
                     raise ValueError("R must be 3x3")
@@ -258,6 +275,7 @@ class ImuNode(Node):
             payload = {
                 "gyro_bias": list(self.gyro_bias),
                 "R": np.asarray(self.R).tolist(),
+                "mount": R_MOUNT.tolist(),
                 "samples": self._calib_count,
                 "timestamp": time.time(),
             }

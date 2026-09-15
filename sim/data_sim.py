@@ -74,9 +74,11 @@ class DataSim:
         """Alias for v — matches BicycleModel.speed attribute used by run_sim."""
         return self.v
 
-    def reset(self, x: float, y: float, yaw: float) -> None:
+    def reset(self, x: float, y: float, yaw: float, v: float = 0.0) -> None:
+        """`v` is the speed to start at; a handoff from recorded data takes it
+        rather than leaving the caller to assign `.v` afterwards."""
         self.x, self.y, self.yaw = float(x), float(y), float(yaw)
-        self.v = 0.0
+        self.v = float(v)
         self._delta_actual_rad = 0.0
 
     def _load_mlp(self, mlp_path, norm_path, clamp_path):

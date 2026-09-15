@@ -244,6 +244,24 @@ def _imu_msg(omega_z, accel_x, stamp_sec, stamp_nanosec=0,
     return m
 
 
+def test_localization_yaw_follows_the_published_gyro_sign(ros_ctx):
+    """A positive /imu yaw rate must raise yaw.
+
+    imu_node used to publish gyro_z inverted and this callback negated it back.
+    Both were fixed together; a lone fix on either side flips heading.
+    """
+    with ros_ctx(_real_params()) as rclpy:
+        node = LocalizationNode()
+        try:
+            node.ekf.reset(0.0, 0.0, 0.0, 0.0)
+            node._imu_cb(_imu_msg(omega_z=0.5, accel_x=0.0, stamp_sec=1))
+            node._imu_cb(_imu_msg(omega_z=0.5, accel_x=0.0, stamp_sec=1,
+                                  stamp_nanosec=50_000_000))
+            assert node.ekf.x[2] == pytest.approx(0.025, abs=1e-6)
+        finally:
+            node.destroy_node()
+
+
 def test_localization_real_mode_imu_first_msg_only_sets_stamp(ros_ctx):
     """First /imu msg seeds _last_imu_stamp; no predict, no /odom."""
     with ros_ctx(_real_params()) as rclpy:

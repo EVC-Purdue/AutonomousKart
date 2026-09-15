@@ -1,0 +1,22 @@
+{
+  "params": {
+    "accel_tau": 0.6,
+    "brake_tau": 0.4,
+    "throttle_delay_s": 0.05,
+    "steer_delay_s": 0.0,
+    "steer_gain": 0.28,
+    "steer_slop_deg": 0.5,
+    "wheelbase_m": 1.05,
+    "steer_rate_max_degps": 180.0,
+    "steer_tau_s": 0.15,
+    "slip_angle_at_v": 0.0,
+    "v_max_mps": 12.0,
+    "tire_a_lat_max_mps2": Infinity,
+    "tire_slip_tau_s": 0.2
+  },
+  "fit_info": {
+    "method": "hand-constructed from empirical psi/(v/L\u00b7\u03b4) ratio",
+    "empirical_ratio_median": 0.287
+  },
+  "training_bags": []
+}

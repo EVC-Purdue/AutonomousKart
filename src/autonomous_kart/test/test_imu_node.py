@@ -252,8 +252,8 @@ def test_calibration_aborts_on_accel_anomaly(imu_factory):
 def test_calibration_levels_accel_xy(imu_factory, tmp_path):
     """Tilted chassis: accel calibration must rotate measured gravity onto +Z.
 
-    Pick a raw accel that, after R_MOUNT (diag(1, -1, -1)), points slightly off
-    +Z. After calibration the published accel should land at (0, 0, +|g|).
+    Pick a raw accel that, after R_MOUNT, points slightly off +Z. After
+    calibration the published accel should land at (0, 0, +|g|).
     """
     import numpy as np
 
@@ -270,7 +270,7 @@ def test_calibration_levels_accel_xy(imu_factory, tmp_path):
         assert node.state == CALIBRATED, node.last_error
         # Apply learned R to the same raw accel: x/y must zero out and z must
         # carry the full magnitude (level rotation preserves length).
-        accel_m = np.array([raw_ax, 0, raw_az]) / 16384.0 * node.default_g
+        accel_m = np.array([raw_ax, 0, raw_az]) / 16384.0 * abs(node.default_g)
         corrected = node.R @ accel_m
         assert corrected[0] == pytest.approx(0.0, abs=1e-6)
         assert corrected[1] == pytest.approx(0.0, abs=1e-6)
@@ -295,12 +295,72 @@ def test_cache_round_trip_restores_R(imu_factory, tmp_path):
     cache.write_text(json.dumps({
         "gyro_bias": [0.0, 0.0, 0.0],
         "R": R_saved,
+        "mount": imu_module.R_MOUNT.tolist(),
         "samples": 200,
         "timestamp": 0.0,
     }))
     with imu_factory(cache_path=cache) as (node, _bus, _rclpy):
         assert node.state == CALIBRATED
         assert np.allclose(node.R, np.asarray(R_saved))
+
+
+def test_cache_from_a_different_mount_is_rejected(imu_factory, tmp_path):
+    """A cache levelled against an older R_MOUNT must not silently come back."""
+    import numpy as np
+
+    cache = tmp_path / "stale.json"
+    cache.write_text(json.dumps({
+        "gyro_bias": [0.0, 0.0, 0.0],
+        "R": np.diag([1.0, -1.0, -1.0]).tolist(),
+        "mount": np.diag([1.0, -1.0, -1.0]).tolist(),
+        "samples": 200,
+        "timestamp": 0.0,
+    }))
+    with imu_factory(cache_path=cache) as (node, _bus, _rclpy):
+        assert node.state == WAITING
+
+
+def test_mount_maps_chip_axes_to_base_link_flu(imu_factory):
+    """The chip reads +X right, +Y forward, +Z up; base_link is FLU.
+
+    Both channels must land in the same frame. Scaling the accelerometer by a
+    negative default_g used to mirror it against the gyro, and no single
+    rotation can undo that.
+    """
+    with imu_factory(calibration_samples=1) as (node, bus, _rclpy):
+        sent = []
+        node.imu_publisher.publish = sent.append
+
+        # Gravity on chip +Z keeps the calibration magnitude check happy and
+        # leaves the level step a no-op.
+        bus.next_read = _make_burst(accel_raw=(0, 0, 16384), gyro_raw=(0, 0, 0))
+        node.publish_imu()
+        assert node.state == CALIBRATED, node.last_error
+
+        # Forward acceleration sits on chip +Y, a left turn on chip +Z.
+        bus.next_read = _make_burst(accel_raw=(0, 4096, 16384), gyro_raw=(0, 0, 131))
+        node.publish_imu()
+
+        assert len(sent) == 1
+        msg = sent[0]
+        g = abs(node.default_g)
+        assert msg.linear_acceleration.x == pytest.approx(0.25 * g, rel=1e-6)
+        assert msg.linear_acceleration.y == pytest.approx(0.0, abs=1e-6)
+        assert msg.linear_acceleration.z == pytest.approx(g, rel=1e-6)
+        assert msg.angular_velocity.z == pytest.approx(math.radians(1.0), rel=1e-4)
+        assert msg.angular_velocity.x == pytest.approx(0.0, abs=1e-9)
+        assert msg.angular_velocity.y == pytest.approx(0.0, abs=1e-9)
+
+
+def test_accel_is_specific_force_not_its_negation(imu_factory):
+    """At rest with chip +Z up the published z must read +g, per sensor_msgs/Imu."""
+    with imu_factory(calibration_samples=1) as (node, bus, _rclpy):
+        sent = []
+        node.imu_publisher.publish = sent.append
+        bus.next_read = _make_burst(accel_raw=(0, 0, 16384), gyro_raw=(0, 0, 0))
+        node.publish_imu()
+        node.publish_imu()
+        assert sent[0].linear_acceleration.z == pytest.approx(abs(node.default_g), rel=1e-6)
 
 
 def test_calibration_completes_and_writes_cache(imu_factory, tmp_path):

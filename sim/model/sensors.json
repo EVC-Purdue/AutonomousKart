@@ -1,0 +1,140 @@
+{
+  "gps_x": {
+    "scale": 1.0,
+    "bias": 0.0,
+    "sigma_white": 0.002214114637996437,
+    "sigma_ou": 0.006261225119171432,
+    "tau_s": 6.4232949801545,
+    "lag_s": 0.0,
+    "rate_hz": 10.0,
+    "r2": NaN,
+    "sigma_core": 0.006641177879196838,
+    "excess_kurtosis": 0.9831432496981969,
+    "tail_rate": 0.001982665835835269,
+    "tail_rms": 0.03110984744560012,
+    "n_samples": 17653
+  },
+  "gps_y": {
+    "scale": 1.0,
+    "bias": 0.0,
+    "sigma_white": 0.0023327480064662975,
+    "sigma_ou": 0.005979239509786002,
+    "tau_s": 8.08194654576532,
+    "lag_s": 0.0,
+    "rate_hz": 10.0,
+    "r2": NaN,
+    "sigma_core": 0.006418178742996991,
+    "excess_kurtosis": 7.614603347479937,
+    "tail_rate": 0.003738741290432221,
+    "tail_rms": 0.04055316699948154,
+    "n_samples": 17653
+  },
+  "vtg_speed": {
+    "scale": 1.0036513438616488,
+    "bias": -0.01865633070476862,
+    "sigma_white": 0.05234133150034869,
+    "sigma_ou": 0.026088047822002917,
+    "tau_s": 2.3929846444235996,
+    "lag_s": 0.0,
+    "rate_hz": 10.0,
+    "r2": 0.994871366651499,
+    "sigma_core": 0.058482486458704075,
+    "excess_kurtosis": 30.52128648979125,
+    "tail_rate": 0.03996447602131439,
+    "tail_rms": 0.4521758238804189,
+    "n_samples": 6756
+  },
+  "vtg_course": {
+    "scale": 1.0,
+    "bias": -0.003930525669022525,
+    "sigma_white": 0.012005297133611696,
+    "sigma_ou": 0.02112398331767528,
+    "tau_s": 1.0539278498083062,
+    "lag_s": 0.0,
+    "rate_hz": 10.0,
+    "r2": NaN,
+    "sigma_core": 0.024297115682148956,
+    "excess_kurtosis": 6.194575510649994,
+    "tail_rate": 0.02664298401420959,
+    "tail_rms": 0.13466333766590036,
+    "n_samples": 6756
+  },
+  "gyro_z": {
+    "scale": 1.008147351287902,
+    "bias": -0.0011772572492313338,
+    "sigma_white": 0.029367632194089367,
+    "sigma_ou": 0.06575343128332209,
+    "tau_s": 0.16646166410741697,
+    "lag_s": 0.09000000000000064,
+    "rate_hz": 100.0,
+    "r2": 0.917434873401458,
+    "sigma_core": 0.07201368999168058,
+    "excess_kurtosis": 30.295414489015954,
+    "tail_rate": 0.013102613401694795,
+    "tail_rms": 0.5441661658264747,
+    "n_samples": 70215
+  },
+  "accel_x": {
+    "scale": 1.0081846110920005,
+    "bias": -0.08110987401034743,
+    "sigma_white": 1.2014115998432164,
+    "sigma_ou": 0.25806462242017475,
+    "tau_s": 0.4906529592403002,
+    "lag_s": 0.0,
+    "rate_hz": 100.0,
+    "r2": 0.12352504187243629,
+    "sigma_core": 1.228815356993354,
+    "excess_kurtosis": 6.533501722869618,
+    "tail_rate": 0.007249163284198533,
+    "tail_rms": 7.070232388259252,
+    "n_samples": 70215
+  },
+  "wheel_speed": {
+    "scale": 1.026295762214861,
+    "bias": 0.0,
+    "sigma_white": 0.0,
+    "sigma_ou": 0.09981318189448336,
+    "tau_s": 0.9752840877251064,
+    "lag_s": -0.009999999999999454,
+    "rate_hz": 100.0,
+    "r2": 0.9631008879242696,
+    "sigma_core": 0.09981318189448336,
+    "excess_kurtosis": 84.96585564913842,
+    "tail_rate": 0.05625049796828938,
+    "tail_rms": 1.185801473511165,
+    "n_samples": 62755
+  },
+  "gps_glitch_rate": 0.0010361160449970396,
+  "gyro_bias_still": [
+    -0.0005092713177113384,
+    0.0014405779028145288,
+    6.80104279781627e-05
+  ],
+  "gyro_sigma_still": [
+    0.0034619456682464336,
+    0.004290290978086686,
+    0.0027454551660010674
+  ],
+  "accel_mean_still": [
+    -0.03016458625224059,
+    0.21199522078581023,
+    9.621814988932217
+  ],
+  "accel_sigma_still": [
+    0.10587489559608988,
+    0.21519944961840967,
+    0.0862021906421981
+  ],
+  "fitted_on": [
+    "run_20260913_195301_auto",
+    "run_20260913_205141_auto"
+  ],
+  "moving_minutes": 12.118244850635529,
+  "still_minutes": 29.399899462858837,
+  "notes": {
+    "frame": "channels are base_link FLU. Bags predating the 2026-09-14 mount fix are converted on read by imu_to_flu.",
+    "accel_x": "low R^2 because true along-track acceleration is small against the vibration floor, not because the axis is wrong.",
+    "wheel_speed": "intercept pinned at zero; the free-intercept fit does not generalise across runs. Residual is entirely correlated, not white.",
+    "lag_s": "quoted against the GPS header-stamp timeline, which trails the physical fix because gps_node stamps on its own timer."
+  }
+}

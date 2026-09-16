@@ -32,11 +32,7 @@ def _level_rotation(g, target):
     K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     return np.eye(3) + K + (K @ K) / (1.0 + c)
 
-# Chip axes measured against an RTK reference over the 2026-09-13 bags:
 # +X right, +Y forward, +Z up. Published gyro_z regressed on the RTK yaw rate
-# at slope -1.014 (R^2 0.93) and published accel_x on lateral acceleration at
-# slope 0.981, so the old diag(1, -1, -1) had the chip a quarter turn out.
-# Rotate -90° about +Z to land in base_link FLU (+X forward, +Y left, +Z up).
 R_MOUNT = np.array([
     [0.0, 1.0, 0.0],
     [-1.0, 0.0, 0.0],

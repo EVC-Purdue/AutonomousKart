@@ -11,10 +11,10 @@
     v_max_mps: 12.0 # max kart speed (m/s)
     wheelbase_m: 1.05 # rear-axle → front-axle (m)
     steer_max_deg: 60.0 # physical front-wheel steering limit (deg)
-    steer_rate_max_degps: 180.0 # max steering slew rate (deg/s)
+    steer_rate_max_degps: 33.7 # max steering slew rate (deg/s)
     a_max_mps2: 2.0 # max forward acceleration (m/s^2)
     a_min_mps2: -3.0 # max braking deceleration (m/s^2, negative)
-    a_lat_max_mps2: 8.0 # tire-grip lateral accel cap (m/s^2)
+    a_lat_max_mps2: 5.3 # tire-grip lateral accel cap (m/s^2)
 
 pathfinder_node:
   ros__parameters:
@@ -51,9 +51,10 @@ pathfinder_node:
 
     # mpc: sampling MPC
     mpc.steering_gain: 3.0
-    mpc.horizon_steps: 20
+    mpc.horizon_steps: 40
     mpc.dt_s: 0.05
-    mpc.num_samples: 1024
+    # 32 scores identically to 1024 and solves ~10x faster.
+    mpc.num_samples: 32
     mpc.steer_sigma_deg: 5.0
     mpc.accel_sigma_mps2: 1.43
     mpc.proj_window_back: 5
@@ -62,12 +63,8 @@ pathfinder_node:
     mpc.target_speed_mps: 6.0
     mpc.steer_observability_v_mps: 0.5
     # Actuator gain assumed inside MPC's bicycle rollout (yaw = v/L·tan(α·δ)).
-    # Code default is 0.10 (fit to 5/19 bags, when linkage was very degraded).
-    # Current hardware shows PP works with mild deviation -> real α ≥ ~0.20.
-    # 0.20 is the lowest safe value for the on-line corner test across plant
-    # α in [0.20, 1.00]. Lower this if MPC visibly oversteers; raise it
-    # toward the measured PP ratio if MPC visibly undersuits.
-    mpc.actuator_gain: 0.30
+    # 0.38 off 9/13 bags
+    mpc.actuator_gain: 0.38
     # First-order steer lag in the rollout. Jointly fit to IMU yaw rate per day
     mpc.steer_tau_s: 0.17
     mpc.track_half_width_m: 2.0

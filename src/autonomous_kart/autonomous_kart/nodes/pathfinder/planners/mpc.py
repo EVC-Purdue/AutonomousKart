@@ -639,11 +639,12 @@ class MPCPlanner(Planner):
         c_alat = self.w_a_lat * np.sum(
             np.maximum(0.0, np.abs(a_lat) - self.a_lat_max) ** 2, axis=1,
         )
-        cost = (c_d + c_h + c_v + c_delta + c_drate + c_accel
-                + c_bnd + c_edge + c_prog + c_term_d + c_term_h + c_alat)
 
-        # Corridor enforcement is a soft quadratic penalty (c_bnd above).
-        # Pick the action by averaging the top `mppi_elite_frac × K` samples'
+        cost = (c_d + c_h + c_v + c_delta + c_drate + c_accel
+                + c_prog + c_term_h + c_alat)
+
+        # Corridor enforcement comes from c_d alone (c_bnd is reported, not
+        # scored). Pick the action by averaging the top `mppi_elite_frac × K` samples'
         # control sequences (CEM-style elite mean). The reported "best"
         # cost is still the elite minimum so feasibility / failsafe still
         # gate on the truly-best trajectory.

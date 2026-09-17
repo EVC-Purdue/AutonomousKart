@@ -452,7 +452,8 @@ def test_published_angular_velocity_subtracts_bias(imu_factory):
                 node.publish_imu()
             assert node.state == CALIBRATED
 
-            # Now feed raw_x = 300; expect angular_velocity.x ~= (300 - 100) raw worth
+            # Now feed raw_x = 300; chip +X is right, so R_MOUNT lands the
+            # (300 - 100) raw worth on base_link -Y.
             bus.next_read = _make_burst(gyro_raw=(300, 0, 0))
             received.clear()
             node.publish_imu()
@@ -463,8 +464,8 @@ def test_published_angular_velocity_subtracts_bias(imu_factory):
             assert len(received) == 1
 
             expected = (300 - bias_raw) / 131.0 * (math.pi / 180.0)
-            assert received[0].angular_velocity.x == pytest.approx(expected, rel=1e-6)
-            assert received[0].angular_velocity.y == pytest.approx(0.0, abs=1e-9)
+            assert received[0].angular_velocity.y == pytest.approx(-expected, rel=1e-6)
+            assert received[0].angular_velocity.x == pytest.approx(0.0, abs=1e-9)
         finally:
             exe.remove_node(listener)
             exe.remove_node(node)

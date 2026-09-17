@@ -361,14 +361,21 @@ def test_set_state_to_manual(running_stack):
 
 def test_manual_control_publishes_on_topic(running_stack):
     before = len(running_stack["manual_cmds"])
-    status, body = _http_post(
-        "/manual_control", {"speed": 1.5, "steering": -2.5}
-    )
-    assert status == 200
-    assert body.get("success") == "ok"
-    assert running_stack["pump"](
-        lambda: len(running_stack["manual_cmds"]) > before, timeout=10.0
-    )
+    # The POST publishes a single sample. Until the writer and reader have
+    # matched it goes nowhere and nothing re-delivers it, and the graph shows
+    # the publisher before the match completes, so keep posting until one lands.
+    deadline = time.monotonic() + 10.0
+    delivered = False
+    while time.monotonic() < deadline and not delivered:
+        status, body = _http_post(
+            "/manual_control", {"speed": 1.5, "steering": -2.5}
+        )
+        assert status == 200
+        assert body.get("success") == "ok"
+        delivered = running_stack["pump"](
+            lambda: len(running_stack["manual_cmds"]) > before, timeout=1.0
+        )
+    assert delivered
     assert running_stack["manual_cmds"][-1] == [1.5, -2.5]
 
 

@@ -87,7 +87,10 @@ jobs:
         shell: bash
         run: |
           set -exo pipefail
-          pip install --no-cache-dir pytest-cov coverage
+          # Humble's launch_testing plugin still declares the legacy `path`
+          # arg that pytest 9.1 dropped, so an unpinned pytest-cov (>=7 wants
+          # pytest>=7) upgrades pytest and every test fails to collect.
+          pip install --no-cache-dir "pytest<8" "pytest-cov<7" coverage
 
       - name: Run tests
         shell: bash

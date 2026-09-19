@@ -19,7 +19,7 @@
 pathfinder_node:
   ros__parameters:
     # Active planner: mpc | opencv | pure_pursuit
-    planner: pure_pursuit
+    planner: mpc
 
     # pure_pursuit
     pure_pursuit.use_velocity_scaled_lookahead: true

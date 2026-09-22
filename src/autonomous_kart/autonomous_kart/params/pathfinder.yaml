@@ -12,7 +12,7 @@
     wheelbase_m: 1.05 # rear-axle → front-axle (m)
     steer_max_deg: 60.0 # physical front-wheel steering limit (deg)
     steer_rate_max_degps: 33.7 # max steering slew rate (deg/s)
-    a_max_mps2: 2.0 # max forward acceleration (m/s^2)
+    a_max_mps2: 5.3 # max forward acceleration (m/s^2)
     a_min_mps2: -3.0 # max braking deceleration (m/s^2, negative)
     a_lat_max_mps2: 5.3 # tire-grip lateral accel cap (m/s^2)
 
@@ -102,7 +102,8 @@ pathfinder_node:
     #  mpc residual learner
     mpc.residual.mode: shadow
     mpc.residual.target_horizon_s: 0.5
-    mpc.residual.forgetting_factor: 0.99
+    # 0.9995 is ~33 s.
+    mpc.residual.forgetting_factor: 0.9995
     mpc.residual.initial_cov: 1000.0
     mpc.residual.min_train_speed_mps: 0.5
     mpc.residual.error_window: 200

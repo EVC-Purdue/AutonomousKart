@@ -12,6 +12,8 @@ from typing import Deque, Tuple
 
 import numpy as np
 
+from autonomous_kart.nodes.pathfinder.planners.residual import models
+
 # Feature-vector layout (kept in sync with mpc.py's _features helper).
 NUM_STEER_HIST = 4
 NUM_THROTTLE_HIST = 3
@@ -49,7 +51,16 @@ class ResidualLearner:
         self.max_theta_norm = float(g("max_theta_norm", 50.0))
         self.rls_warmup_samples = int(g("rls_warmup_samples", 50))
         self.apply_min_samples_this_run = int(g("apply_min_samples_this_run", 1200))
-        self.gbm_enabled = bool(g("gbm_enabled", False))
+        self.model_size = str(g("model_size", "")).strip().lower()
+        if self.model_size not in models.SIZES:
+            raise ValueError(f"residual.model_size must be one of "
+                             f"{models.SIZES}, got {g('model_size')!r}")
+        self.uses_batch_model = self.model_size in models.BATCH
+        # xs is this learner carrying only its bias term, which makes it the
+        # forgetting mean of the target.
+        self.feature_mask = np.ones(NUM_FEATURES)
+        if self.model_size == "xs":
+            self.feature_mask[1:] = 0.0
         self.cache_enabled = bool(g("cache_enabled", True))
         self.cache_dir = str(g("cache_dir", "/root/.cache/residual_cache"))
         self.cache_load_on_start = bool(g("cache_load_on_start", True))
@@ -129,7 +140,9 @@ class ResidualLearner:
                         self._last_val_mae_d = float("nan")
                         self.use_gbm = False
 
-        if self.gbm_enabled:
+        # `mode: off` never pushes a sample, so a trainer thread would fit
+        # nothing and hold a core for it.
+        if self.uses_batch_model and self.enabled:
             from autonomous_kart.nodes.pathfinder.planners.residual.buffer import TrainBuffer
             from autonomous_kart.nodes.pathfinder.planners.residual.trainer import GBMTrainer
             self.buffer = TrainBuffer(
@@ -146,6 +159,7 @@ class ResidualLearner:
                 min_samples_to_train=int(g("gbm_min_samples_to_train", 1200)),
                 retrain_secs=float(g("gbm_retrain_secs", 10.0)),
                 retrain_every_samples=int(g("gbm_retrain_every_samples", 1200)),
+                estimator_factory=models.estimator(self.model_size, params),
             )
             # Monkey-patch the trainer's train_once so the learner installs the
             # new GBM (subject to a hard val_mae safety floor) and recomputes
@@ -210,6 +224,7 @@ class ResidualLearner:
              nom_ds: float, nom_dd: float, speed: float) -> None:
         if not self.enabled:
             return
+        phi = phi * self.feature_mask
         if speed < self.min_speed:
             return
         if abs(d_t) >= self.max_train_d_m:
@@ -272,6 +287,7 @@ class ResidualLearner:
             self._trigger_divergence_check()
 
     def predict(self, phi: np.ndarray) -> Tuple[float, float, int]:
+        phi = phi * self.feature_mask
         if not self.enabled:
             self.last_pred_s = 0.0
             self.last_pred_d = 0.0

@@ -53,8 +53,7 @@ pathfinder_node:
     mpc.steering_gain: 3.0
     mpc.horizon_steps: 40
     mpc.dt_s: 0.05
-    # 32 scores identically to 1024 and solves ~10x faster.
-    mpc.num_samples: 32
+    mpc.num_samples: 128
     mpc.steer_sigma_deg: 5.0
     mpc.accel_sigma_mps2: 1.43
     mpc.proj_window_back: 5
@@ -63,8 +62,12 @@ pathfinder_node:
     mpc.target_speed_mps: 6.0
     mpc.steer_observability_v_mps: 0.5
     # Actuator gain assumed inside MPC's bicycle rollout (yaw = v/L·tan(α·δ)).
-    # 0.38 off 9/13 bags
+    # 0.38 off 9/13 bags. Superseded by the knot table below wherever that is
+    # non-empty; it still sets steer_max.
     mpc.actuator_gain: 0.38
+    # Measured cmd_drive -> wheel angle
+    mpc.steer_map_cmd_deg: [-60, -21.459, -17.02, -12.622, -9.518, -6.809, -4.503, -2.487, 0.074, 2.52, 4.51, 6.873, 9.514, 12.69, 16.773, 22.035, 60]
+    mpc.steer_map_wheel_deg: [-10.8334, -10.8334, -6.7186, -3.2064, -1.1868, -0.2798, -0.1836, -0.1546, -0.0414, 0.521, 1.2881, 2.3283, 3.8017, 6.1932, 9.3724, 12.5612, 12.5612]  # Reverse
     # First-order steer lag in the rollout. Jointly fit to IMU yaw rate per day
     mpc.steer_tau_s: 0.17
     mpc.track_half_width_m: 2.0
@@ -115,8 +118,9 @@ pathfinder_node:
     mpc.residual.max_theta_norm: 50.0
     # below this many RLS updates, predict() returns (0, 0) so MPC sees no noise
     mpc.residual.rls_warmup_samples: 50
-#    GBM parms
-    mpc.residual.gbm_enabled: false
+    # Which model the residual fits: xs constant | s ridge linear |m gradient boosting | l 64x64 mlp | xl 128x128 mlp
+    mpc.residual.model_size: m
+#    GBM parms, used by model_size m
     mpc.residual.gbm_buffer_capacity: 18000
     mpc.residual.gbm_max_iter: 60
     mpc.residual.gbm_max_depth: 3
@@ -128,6 +132,12 @@ pathfinder_node:
     mpc.residual.gbm_select_eps_s_m: 0.0
     mpc.residual.gbm_select_eps_d_m: 0.005
     mpc.residual.gbm_predict_clip_m: 0.5
+#    network parms, used by model_size l and xl
+    mpc.residual.mlp_max_iter: 150
+    mpc.residual.mlp_batch_size: 256
+    mpc.residual.mlp_learning_rate: 0.002
+    mpc.residual.mlp_alpha: 0.0001
+    mpc.residual.mlp_n_iter_no_change: 10
     # Checkpoints + revert
     mpc.residual.checkpoint_ring_size: 5
     mpc.residual.checkpoint_keep_factor: 1.5

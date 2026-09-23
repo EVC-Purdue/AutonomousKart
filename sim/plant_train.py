@@ -411,11 +411,17 @@ def coverage_hull(feats: np.ndarray) -> dict:
 
 def main() -> None:
     import argparse
+    from sim.mj.fitdata import DAYS
     from sim.plant_dataset import build_segments
     from sim.sensor_noise import SensorNoiseModel
 
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--runs", nargs="+", required=True)
+    ap.add_argument("--runs", nargs="+", default=None)
+    # One track day out of the cached September fixture, which carries the
+    # splits `sim/mj` already fits and validates against. Training from it is
+    # what makes a per-day plant and the MuJoCo specs held out on the same
+    # stints, so the two can be put on one ladder.
+    ap.add_argument("--day", default=None, choices=list(DAYS))
     ap.add_argument("--sensors", default="sim/model/sensors.json")
     ap.add_argument("--out", default="sim/model/plant_nn.pt")
     ap.add_argument("--meta", default="sim/model/plant_nn.json")
@@ -431,8 +437,17 @@ def main() -> None:
                          "same split; it ships by default, see from_linear")
     args = ap.parse_args()
 
-    noise = SensorNoiseModel.load(args.sensors)
-    segments = build_segments(args.runs, noise)
+    if args.day:
+        from sim.mj.fitdata import as_segments
+        segments, meta = as_segments()
+        segments = [s for s, m in zip(segments, meta) if m["day"] == args.day]
+        runs = sorted({m["run"] for m in meta if m["day"] == args.day})
+    elif args.runs:
+        noise = SensorNoiseModel.load(args.sensors)
+        segments = build_segments(args.runs, noise)
+        runs = args.runs
+    else:
+        ap.error("one of --runs or --day is required")
     train = [s for s in segments if s.split == "train"]
     val = [s for s in segments if s.split == "val"]
     def report(seed, history):
@@ -462,7 +477,7 @@ def main() -> None:
             "window": HISTORY, "plant_hz": PLANT_HZ,
             "features": list(FEATURE_NAMES), "targets": list(TARGET_NAMES),
             "feature_whitener": fw.to_dict(), "target_whitener": tw.to_dict(),
-            "runs": args.runs, "members": args.members,
+            "runs": runs, "members": args.members,
             "curriculum": list(args.curriculum),
             "coverage": coverage_hull(feats_all),
             "history": [  # per member: the only record of what training did
@@ -479,7 +494,7 @@ def main() -> None:
             "window": HISTORY, "plant_hz": PLANT_HZ,
             "features": list(FEATURE_NAMES), "targets": list(TARGET_NAMES),
             "feature_whitener": fw.to_dict(), "target_whitener": tw.to_dict(),
-            "coverage": coverage_hull(feats_all), "runs": args.runs,
+            "coverage": coverage_hull(feats_all), "runs": runs,
             "n_params": lin.n_params, "linear": lin.to_dict(),
         }, f, indent=2)
     print(f"wrote {args.out}, {args.meta} and {args.linear_out}")

@@ -244,6 +244,8 @@ def simulate(
     kart_half_width: float = 0.5025,
     safety_margin: float = 0.2,
     steering_gain: float = 1.0,
+    actuation_delay_s: float = 0.0,
+    delay_comp_s: float = 0.0,
 ) -> SimResult:
     """Run a closed-loop MPC simulation over `n_laps` of the racing line.
 
@@ -257,7 +259,7 @@ def simulate(
         ``"mpc"`` for MPCPlanner, ``"pure_pursuit"`` for PurePursuitPlanner.
     sim_backend:
         ``"bicycle"`` for BicycleModel, ``"datasim"`` for DataSim, ``"learned"``
-        for LearnedPlant.
+        for LearnedPlant, ``"mujoco"`` for the MuJoCo kart.
     datasim_model_dir:
         Directory containing the DataSim model files
         (``bicycle_params.json``, ``noise.json``, ``mlp.pt``, etc.).
@@ -277,6 +279,13 @@ def simulate(
         Half-width of the kart in metres.
     safety_margin:
         Additional margin from track edge (safety check).
+    actuation_delay_s:
+        Pure transport delay between a command being computed and the plant
+        seeing it. The plant's own first-order actuator lag is separate.
+    delay_comp_s:
+        If > 0, the planner is handed a state propagated this far forward
+        through the commands already in flight, using the planner's own
+        bicycle model. Set it equal to actuation_delay_s to compensate.
     """
     kart = _kart_from_yaml()
 
@@ -319,6 +328,19 @@ def simulate(
             else os.path.join(REPO, datasim_model_dir)
         model = LearnedPlant.from_files(os.path.join(mdir, "plant_nn.pt"),
                                         os.path.join(mdir, "plant_nn.json"))
+    elif sim_backend == "mujoco":
+        from sim.mj.kart import KartSpec
+        from sim.mj.plant import MuJoCoPlant
+        mdir = datasim_model_dir if os.path.isabs(datasim_model_dir) \
+            else os.path.join(REPO, datasim_model_dir)
+        spec_path = os.path.join(mdir, "mj_kart_september_spec.json")
+        if os.path.exists(spec_path):
+            import json as _json
+            with open(spec_path) as fh:
+                spec = KartSpec.from_dict(_json.load(fh))
+        else:
+            spec = KartSpec()
+        model = MuJoCoPlant(spec)
     else:
         raise ValueError(f"unknown sim_backend {sim_backend!r}")
 
@@ -366,12 +388,22 @@ def simulate(
     t0_ns = 0
     completion_step = max_steps
 
+    n_delay = int(round(max(0.0, actuation_delay_s) / dt))
+    cmd_queue: List[Tuple[float, float]] = [(0.0, 0.0)] * n_delay
+    n_comp = int(round(max(0.0, delay_comp_s) / dt))
+    pred_delta = 0.0  # controller-side estimate of the actual wheel angle
+
     for step in range(max_steps):
         now_ns = t0_ns + int(step * dt * 1e9)
+        px, py, pyaw, pv = model.x, model.y, model.yaw, model.speed
+        if n_comp > 0:
+            px, py, pyaw, pv, pred_delta = _predict_forward(
+                planner, px, py, pyaw, pv, pred_delta, cmd_queue, n_comp, dt
+            )
         inputs = PlannerInputs(
-            pose_xy=(model.x, model.y),
-            yaw_rad=model.yaw,
-            speed_mps=model.speed,
+            pose_xy=(px, py),
+            yaw_rad=pyaw,
+            speed_mps=pv,
             track_angles=None,
             now_ns=now_ns,
         )
@@ -395,7 +427,11 @@ def simulate(
                 residual_stats=_capture_residual_stats(planner),
             )
 
-        motor_pct, steer_deg = cmd
+        if n_delay > 0:
+            cmd_queue.append(cmd)
+            motor_pct, steer_deg = cmd_queue.pop(0)
+        else:
+            motor_pct, steer_deg = cmd
         model.step(motor_pct, steer_deg * steering_gain, dt)
 
         # Forward-windowed nearest-point search
@@ -481,6 +517,30 @@ def simulate(
     )
 
 
+def _predict_forward(planner, x, y, yaw, v, delta, cmd_queue, n, dt):
+    """Roll the measured state forward through the commands already in flight.
+
+    Uses the planner's own bicycle model and first-order steer lag, so the
+    controller only ever relies on what it already believes about the plant.
+    """
+    tau = float(getattr(planner, "steer_tau_s", 0.0))
+    alpha_lag = dt / (tau + dt) if tau > 0.0 else 1.0
+    gain = float(getattr(planner, "actuator_gain", 1.0))
+    wb = float(getattr(planner, "wheelbase", 1.05))
+    for k in range(n):
+        if cmd_queue:
+            _, steer_deg = cmd_queue[k] if k < len(cmd_queue) else cmd_queue[-1]
+        else:
+            steer_deg = 0.0
+        delta = delta + alpha_lag * (math.radians(steer_deg) - delta)
+        x += dt * v * math.cos(yaw)
+        y += dt * v * math.sin(yaw)
+        yaw += dt * v / wb * math.tan(gain * delta)
+        # Speed is held: the window is tens of milliseconds and the planner has
+        # no model of the speed loop beyond the setpoint it just asked for.
+    return x, y, yaw, v, delta
+
+
 def _capture_residual_stats(planner) -> dict:
     """Snapshot the planner's residual learner at end of run.
 
@@ -496,7 +556,8 @@ def _capture_residual_stats(planner) -> dict:
         "mode", "use_gbm", "samples_trained", "samples_accepted_this_run",
         "outliers_dropped", "off_line_skipped", "divergence_resets",
         "revert_count", "rls_warmup_samples", "apply_min_samples_this_run",
-        "gbm_enabled", "last_active_model", "last_pred_clipped",
+        "model_size", "uses_batch_model", "last_active_model",
+        "last_pred_clipped",
     ):
         if hasattr(r, attr):
             v = getattr(r, attr)

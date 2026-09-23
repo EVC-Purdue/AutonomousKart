@@ -672,9 +672,9 @@ _APPLY_GATE_OVERRIDES = {
 }
 _RESIDUAL_MODE_OVERRIDES = {
     "off":    {"residual.mode": "off"},
-    "rls":    {"residual.mode": "apply", "residual.gbm_enabled": False, **_APPLY_GATE_OVERRIDES},
-    "gbm":    {"residual.mode": "apply", "residual.gbm_enabled": True,  **_APPLY_GATE_OVERRIDES},
-    "both":   {"residual.mode": "apply", "residual.gbm_enabled": True,  **_APPLY_GATE_OVERRIDES},
+    "rls":    {"residual.mode": "apply", "residual.model_size": "s", **_APPLY_GATE_OVERRIDES},
+    "gbm":    {"residual.mode": "apply", "residual.model_size": "m", **_APPLY_GATE_OVERRIDES},
+    "both":   {"residual.mode": "apply", "residual.model_size": "m", **_APPLY_GATE_OVERRIDES},
     "shadow": {"residual.mode": "shadow", **_APPLY_GATE_OVERRIDES},
 }
 
@@ -785,7 +785,7 @@ def _run_one_compare(mode: str, seed: int, args_dict: dict) -> dict:
     print(
         f"  [{mode:<6} seed{seed}] "
         f"residual.mode={mpc_params.get('residual.mode', '?'):<6} "
-        f"gbm_enabled={mpc_params.get('residual.gbm_enabled', '?')} "
+        f"model_size={mpc_params.get('residual.model_size', '?')} "
         f"-> effective={rs.get('effective_mode', '?'):<6} "
         f"trained={rs.get('samples_trained', '?')} "
         f"accepted={rs.get('samples_accepted_this_run', '?')} "

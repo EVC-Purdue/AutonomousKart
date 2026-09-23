@@ -89,6 +89,9 @@ def build_planner(run_dir: str, line_csv: str):
         if k.startswith("mpc."):
             mpc.setdefault(k[len("mpc."):], v)
     mpc["residual.cache_enabled"] = False
+    # These runs predate `residual.model_size`, and were recorded with the
+    # batch model off. Pin the recursive learner so the replay matches.
+    mpc["residual.model_size"] = "s"
     kart = KartConstants(
         v_max_mps=float(params["v_max_mps"]), wheelbase_m=float(params["wheelbase_m"]),
         steer_max_deg=float(params["steer_max_deg"]),

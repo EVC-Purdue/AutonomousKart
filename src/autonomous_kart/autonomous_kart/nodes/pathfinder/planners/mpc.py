@@ -80,6 +80,28 @@ class MPCPlanner(Planner):
         # Applied inside tan(δ) in the bicycle rollout so MPC's predicted yaw
         # rate matches the kart instead of overestimating by ~10×.
         self.actuator_gain = float(g("actuator_gain", 0.10))
+        # Optional knot table replacing that constant with the measured curve:
+        # the linkage has a dead band either side of centre and a slope that
+        # reaches 0.55 past 20 deg, so no constant fits both ends. Fit by
+        # scripts/mpc_debug/steer_map.py; empty falls back to actuator_gain.
+        #
+        # With a table the solver decides in WHEEL angle and the map answers
+        # what to ask for, rather than deciding in command and the map saying
+        # what that would do. Both give the same rollout, but only the first
+        # gives the sampler a cost it can descend: the dead band makes the
+        # cost flat across the +-1.7 deg the rate limit leaves reachable in a
+        # tick, so a command-space search crawls out of centre at a few tenths
+        # of a degree per tick and reaches the corner half a second late.
+        self._map_cmd = np.radians(g("steer_map_cmd_deg", []) or [])
+        self._map_wheel = np.radians(g("steer_map_wheel_deg", []) or [])
+        # The rack cannot reach the 60 deg the kart constants allow: the bags
+        # top out near 13 deg of actual wheel angle. Cap the command at the
+        # equivalent of `wheel_max_deg` so neither the rollout nor a_lat can
+        # believe in yaw the front axle cannot produce.
+        self.wheel_max_deg = float(g("wheel_max_deg", 20.0))
+        self.steer_max = min(self.steer_max,
+                             math.radians(self.wheel_max_deg)
+                             / max(self.actuator_gain, 1e-6))
         # First-order steer lag: actual wheel angle exponentially approaches
         # commanded with time constant steer_tau_s. Step-response analysis
         # (docs/superpowers/data_sim_heavy) puts the heavy-kart yaw rise time
@@ -90,6 +112,14 @@ class MPCPlanner(Planner):
         # top `mppi_elite_frac × K` samples' first actions. Cuts per-tick noise
         # without the phase-lag cost of a 1st-order filter. 1.0/K = pure argmin (no smoothing).
         self.mppi_elite_frac = float(g("mppi_elite_frac", 0.1))
+        # Correlation time of the steering perturbation. At 0 the noise is
+        # independent every horizon step, which is what ships: forty independent
+        # kicks average back to the warm start, so the sampled sequences form a
+        # band the same width at step 39 as at step 4 and an optimum outside it
+        # is not in the draw at any horizon length. Above 0 each step keeps most
+        # of the last one, so a sample can drift somewhere and hold, and a ramp
+        # becomes something the proposal can express.
+        self.steer_noise_tau = float(g("steer_noise_tau_s", 0.0))
 
         # Corridor (centerline = racing line)
         tw = float(g("track_half_width_m", 2.5))
@@ -327,7 +357,10 @@ class MPCPlanner(Planner):
             return 0.0, 0.0
 
         self.consec_failures = 0
-        delta_cmd = float(best_u[0, 0])
+        # `best_u[0]` is the plan in whichever space the solver decided in, and
+        # `cmd_out` is always the command to publish; without a map they are the
+        # same number.
+        delta_cmd = self._cmd_out if self._map_cmd.size else float(best_u[0, 0])
         accel_cmd = float(best_u[1, 0])
 
         if v < self.steer_observability_v:
@@ -528,12 +561,31 @@ class MPCPlanner(Planner):
                 data=[float(self.actuator_gain), median, float(n)]
             ))
 
+    def _wheel(self, delta):
+        """Wheel angle (rad) the kart reaches for a commanded δ (rad)."""
+        if self._map_cmd.size:
+            return np.interp(delta, self._map_cmd, self._map_wheel)
+        return self.actuator_gain * delta
+
+    def _command(self, wheel):
+        """Command (rad) to ask for a wheel angle (rad) — the map, backwards.
+
+        Reading the same knots with the axes swapped. The table is monotone so
+        this is single valued, and it is steep through the dead band, which is
+        the point: asking for a degree of wheel angle near centre costs several
+        degrees of command and the solver is told so up front.
+        """
+        if self._map_cmd.size:
+            return np.interp(wheel, self._map_wheel, self._map_cmd)
+        return wheel / max(self.actuator_gain, 1e-6)
+
     def _hold_rollout(self, x, y, yaw, v, delta, a, n):
         """Single-trajectory bicycle rollout used by the residual learner."""
+        wheel = float(self._wheel(delta))
         for _ in range(n):
             x += self.dt * v * math.cos(yaw)
             y += self.dt * v * math.sin(yaw)
-            yaw += self.dt * v / self.wheelbase * math.tan(self.actuator_gain * delta)
+            yaw += self.dt * v / self.wheelbase * math.tan(wheel)
             v = max(0.0, min(self.v_max, v + self.dt * a))
         return x, y
 
@@ -544,21 +596,49 @@ class MPCPlanner(Planner):
 
         # Sample around warm-start mean. Sample[0] is the warm-start itself
         # so we never get worse than holding the previous plan.
-        noise_d = rng.normal(0.0, self.steer_sigma, size=(K, N))
+        if self.steer_noise_tau > 0.0:
+            # Ornstein-Uhlenbeck along the horizon, scaled so the per-step
+            # spread is still steer_sigma and the two schemes are compared at
+            # the same marginal width.
+            a = dt / (self.steer_noise_tau + dt)
+            w = rng.normal(0.0, self.steer_sigma * math.sqrt(a * (2.0 - a)),
+                           size=(K, N))
+            noise_d = np.empty((K, N))
+            # Seeded from the stationary distribution, not from zero. Starting
+            # the walk at zero leaves the FIRST horizon step barely perturbed
+            # (sd 2.8 against 5.0) and that is the step whose action is
+            # published, so a zero start handicaps the scheme exactly where it
+            # is measured.
+            e = rng.normal(0.0, self.steer_sigma, size=K)
+            for k in range(N):
+                e = (1.0 - a) * e + w[:, k]
+                noise_d[:, k] = e
+        else:
+            noise_d = rng.normal(0.0, self.steer_sigma, size=(K, N))
         noise_a = rng.normal(0.0, self.accel_sigma, size=(K, N))
         noise_d[0] = 0.0
         noise_a[0] = 0.0
         delta_seq = self.u_mean[0, :] + noise_d
         accel_seq = self.u_mean[1, :] + noise_a
+        # The sampled sequence is a wheel angle when a map is configured, so
+        # turn it into the command that asks for it before the actuator's own
+        # limits are applied. Those limits belong to the command: the rack
+        # slews in published degrees, not in wheel degrees.
+        cmd_seq = self._command(delta_seq) if self._map_cmd.size else delta_seq
         # Steering rate limit enforced sequentially per step
         dr_max = self.steer_rate_max * dt
         prev_d = np.full(K, self.delta_prev)
         for k in range(N):
             lo = prev_d - dr_max
             hi = prev_d + dr_max
-            np.clip(delta_seq[:, k], np.maximum(lo, -self.steer_max),
-                    np.minimum(hi, self.steer_max), out=delta_seq[:, k])
-            prev_d = delta_seq[:, k]
+            np.clip(cmd_seq[:, k], np.maximum(lo, -self.steer_max),
+                    np.minimum(hi, self.steer_max), out=cmd_seq[:, k])
+            prev_d = cmd_seq[:, k]
+        # What the kart will actually reach, after the limits bit. The cost
+        # scores this rather than the request, so a sample asking for more
+        # than the rack can give is scored on what it gets.
+        if self._map_cmd.size:
+            delta_seq = self._wheel(cmd_seq)
         np.clip(accel_seq, self.a_min, self.a_max, out=accel_seq)
 
         # Vectorized bicycle rollout
@@ -576,12 +656,12 @@ class MPCPlanner(Planner):
         delta_actual = np.full(K, self.delta_prev)
         alpha_lag = dt / (self.steer_tau_s + dt) if self.steer_tau_s > 0.0 else 1.0
         for k in range(N):
-            d_k = delta_seq[:, k]
+            d_k = cmd_seq[:, k]
             a_k = accel_seq[:, k]
             delta_actual = delta_actual + alpha_lag * (d_k - delta_actual)
             x = x + dt * v * np.cos(psi)
             y = y + dt * v * np.sin(psi)
-            psi = psi + dt * v / self.wheelbase * np.tan(self.actuator_gain * delta_actual)
+            psi = psi + dt * v / self.wheelbase * np.tan(self._wheel(delta_actual))
             v = np.clip(v + dt * a_k, 0.0, v_cap)
             tx[:, k] = x
             ty[:, k] = y
@@ -616,19 +696,21 @@ class MPCPlanner(Planner):
         v_ref = np.minimum(j_vx, v_target)
         v_err = tv - v_ref
 
-        d_diff = np.diff(delta_seq, axis=1, prepend=self.delta_prev)
+        d_diff = np.diff(cmd_seq, axis=1, prepend=self.delta_prev)
 
         boundary = np.maximum(0.0, np.abs(d) - self.corridor_half)
 
         progress = s[:, -1] - s[:, 0]
 
         # Named cost components also exported for diagnostics.
-        a_lat = tv * tv * np.tan(self.actuator_gain * delta_seq) / self.wheelbase
+        a_lat = tv * tv * np.tan(
+            delta_seq if self._map_cmd.size else self._wheel(delta_seq)
+        ) / self.wheelbase
         edge_excess = np.maximum(0.0, np.abs(d) - self.edge_inner)
         c_d = self.w_d * np.sum(d * d, axis=1)
         c_h = self.w_heading * np.sum(psi_err * psi_err, axis=1)
         c_v = self.w_speed * np.sum(v_err * v_err, axis=1)
-        c_delta = self.w_delta * np.sum(delta_seq * delta_seq, axis=1)
+        c_delta = self.w_delta * np.sum(cmd_seq * cmd_seq, axis=1)
         c_drate = self.w_drate * np.sum(d_diff * d_diff, axis=1)
         c_accel = self.w_accel * np.sum(accel_seq * accel_seq, axis=1)
         c_bnd = self.w_boundary * np.sum(boundary * boundary, axis=1)
@@ -641,7 +723,7 @@ class MPCPlanner(Planner):
         )
 
         cost = (c_d + c_h + c_v + c_delta + c_drate + c_accel
-                + c_prog + c_term_h + c_alat)
+                + c_prog + c_term_h + c_alat + c_edge)
 
         # Corridor enforcement comes from c_d alone (c_bnd is reported, not
         # scored). Pick the action by averaging the top `mppi_elite_frac × K` samples'
@@ -657,6 +739,9 @@ class MPCPlanner(Planner):
             np.mean(delta_seq[elite_idx, :], axis=0),
             np.mean(accel_seq[elite_idx, :], axis=0),
         ], axis=0)
+        # Handed over on the instance rather than returned: `_solve`'s
+        # signature has other callers (sim/apex_repro.py sweeps it directly).
+        self._cmd_out = float(np.mean(cmd_seq[elite_idx, 0]))
         traj = {"d": d[best], "s": s[best]}
         breakdown = (
             float(c_d[best]), float(c_h[best]), float(c_v[best]),

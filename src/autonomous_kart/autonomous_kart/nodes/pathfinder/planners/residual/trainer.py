@@ -1,8 +1,10 @@
-"""Background GBM trainer.
+"""Background trainer for the residual's batch model.
 
-Runs in a daemon thread. Trains two sklearn HistGradientBoostingRegressors
-from a chronological 80/20 split of the TrainBuffer snapshot. The same
-held-out 20% is also scored against the RLS to compare"""
+Runs in a daemon thread. Trains two sklearn regressors from a chronological
+80/20 split of the TrainBuffer snapshot. The same held-out 20% is also scored
+against the RLS to compare. Which regressor is fitted comes from
+`estimator_factory`, so `residual/models.py` chooses it by size and this stays
+the same loop for all of them."""
 from __future__ import annotations
 
 import threading
@@ -34,13 +36,15 @@ class GBMTrainer:
     def __init__(self, *, buffer, rls_predict_batch: Callable,
                  max_iter: int, max_depth: int, learning_rate: float,
                  min_samples_leaf: int, min_samples_to_train: int,
-                 retrain_secs: float, retrain_every_samples: int):
+                 retrain_secs: float, retrain_every_samples: int,
+                 estimator_factory: Optional[Callable[[], Any]] = None):
         self.buffer = buffer
         self.rls_predict_batch = rls_predict_batch
         self.max_iter = int(max_iter)
         self.max_depth = int(max_depth)
         self.learning_rate = float(learning_rate)
         self.min_samples_leaf = int(min_samples_leaf)
+        self.estimator_factory = estimator_factory
         self.min_samples_to_train = int(min_samples_to_train)
         self.retrain_secs = float(retrain_secs)
         self.retrain_every_samples = int(retrain_every_samples)
@@ -68,9 +72,16 @@ class GBMTrainer:
             return None
         return X, ys, yd
 
-    def train_once(self) -> Optional[TrainResult]:
+    def _make_estimator(self):
+        if self.estimator_factory is not None:
+            return self.estimator_factory()
         from sklearn.ensemble import HistGradientBoostingRegressor
+        return HistGradientBoostingRegressor(
+            max_iter=self.max_iter, max_depth=self.max_depth,
+            learning_rate=self.learning_rate,
+            min_samples_leaf=self.min_samples_leaf)
 
+    def train_once(self) -> Optional[TrainResult]:
         snap = self._snapshot_and_filter()
         if snap is None:
             return None
@@ -83,11 +94,8 @@ class GBMTrainer:
 
         t0 = time.perf_counter()
         try:
-            kw = dict(max_iter=self.max_iter, max_depth=self.max_depth,
-                      learning_rate=self.learning_rate,
-                      min_samples_leaf=self.min_samples_leaf)
-            gbm_s = HistGradientBoostingRegressor(**kw).fit(Xtr, ystr)
-            gbm_d = HistGradientBoostingRegressor(**kw).fit(Xtr, ydtr)
+            gbm_s = self._make_estimator().fit(Xtr, ystr)
+            gbm_d = self._make_estimator().fit(Xtr, ydtr)
         except Exception as exc:
             err = repr(exc)
             with self._lock:

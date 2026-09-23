@@ -27,7 +27,7 @@ def _make(params=None):
         "max_p_trace": 1.0e5,
         "max_theta_norm": 50.0,
         "rls_warmup_samples": 5,
-        "gbm_enabled": False,
+        "model_size": "s",
         "apply_min_samples_this_run": 1200,
         "cache_enabled": False,
     }
@@ -124,7 +124,7 @@ def test_warm_start_from_cache(tmp_path):
         "outlier_threshold_m": 2.0, "max_train_d_m": 3.0,
         "max_p_trace": 1.0e5, "max_theta_norm": 50.0,
         "rls_warmup_samples": 0, "apply_min_samples_this_run": 0,
-        "gbm_enabled": False,
+        "model_size": "s",
         "cache_enabled": True, "cache_dir": str(tmp_path), "cache_load_on_start": True,
     }
     a = ResidualLearner(params, solve_dt=1.0 / 60.0, s_total=850.0)
@@ -142,7 +142,7 @@ def test_warm_start_from_cache(tmp_path):
     assert b.samples_trained == a.samples_trained
 
 
-def test_buffer_grows_when_gbm_enabled():
+def test_buffer_grows_with_a_batch_model():
     params = {
         "mode": "shadow", "target_horizon_s": 0.05,
         "forgetting_factor": 0.99, "initial_cov": 1000.0,
@@ -150,7 +150,7 @@ def test_buffer_grows_when_gbm_enabled():
         "outlier_threshold_m": 2.0, "max_train_d_m": 3.0,
         "max_p_trace": 1.0e5, "max_theta_norm": 50.0,
         "rls_warmup_samples": 0, "apply_min_samples_this_run": 0,
-        "gbm_enabled": True,
+        "model_size": "m",
         "gbm_buffer_capacity": 100,
         "cache_enabled": False,
     }
@@ -183,7 +183,7 @@ def test_selector_picks_gbm_when_val_mae_better():
         "outlier_threshold_m": 2.0, "max_train_d_m": 3.0,
         "max_p_trace": 1.0e5, "max_theta_norm": 50.0,
         "rls_warmup_samples": 0, "apply_min_samples_this_run": 0,
-        "gbm_enabled": False,  # keep trainer thread off; we drive the selector by hand
+        "model_size": "s",  # keep trainer thread off; we drive the selector by hand
         "cache_enabled": False,
         "gbm_select_eps_s_m": 0.01, "gbm_select_eps_d_m": 0.005,
         "gbm_predict_clip_m": 0.5,
@@ -206,7 +206,7 @@ def test_selector_stays_rls_when_gbm_only_marginally_better():
         "outlier_threshold_m": 2.0, "max_train_d_m": 3.0,
         "max_p_trace": 1.0e5, "max_theta_norm": 50.0,
         "rls_warmup_samples": 0, "apply_min_samples_this_run": 0,
-        "gbm_enabled": False, "cache_enabled": False,
+        "model_size": "s", "cache_enabled": False,
         "gbm_select_eps_s_m": 0.01, "gbm_select_eps_d_m": 0.005,
         "gbm_predict_clip_m": 0.5,
     }
@@ -226,7 +226,7 @@ def test_gbm_predict_clipped():
         "outlier_threshold_m": 2.0, "max_train_d_m": 3.0,
         "max_p_trace": 1.0e5, "max_theta_norm": 50.0,
         "rls_warmup_samples": 0, "apply_min_samples_this_run": 0,
-        "gbm_enabled": False, "cache_enabled": False,
+        "model_size": "s", "cache_enabled": False,
         "gbm_select_eps_s_m": 0.01, "gbm_select_eps_d_m": 0.005,
         "gbm_predict_clip_m": 0.5,
     }
@@ -311,7 +311,7 @@ def test_manual_revert_to_checkpoint():
 
 
 def test_current_regime_tracks_buffer():
-    learner = _make({"gbm_enabled": True, "gbm_buffer_capacity": 200,
+    learner = _make({"model_size": "m", "gbm_buffer_capacity": 200,
                      "rls_warmup_samples": 0, "apply_min_samples_this_run": 0,
                      "cache_enabled": False})
     try:
@@ -340,7 +340,7 @@ def test_trainer_installs_gbm_and_flips_selector():
         "outlier_threshold_m": 2.0, "max_train_d_m": 3.0,
         "max_p_trace": 1.0e5, "max_theta_norm": 50.0,
         "rls_warmup_samples": 0, "apply_min_samples_this_run": 0,
-        "gbm_enabled": True, "gbm_buffer_capacity": 2000,
+        "model_size": "m", "gbm_buffer_capacity": 2000,
         "gbm_max_iter": 30, "gbm_max_depth": 3, "gbm_learning_rate": 0.1,
         "gbm_min_samples_leaf": 10, "gbm_min_samples_to_train": 1500,
         "gbm_retrain_secs": 0.2, "gbm_retrain_every_samples": 999999,

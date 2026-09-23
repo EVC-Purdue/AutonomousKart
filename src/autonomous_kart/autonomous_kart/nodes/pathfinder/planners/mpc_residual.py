@@ -7,6 +7,7 @@ ring land in Phase 2 — for now those slots stay `None`.
 """
 from __future__ import annotations
 
+import os
 from collections import deque
 from typing import Deque, Tuple
 
@@ -62,7 +63,8 @@ class ResidualLearner:
         if self.model_size == "xs":
             self.feature_mask[1:] = 0.0
         self.cache_enabled = bool(g("cache_enabled", True))
-        self.cache_dir = str(g("cache_dir", "/root/.cache/residual_cache"))
+        self.cache_dir = str(g("cache_dir", os.path.expanduser(
+            "~/.cache/residual_cache")))
         self.cache_load_on_start = bool(g("cache_load_on_start", True))
         self.cache_loaded = False
         self.cache = None

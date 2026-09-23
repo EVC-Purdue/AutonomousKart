@@ -150,7 +150,6 @@ pathfinder_node:
     mpc.residual.apply_min_samples_this_run: 1200
     # Disk cache (used in Phase 2 task wiring; default on)
     mpc.residual.cache_enabled: true
-    mpc.residual.cache_dir: /root/.cache/residual_cache
     mpc.residual.cache_load_on_start: true
 
     #  safety wrapper 

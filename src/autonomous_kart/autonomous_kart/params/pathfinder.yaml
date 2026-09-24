@@ -53,12 +53,14 @@ pathfinder_node:
     mpc.proj_window_back: 5
     mpc.proj_window_fwd: 37
     mpc.frenet_v_window_s: 0.3
-    mpc.target_speed_mps: 6.0
+    mpc.target_speed_mps: 10.0
     mpc.steer_observability_v_mps: 0.5
     # Actuator gain assumed inside MPC's bicycle rollout (yaw = v/L·tan(α·δ)).
     # 0.38 off 9/13 bags. Superseded by the knot table below wherever that is
     # non-empty; it still sets steer_max.
     mpc.actuator_gain: 0.38
+    # true = learned knot table below, false = flat actuator_gain (numpy MPC)
+    mpc.use_steer_map: true
     # Measured cmd_drive -> wheel angle
     mpc.steer_map_cmd_deg: [-60.0, -21.459, -17.02, -12.622, -9.518, -6.809, -4.503, -2.487, 0.074, 2.52, 4.51, 6.873, 9.514, 12.69, 16.773, 22.035, 60.0]
     mpc.steer_map_wheel_deg: [-10.8334, -10.8334, -6.7186, -3.2064, -1.1868, -0.2798, -0.1836, -0.1546, -0.0414, 0.521, 1.2881, 2.3283, 3.8017, 6.1932, 9.3724, 12.5612, 12.5612]  # Reverse

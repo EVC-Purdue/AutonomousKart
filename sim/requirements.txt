@@ -18,4 +18,4 @@ mcap>=1.1
 mcap-ros2-support>=0.5
 
 # Tests
-pytest>=7
+pytest>=9.0.3

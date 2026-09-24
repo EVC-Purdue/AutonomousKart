@@ -7,6 +7,7 @@ from rclpy.executors import ExternalShutdownException
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
+from autonomous_kart import paths
 from .master_node import MasterNode, STATES
 
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
@@ -211,7 +212,7 @@ def racing_line():
 
 @app.route("/viz")
 def viz():
-    return send_from_directory("/ws/viz", "viz.html")
+    return send_from_directory(paths.resolve("viz"), "viz.html")
 
 @app.route("/map", methods=["GET"])
 def map_endpoint():

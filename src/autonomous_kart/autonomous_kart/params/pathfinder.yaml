@@ -39,12 +39,6 @@ pathfinder_node:
     pure_pursuit.rejoin_cte_deactivate: 1.0
     pure_pursuit.rejoin_merge_lookahead_m: 15.0
     pure_pursuit.latency_s: 0.3
-    # Was 3.0 (default landed in commit 7f34634 on 2026-05-18). Pre-refactor
-    # PP went through e_comms's `steering_deg *= 2`, so the effective net
-    # amplification was ×2. Restoring 2.0 here matches the historical tune;
-    # 3.0 over-gained the steering loop and caused oscillating divergence
-    # at sharp corners (run 20260519_214619 lost the line at the top-left
-    # apex, cmd_steering ringing ±40° before closest_idx wrapped to idx≈3).
     pure_pursuit.steering_gain: 2.0
 
     # opencv
@@ -66,7 +60,7 @@ pathfinder_node:
     # non-empty; it still sets steer_max.
     mpc.actuator_gain: 0.38
     # Measured cmd_drive -> wheel angle
-    mpc.steer_map_cmd_deg: [-60, -21.459, -17.02, -12.622, -9.518, -6.809, -4.503, -2.487, 0.074, 2.52, 4.51, 6.873, 9.514, 12.69, 16.773, 22.035, 60]
+    mpc.steer_map_cmd_deg: [-60.0, -21.459, -17.02, -12.622, -9.518, -6.809, -4.503, -2.487, 0.074, 2.52, 4.51, 6.873, 9.514, 12.69, 16.773, 22.035, 60.0]
     mpc.steer_map_wheel_deg: [-10.8334, -10.8334, -6.7186, -3.2064, -1.1868, -0.2798, -0.1836, -0.1546, -0.0414, 0.521, 1.2881, 2.3283, 3.8017, 6.1932, 9.3724, 12.5612, 12.5612]  # Reverse
     # First-order steer lag in the rollout. Jointly fit to IMU yaw rate per day
     mpc.steer_tau_s: 0.17

@@ -25,7 +25,8 @@ RUN apt-get -o Acquire::http::Pipeline-Depth="0" \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements.txt
-RUN pip3 install --no-cache-dir -r requirements.txt
+COPY requirements-dev.txt requirements-dev.txt
+RUN pip3 install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 
 COPY docker/cyclonedds.xml /etc/cyclonedds.xml
 ENV CYCLONEDDS_URI=file:///etc/cyclonedds.xml

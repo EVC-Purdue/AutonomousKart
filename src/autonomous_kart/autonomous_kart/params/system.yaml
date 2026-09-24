@@ -5,6 +5,6 @@
     logs: false
     system_state: "IDLE" # "STOPPED", "IDLE", "MANUAL", "AUTONOMOUS"
     system_frequency: 60 # Speed of hot loop (Hertz)
-    line_path: "data/racing_line/line6.csv"
+    line_path: "data/racing_line/line1.csv"
     line_dir: "data/racing_line"
     track_path: "data/track/purdue_grand_prix.kml"

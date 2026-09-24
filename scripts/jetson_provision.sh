@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Provision a Jetson to run the kart without the devcontainer.
-#
-# Mirrors docker/Dockerfile so the host ends up with the same ROS packages and
-# the same pinned Python environment. Run it as the normal user
+# Provision a Jetson to run the kart natively. mirrors docker/Dockerfile.
 set -euo pipefail
 
 ROS_DISTRO="${ROS_DISTRO:-humble}"
@@ -54,8 +51,7 @@ http://packages.ros.org/ros2/ubuntu $VERSION_CODENAME main" \
   echo "    added"
 fi
 
-# apt packages
-# Same set as docker/Dockerfile
+# apt packages, same set as docker/Dockerfile
 say "Packages"
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
@@ -84,8 +80,7 @@ say "Workspace path"
 echo "    $WS"
 mkdir -p "$WS/logs"
 
-# Anything the container wrote is owned by root, because it ran as root over the
-# bind mount. colcon cannot write its log directory until that is undone.
+# The container ran as root over the bind mount, so reclaim what it owns.
 if find "$WS" -maxdepth 1 \( -name build -o -name install -o -name log -o -name logs \) -user root 2>/dev/null | grep -q .; then
   say "Reclaiming container-owned build directories"
   sudo chown -R "$(id -u):$(id -g)" "$WS"/build "$WS"/install "$WS"/log "$WS"/logs 2>/dev/null || true
@@ -108,8 +103,7 @@ fi
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
 python -m pip install --upgrade pip wheel
-# Both files in ONE resolver pass, so a conflict between a runtime pin and a
-# tooling pin fails loudly here instead of resolving differently per install.
+# Both files in one resolver pass so a pin conflict fails loudly here.
 PYTHONNOUSERSITE=1 python -m pip install \
   -r "$WS/requirements.txt" -r "$WS/requirements-dev.txt"
 if [ -f "$WS/requirements.local.txt" ]; then
@@ -165,8 +159,7 @@ if command -v nvcc >/dev/null 2>&1; then
 else
   echo "    nvcc        NOT ON PATH" >&2
 fi
-# colcon has to be the venv's, or every generated entry point gets a
-# system-python shebang and the nodes cannot import their dependencies.
+# colcon must be the venv's or entry points get a system-python shebang.
 case "$(command -v colcon)" in
   "$VENV"/*) echo "    colcon      $(command -v colcon)" ;;
   *)         echo "    colcon      $(command -v colcon) NOT THE VENV'S - nodes will fail to import" >&2 ;;

@@ -1,10 +1,4 @@
-"""Workspace-relative path resolution.
-
-The devcontainer mounts the repo at /ws; a native install has it wherever it
-was cloned. Params name paths relative to the workspace root and resolve them
-here, so one set of yamls is correct in both places. Absolute paths pass
-through untouched, so a bag that recorded `/ws/data/...` still replays.
-"""
+"""Resolve workspace-relative paths"""
 import os
 from functools import lru_cache
 

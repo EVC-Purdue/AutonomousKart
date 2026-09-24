@@ -10,7 +10,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from std_msgs.msg import String, Float32, Float32MultiArray, UInt16, Empty
 
-from autonomous_kart import line_spec, paths
+from autonomous_kart import paths
 
 
 class STATES(Enum):
@@ -463,47 +463,49 @@ class MasterNode(Node):
         self.actuator_gain_publisher.publish(Float32(data=v))
         return True, f"{v:.3f}"
 
-    def _default_v_max(self) -> float:
-        """The planner's own target speed, which an unset v_max falls back to."""
-        return float(self.get_parameter("mpc.target_speed_mps").value or 10.0)
-
-    def _v_max_limit(self) -> float:
-        return float(self.get_parameter("v_max_mps").value or 12.0)
-
     def get_active_spec(self):
         return dict(self._active_spec) if self._active_spec else None
 
     def get_line_shapes(self) -> dict:
-        """Shapes on disk, the spec in force, and the defaults a caller needs
-        to fill in the ones it leaves out."""
+        """Every CSV in line_dir, named by its stem."""
+        try:
+            names = sorted(os.listdir(self.line_dir))
+        except OSError:
+            names = []
         return {
             "line_dir": self.line_dir,
-            "shapes": line_spec.discover_shapes(self.line_dir),
+            "shapes": [n[:-4] for n in names if n.endswith(".csv")],
             "active": self.get_active_spec(),
             "path": self.path,
-            "defaults": {
-                "v_min": line_spec.DEFAULT_V_MIN,
-                "v_max": self._default_v_max(),
-                "v_mult": line_spec.DEFAULT_V_MULT,
-                "v_max_limit": self._v_max_limit(),
-            },
         }
 
     def set_line_speed(self, payload: dict):
-        """Adopt a {shape, v_min, v_max, v_mult} spec. One message carries the
-        shape and all three knobs, so the line never loads half-configured."""
-        spec, err = line_spec.normalize_spec(
-            payload or {}, self._default_v_max(), self._v_max_limit()
-        )
-        if err:
-            return False, err
-        path = line_spec.resolve_shape(self.line_dir, spec["shape"])
-        if path is None:
-            return False, f"unknown shape '{spec['shape']}' under {self.line_dir}"
+        """Publish a {shape, v_min, v_max, v_mult} spec. Omitted speeds are pathfinder's."""
+        payload = payload or {}
+        shape = str(payload.get("shape", "") or "").strip()
+        if not shape:
+            return False, "shape is required"
+        path = os.path.join(self.line_dir, f"{shape}.csv")
+        if not os.path.exists(path):
+            return False, f"unknown shape '{shape}' under {self.line_dir}"
+
+        spec = {"shape": shape}
+        for key in ("v_min", "v_max", "v_mult"):
+            v = payload.get(key)
+            if v is None or v == "":
+                continue
+            try:
+                spec[key] = float(v)
+            except (TypeError, ValueError):
+                return False, f"{key} must be a number (got {v!r})"
+        if spec.get("v_mult", 1.0) <= 0.0:
+            return False, f"v_mult must be > 0 (got {spec['v_mult']})"
+        if "v_min" in spec and "v_max" in spec and spec["v_min"] > spec["v_max"]:
+            return False, f"v_min {spec['v_min']} exceeds v_max {spec['v_max']}"
+
         self.spec_publisher.publish(String(data=json.dumps(spec)))
         self._active_spec = spec
-        # /map, /lines and /racing_line read self.path, so it has to follow the
-        # swap or they keep serving the line the node booted with.
+        # /map, /lines and /racing_line read self.path, so it follows the swap
         self.path = path
         return True, spec
 

@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
-# Build and run the kart.
-#
-#   kart                 real hardware (bringup_pi)
-#   kart sim             simulation
-#   kart stop            stop whatever is running
-#   kart restart [sim]   reap and relaunch
-#
-# Deliberately not `set -u`: /opt/ros/humble/setup.bash reads
-# AMENT_TRACE_SETUP_FILES unguarded and dies under it.
-set -o pipefail
+# Build and run the kart: kart [sim|pi|stop|restart [sim|pi]].
+set -o pipefail  # not -u: ROS setup.bash reads AMENT_TRACE_SETUP_FILES unguarded
 
 WS="${KART_WS:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PIDFILE="$WS/.kart.pgid"
@@ -33,8 +25,7 @@ stack_groups() {
   if [ -f "$PIDFILE" ]; then
     while read -r role pg; do _keep "$role" "$pg"; done < "$PIDFILE"
   fi
-  # No pidfile: recover the launch group from whatever holds :8000, and the
-  # recorder from its script path since it holds no port.
+  # No pidfile: recover launch from the :8000 holder, recorder from its path.
   pid="$(ss -ltnpH "sport = :8000" 2>/dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)"
   [ -n "$pid" ] && _keep launch "$(_pgid_of "$pid")"
   while read -r pid; do
@@ -69,10 +60,7 @@ reap() {
   groups="$(stack_groups)" || { rm -f "$PIDFILE"; return 0; }
   pgs="$(echo "$groups" | awk '{print $2}')"
   say "stopping stack (pgid $(echo $pgs))"
-  # INT for the launch group: CPython installs its own SIGINT handler even when
-  # it inherited SIG_IGN, so it reaches the nodes and rosbag2 writes
-  # metadata.yaml. TERM for the recorder: bash honours the ignored SIGINT it got
-  # as a background job, so its INT trap never fires at all.
+  # INT for the python launch group, TERM for the recorder which ignores INT.
   while read -r role pg; do
     case "$role" in
       recorder) kill -TERM "-$pg" 2>/dev/null ;;
@@ -102,8 +90,7 @@ PY
 )"
 }
 
-# RTK corrections relayed to the GPS. In kart's own process group, which reap
-# never signals, so it outlives a restart instead of costing an RTCM reconnect.
+# NTRIP relay in kart's own group, never reaped, so it outlives a restart.
 start_ntrip() {
   if ss -ltnH "sport = :9195" 2>/dev/null | grep -q .; then
     say "ntrip     already up on :9195"
@@ -148,8 +135,7 @@ fi
 T0=$(date +%s.%N)
 el() { printf '%5.2f s' "$(echo "$(date +%s.%N) - $T0" | bc)"; }
 
-# A ros2 daemon started while nothing was up caches an empty graph and outlives
-# the stack, so every later `ros2 node list` in any terminal reads that cache.
+# A daemon started before the stack caches an empty graph and outlives it.
 ros2 daemon stop >/dev/null 2>&1
 
 mkdir -p "$WS/logs"
@@ -173,8 +159,7 @@ setsid bash -c "echo launch \$\$ >> '$PIDFILE'; exec ros2 launch autonomous_kart
 LP=$!
 trap 'reap; exit 0' INT TERM
 
-# Recorder gate: bags only while AUTONOMOUS or MANUAL. Own process group so reap
-# gets it and its rosbag2 child.
+# Recorder gate: own group so reap gets it and its rosbag2 child.
 setsid bash -c "echo recorder \$\$ >> '$PIDFILE'; exec bash '$WS/scripts/start.bash'" &
 
 for _ in $(seq 300); do

@@ -55,7 +55,8 @@ class GpsNode(Node):
         self.hdg_status = ""      # HEADINGA solution status, "" until seen
         self.hdg_deg = 0.0
         self.hdg_length_m = 0.0
-        self._hdt_alive_t = 0.0   # last $GPHDT, picks the publish trigger
+        self._hdt_alive_t = 0.0   # last $GPHDT
+        self._hdg_alive_t = 0.0   # last #HEADINGA, which closes the epoch
         self.rtcm_bytes_total = 0
         self.rtcm_last_t = 0.0  # 0 until first RTCM byte arrives
         self._rtcm_sock = None
@@ -108,6 +109,8 @@ class GpsNode(Node):
 
         self.hdg_sigma_rad = math.radians(
             float(self.get_parameter("hdg_sigma_deg").value or 0.164))
+        self.hdg_accept_status = set(
+            self.get_parameter("hdg_accept_status").value or ["SOL_COMPUTED"])
 
         if not self.sim_mode:
             self.ser = serial.Serial(self.device, baudrate=self.baud, timeout=0)
@@ -215,10 +218,7 @@ class GpsNode(Node):
 
         self.buffer += chunk.decode("ascii", errors="ignore")
 
-        # The receiver emits one burst per epoch, GGA first and HDT last, so
-        # publishing on HDT gives position and heading from the same epoch.
-        # Triggering on GGA instead would pair a fresh position with the
-        # previous epoch's heading, 50 ms stale at 20 Hz.
+        # GGA opens the epoch and #HEADINGA closes it, so publish there.
         while "\n" in self.buffer:
             line, self.buffer = self.buffer.split("\n", 1)
             line = line.strip()
@@ -226,17 +226,20 @@ class GpsNode(Node):
                 self._relay_gga(line)
             if line.startswith("#HEADINGA"):
                 self._handle_headinga(line)
+                self._hdg_alive_t = time.time()
+                self.publish_gps()
                 continue
             try:
                 self.parse(line)
             except Exception as e:
                 self.logger.error(f"parse crash on '{line}': {e}")
                 continue
-            if line.startswith(("$GPHDT", "$GNHDT")):
+            now = time.time()
+            if line.startswith(("$GPHDT", "$GNHDT")) and \
+                    now - self._hdg_alive_t > 0.5:
                 self.publish_gps()
             elif line.startswith(("$GPGGA", "$GNGGA")) and \
-                    time.time() - self._hdt_alive_t > 0.5:
-                # No heading on this port: fall back to the position sentence.
+                    now - self._hdt_alive_t > 0.5 and now - self._hdg_alive_t > 0.5:
                 self.publish_gps()
 
     def parse(self, msg: str):
@@ -374,11 +377,13 @@ class GpsNode(Node):
 
         # VTG only speed. Yaw comes from $GPHDT
 
-    def handle_hdt(self, fields):
-        """$GPHDT,heading_true,T - dual-antenna heading.
+    def _hdg_var(self) -> float:
+        """Yaw variance, 1e6 unless #HEADINGA reports an accepted solution."""
+        return (self.hdg_sigma_rad ** 2
+                if self.hdg_status in self.hdg_accept_status else 1e6)
 
-        Body heading so no reversal
-        """
+    def handle_hdt(self, fields):
+        """$GPHDT,heading_true,T: body heading, so no reverse correction."""
         self._hdt_alive_t = time.time()
         if not fields[1]:
             self.gps_data_cov[35] = 1e6
@@ -391,18 +396,18 @@ class GpsNode(Node):
         # Bearing (CW from north) -> ENU yaw (CCW from east).
         raw = math.pi / 2.0 - math.radians(self.hdg_deg)
         self.gps_yaw_rad = math.atan2(math.sin(raw), math.cos(raw))
-        self.gps_data_cov[35] = self.hdg_sigma_rad ** 2
+        # Previous epoch's status; #HEADINGA re-applies this epoch's below.
+        self.gps_data_cov[35] = self._hdg_var()
 
     def _handle_headinga(self, line: str):
-        """#HEADINGA has solution status and baseline length that $GPHDT
-        does not. Status only reaches gps/status for now; $GPHDT is published
-        whatever it says."""
+        """#HEADINGA closes the epoch and carries the status $GPHDT lacks."""
         try:
             body = line.split(";", 1)[1].split("*", 1)[0].split(",")
             self.hdg_status = body[0]
             self.hdg_length_m = float(body[2])
         except (IndexError, ValueError):
-            pass
+            self.hdg_status = ""
+        self.gps_data_cov[35] = self._hdg_var()
 
     def handle_rmc(self, fields):
         lat = fields[3]

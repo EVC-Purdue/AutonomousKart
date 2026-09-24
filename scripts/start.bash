@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# State-gated bag recorder. Started as a child of scripts/kart, which owns the
-# environment, the build, the launch and the NTRIP relay.
+# State-gated bag recorder; scripts/kart owns env, build, launch and NTRIP.
 WS="${KART_WS:-${WS:-/ws}}"
 
 mkdir -p "$WS/logs"
@@ -55,8 +54,7 @@ EOF
   # Run from the run dir so a dump that writes files lands here, not in $WS.
   (
     cd "$run_dir" || exit 0
-    # Time-limited: a dump against a node that goes away blocks forever, and
-    # each hung one holds a DDS participant until the domain runs out.
+    # Time-limited: a dump against a departing node hangs holding a participant.
     for node in $(timeout 10 ros2 node list 2>/dev/null); do
       echo "# $node"
       timeout 10 ros2 param dump "$node" 2>/dev/null

@@ -94,6 +94,8 @@ class MPCPlanner(Planner):
         # of a degree per tick and reaches the corner half a second late.
         self._map_cmd = np.radians(g("steer_map_cmd_deg", []) or [])
         self._map_wheel = np.radians(g("steer_map_wheel_deg", []) or [])
+        if not bool(g("use_steer_map", True)):
+            self._map_cmd = self._map_wheel = np.empty(0)
         # The rack cannot reach the 60 deg the kart constants allow: the bags
         # top out near 13 deg of actual wheel angle. Cap the command at the
         # equivalent of `wheel_max_deg` so neither the rollout nor a_lat can

@@ -176,7 +176,6 @@ class LocalizationNode(Node):
         self.sigma_xy_floor = float(self._param("sigma_xy_floor", 0.02))
         self.vtg_yaw_var_max = float(self._param("vtg_yaw_var_max", 1.0))
         self.vtg_speed_var_max = float(self._param("vtg_speed_var_max", 100.0))
-        self.reverse_flip_deadband_mps = float(self._param("reverse_flip_deadband_mps", 0.3))
         self.wheel_speed_var = float(self._param("wheel_speed_var", 1.0e-4))
         self.imu_dropout_warn = float(self._param("imu_dropout_warn", 1.0))
 
@@ -305,10 +304,10 @@ class LocalizationNode(Node):
         sigma_yy = max(sigma_yy, floor)
         R_xy = np.diag([sigma_xx, sigma_yy])
 
-        # VTG-derived course + speed travel inside the GPS Odometry:
-        # orientation carries yaw (ENU, rad) and twist.linear.x carries
-        # forward speed (m/s). Validity is signalled by the cov entries
-        # the gps_node leaves them at 1e6 when no usable VTG arrived.
+        # Heading and speed travel inside the GPS Odometry: orientation carries
+        # yaw (ENU, rad) from the dual antenna and twist.linear.x carries VTG
+        # forward speed (m/s). gps_node leaves the matching cov entry at 1e6
+        # when neither is usable.
         q = msg.pose.pose.orientation
         yaw_meas = 2.0 * math.atan2(float(q.z), float(q.w))
         var_yaw = float(msg.pose.covariance[35])
@@ -316,31 +315,9 @@ class LocalizationNode(Node):
         var_v = float(msg.twist.covariance[0])
         have_yaw = var_yaw < self.vtg_yaw_var_max
         have_speed = var_v < self.vtg_speed_var_max
-        # VTG track is course-over-ground = direction of motion. If the kart
-        # is rolling in reverse (wheel speed negative), COG points 180° from
-        # the body yaw so flip it so EKF is accurate.
-        #
-        # Guards against two failure modes seen on the 2026-05-19 bag:
-        #  (1) VESC ERPM noise at rest can briefly read negative (~−0.1 m/s).
-        #      Require |v| above `reverse_flip_deadband_mps` before trusting
-        #      a signed source for the reverse decision — otherwise sensor
-        #      noise on a parked kart silently rotates the EKF init by π.
-        #  (2) On the very first GPS fix we have no reliable signed speed
-        #      yet (the kart hasn't moved). Skip the flip during EKF init
-        #      entirely; corrections after the kart starts driving will
-        #      converge yaw if a real reverse was happening.
-        if have_yaw and self.ekf.initialized:
-            v_for_sign = None
-            db = self.reverse_flip_deadband_mps
-            # Prefer signed wheel speed when it's clearly above the deadband.
-            if self._last_wheel_v is not None and abs(self._last_wheel_v) > db:
-                v_for_sign = self._last_wheel_v
-            # Otherwise fall back to the EKF's own (already-converged) v.
-            elif abs(float(self.ekf.x[3])) > db:
-                v_for_sign = float(self.ekf.x[3])
-            if v_for_sign is not None and v_for_sign < -db:
-                yaw_meas = _wrap(yaw_meas + math.pi)
-
+        # Yaw comes from the dual-antenna $GPHDT, which reports body
+        # heading, so it needs no reverse correction. VTG course over ground
+        # did: it points 180 deg from body yaw when rolling backwards.
         if not self.ekf.initialized:
             if not self._imu_seen:
                 # Wait for IMU before seeding the filter the predict path

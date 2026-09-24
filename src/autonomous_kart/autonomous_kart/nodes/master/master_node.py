@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 from enum import Enum
@@ -9,7 +10,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from std_msgs.msg import String, Float32, Float32MultiArray, UInt16, Empty
 
-from autonomous_kart import paths
+from autonomous_kart import line_spec, paths
 
 
 class STATES(Enum):
@@ -31,6 +32,13 @@ class MasterNode(Node):
         self.state = self.get_parameter("system_state").value
         self.system_frequency = self.get_parameter("system_frequency").value
         self.path = paths.resolve(self.get_parameter("line_path").value)
+        self.line_dir = paths.resolve(
+            self.get_parameter("line_dir").value or "data/racing_line"
+        )
+        self._active_spec = None
+        self.track_path = paths.resolve(self.get_parameter("track_path").value)
+        self.lat0 = self.get_parameter("lat0").value
+        self.lon0 = self.get_parameter("lon0").value
 
         assert self.state in [s.value for s in STATES]
 
@@ -137,6 +145,7 @@ class MasterNode(Node):
         self.residual_mode_publisher = self.create_publisher(String, "mpc/residual_mode", 1)
         self.planner_publisher = self.create_publisher(String, "pathfinder/planner", 1)
         self.line_publisher = self.create_publisher(String, "pathfinder/line_path", 1)
+        self.spec_publisher = self.create_publisher(String, "pathfinder/line_spec", 1)
         self.residual_revert_publisher = self.create_publisher(Empty, "mpc/residual_revert", 1)
 
         # Live MPC actuator_gain knob + estimator snapshot.
@@ -454,11 +463,61 @@ class MasterNode(Node):
         self.actuator_gain_publisher.publish(Float32(data=v))
         return True, f"{v:.3f}"
 
+    def _default_v_max(self) -> float:
+        """The planner's own target speed, which an unset v_max falls back to."""
+        return float(self.get_parameter("mpc.target_speed_mps").value or 10.0)
+
+    def _v_max_limit(self) -> float:
+        return float(self.get_parameter("v_max_mps").value or 12.0)
+
+    def get_active_spec(self):
+        return dict(self._active_spec) if self._active_spec else None
+
+    def get_line_shapes(self) -> dict:
+        """Shapes on disk, the spec in force, and the defaults a caller needs
+        to fill in the ones it leaves out."""
+        return {
+            "line_dir": self.line_dir,
+            "shapes": line_spec.discover_shapes(self.line_dir),
+            "active": self.get_active_spec(),
+            "path": self.path,
+            "defaults": {
+                "v_min": line_spec.DEFAULT_V_MIN,
+                "v_max": self._default_v_max(),
+                "v_mult": line_spec.DEFAULT_V_MULT,
+                "v_max_limit": self._v_max_limit(),
+            },
+        }
+
+    def set_line_speed(self, payload: dict):
+        """Adopt a {shape, v_min, v_max, v_mult} spec. One message carries the
+        shape and all three knobs, so the line never loads half-configured."""
+        spec, err = line_spec.normalize_spec(
+            payload or {}, self._default_v_max(), self._v_max_limit()
+        )
+        if err:
+            return False, err
+        path = line_spec.resolve_shape(self.line_dir, spec["shape"])
+        if path is None:
+            return False, f"unknown shape '{spec['shape']}' under {self.line_dir}"
+        self.spec_publisher.publish(String(data=json.dumps(spec)))
+        self._active_spec = spec
+        # /map, /lines and /racing_line read self.path, so it has to follow the
+        # swap or they keep serving the line the node booted with.
+        self.path = path
+        return True, spec
+
     def set_line(self, path: str) -> tuple[bool, str]:
         p = (path or "").strip()
         if not p:
             return False, "path is empty"
+        resolved = paths.resolve(p)
+        if not os.path.exists(resolved):
+            return False, f"no such racing line: {p}"
         self.line_publisher.publish(String(data=p))
+        # A raw path is taken as-is, so any speed spec stops applying.
+        self._active_spec = None
+        self.path = resolved
         return True, p
 
     def _imu_callback(self, msg: Imu):

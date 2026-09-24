@@ -10,7 +10,6 @@ localization_node:
     vtg_speed_var_max: 100.0   # (m/s)^2
 
     # Deadband below which |v| is treated as "kart not actually in reverse"
-    reverse_flip_deadband_mps: 0.3
 
     gps_dropout_warn: 2.0      # s
     sigma_xy_floor: 0.02       # m

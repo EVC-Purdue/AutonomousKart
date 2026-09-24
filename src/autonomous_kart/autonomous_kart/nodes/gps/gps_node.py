@@ -52,6 +52,10 @@ class GpsNode(Node):
         self.sigma_e = 0.0
         self.sigma_n = 0.0
         self.sigma_u = 0.0
+        self.hdg_status = ""      # HEADINGA solution status, "" until seen
+        self.hdg_deg = 0.0
+        self.hdg_length_m = 0.0
+        self._hdt_alive_t = 0.0   # last $GPHDT, picks the publish trigger
         self.rtcm_bytes_total = 0
         self.rtcm_last_t = 0.0  # 0 until first RTCM byte arrives
         self._rtcm_sock = None
@@ -102,22 +106,49 @@ class GpsNode(Node):
         self.device = self.get_parameter("serial_device").value or "/dev/ttyTHS1"
         self.baud = self.get_parameter("baud_rate").value or 9600
 
+        self.hdg_sigma_rad = math.radians(
+            float(self.get_parameter("hdg_sigma_deg").value or 0.164))
+
         if not self.sim_mode:
             self.ser = serial.Serial(self.device, baudrate=self.baud, timeout=0)
+            if self.get_parameter("configure_receiver").value:
+                self._configure_receiver()
             threading.Thread(target=self._rtcm_loop, daemon=True).start()
 
         self.buffer = ""
 
-        self.timer = self.create_timer(1.0 / self.gps_frequency, self.publish_gps)
+        poll = float(self.get_parameter("serial_poll_hz").value or 200)
+        self.timer = self.create_timer(1.0 / poll, self.service_serial)
+        status_hz = float(self.get_parameter("status_frequency").value
+                          or self.gps_frequency)
+        self.status_timer = self.create_timer(1.0 / status_hz, self.publish_status)
+
+    def _configure_receiver(self):
+        port = str(self.get_parameter("receiver_port").value or "COM3")
+        period = 1.0 / float(self.gps_frequency)
+        msgs = ("GPGGA", "GPRMC", "GPGST", "GPVTG", "GPHDT", "HEADINGA")
+        try:
+            self.ser.write(f"UNLOG {port}\r\n".encode())
+            time.sleep(0.1)
+            for m in msgs:
+                self.ser.write(f"LOG {port} {m} ONTIME {period:g}\r\n".encode())
+                time.sleep(0.05)
+            self.logger.info(
+                f"receiver: {port} -> {', '.join(msgs)} at {1.0 / period:g} Hz")
+        except Exception as e:
+            self.logger.warning(f"receiver config failed: {e}")
+
+    def service_serial(self):
+        if not self.sim_mode:
+            self.read_gps()
+        elif self.sim_mode:
+            self.publish_gps()
 
 
     def publish_gps(self):
         """
         Publishes the 2D coordinates and error
         """
-        if not self.sim_mode:
-            self.read_gps()
-
         msg = Odometry()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "gps"
@@ -140,7 +171,6 @@ class GpsNode(Node):
         self.logger.debug(f"GPS Pos: {msg.pose.pose.position}")
         self.logger.debug(f"GPS Cov: {msg.pose.covariance}")
         self.gps_publisher.publish(msg)
-        self.publish_status()
 
     def publish_status(self):
         """Publish a JSON snapshot of fix quality / RTK / measurements."""
@@ -162,6 +192,10 @@ class GpsNode(Node):
             "sigma_n": self.sigma_n,
             "sigma_u": self.sigma_u,
             "use_gst": self.use_gst,
+            "heading_deg": self.hdg_deg,
+            "heading_status": self.hdg_status,
+            "heading_baseline_m": self.hdg_length_m,
+            "heading_var": self.gps_data_cov[35],
             "rtcm_bytes_total": self.rtcm_bytes_total,
             "rtcm_last_age_s": rtcm_age,
             "stamp_ns": self.get_clock().now().nanoseconds,
@@ -181,15 +215,29 @@ class GpsNode(Node):
 
         self.buffer += chunk.decode("ascii", errors="ignore")
 
+        # The receiver emits one burst per epoch, GGA first and HDT last, so
+        # publishing on HDT gives position and heading from the same epoch.
+        # Triggering on GGA instead would pair a fresh position with the
+        # previous epoch's heading, 50 ms stale at 20 Hz.
         while "\n" in self.buffer:
             line, self.buffer = self.buffer.split("\n", 1)
             line = line.strip()
             if line.startswith(("$GPGGA", "$GNGGA")):
                 self._relay_gga(line)
+            if line.startswith("#HEADINGA"):
+                self._handle_headinga(line)
+                continue
             try:
                 self.parse(line)
             except Exception as e:
                 self.logger.error(f"parse crash on '{line}': {e}")
+                continue
+            if line.startswith(("$GPHDT", "$GNHDT")):
+                self.publish_gps()
+            elif line.startswith(("$GPGGA", "$GNGGA")) and \
+                    time.time() - self._hdt_alive_t > 0.5:
+                # No heading on this port: fall back to the position sentence.
+                self.publish_gps()
 
     def parse(self, msg: str):
         if not msg.startswith("$"):
@@ -211,6 +259,8 @@ class GpsNode(Node):
                 pass
             case "GST":
                 self.handle_gst(fields)
+            case "HDT":
+                self.handle_hdt(fields)
             case "RMC":
                 self.handle_rmc(fields)
             case "VTG":
@@ -322,18 +372,37 @@ class GpsNode(Node):
         else:
             self.gps_data_twist_cov[0] = 1e6
 
-        # sigma_yaw = sigma_v / v only meaningful once the kart is actually moving.
-        if fields[1] and v is not None and v > self.vtg_min_speed_for_yaw:
-            try:
-                track_true_deg = float(fields[1])
-                # Bearing (CW from north) -> ENU yaw (CCW from east).
-                raw = math.pi / 2.0 - math.radians(track_true_deg)
-                self.gps_yaw_rad = math.atan2(math.sin(raw), math.cos(raw))
-                self.gps_data_cov[35] = (self.vtg_speed_sigma / v) ** 2
-            except ValueError:
-                self.gps_data_cov[35] = 1e6
-        else:
+        # VTG only speed. Yaw comes from $GPHDT
+
+    def handle_hdt(self, fields):
+        """$GPHDT,heading_true,T - dual-antenna heading.
+
+        Body heading so no reversal
+        """
+        self._hdt_alive_t = time.time()
+        if not fields[1]:
             self.gps_data_cov[35] = 1e6
+            return
+        try:
+            self.hdg_deg = float(fields[1])
+        except ValueError:
+            self.gps_data_cov[35] = 1e6
+            return
+        # Bearing (CW from north) -> ENU yaw (CCW from east).
+        raw = math.pi / 2.0 - math.radians(self.hdg_deg)
+        self.gps_yaw_rad = math.atan2(math.sin(raw), math.cos(raw))
+        self.gps_data_cov[35] = self.hdg_sigma_rad ** 2
+
+    def _handle_headinga(self, line: str):
+        """#HEADINGA has solution status and baseline length that $GPHDT
+        does not. Status only reaches gps/status for now; $GPHDT is published
+        whatever it says."""
+        try:
+            body = line.split(";", 1)[1].split("*", 1)[0].split(",")
+            self.hdg_status = body[0]
+            self.hdg_length_m = float(body[2])
+        except (IndexError, ValueError):
+            pass
 
     def handle_rmc(self, fields):
         lat = fields[3]

@@ -56,6 +56,7 @@ def generate_launch_description():
                         package="autonomous_kart",
                         executable="master_api",
                         name="master_api",
+                        parameters=[pathfinder_yaml, gps_yaml],
                     ),
                     Node(
                         package="autonomous_kart",

@@ -1,11 +1,25 @@
 # Params and toggles for gps node
-gps_node:
+
+/**:
   ros__parameters:
-    gps_frequency: 10 # Hz
-    serial_device: "/dev/ttyTHS1"
-    baud_rate: 230400
+    # Origin of the local /odom frame, shared by every node that projects
+    # lat/lon into it.
     lat0: 40.4380475 # In west lafayette
     lon0: -86.9442826
+
+gps_node:
+  ros__parameters:
+    gps_frequency: 20 # Hz, receiver output rate
+    # Unicore UM982 on its COM3, through the FT231X. Symlink from
+    # /dev/ttyUSB0 races the CANable on plug order.
+    serial_device: "/dev/kart-gps"
+    baud_rate: 115200
+    status_frequency: 10 # Hz, gps/status only
+    serial_poll_hz: 200
+    configure_receiver: true
+    receiver_port: "COM3"  # COM3 for USB, COM1 for UART
+    # Dual-antenna heading 1-sigma. 0.1 deg/m (UM982 manual R1.7) over the 0.61 m antenna baseline.
+    hdg_sigma_deg: 0.164
     # VTG (course / ground-speed) uncertainty
     vtg_speed_sigma_mps: 0.1
     vtg_min_speed_for_yaw: 0.5

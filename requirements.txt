@@ -13,4 +13,4 @@ smbus2==0.6.1
 joblib==1.6.0
 scikit-learn==1.7.2
 # colcon-core refuses setuptools 80+.
-setuptools==79.0.1
+setuptools==83.0.0

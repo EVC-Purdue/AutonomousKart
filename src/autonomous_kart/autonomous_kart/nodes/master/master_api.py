@@ -1,5 +1,5 @@
 import threading
-import os, csv
+import os, csv, math, re
 import logging
 
 import rclpy
@@ -7,7 +7,7 @@ from rclpy.executors import ExternalShutdownException
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-from autonomous_kart import paths
+from autonomous_kart import line_spec, paths
 from .master_node import MasterNode, STATES
 
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
@@ -20,16 +20,16 @@ master_node: MasterNode | None = None
 def ping():
     return jsonify({"ping": "pong"})
 
-_STATIC_LINE_CACHE = None
+_STATIC_LINE_CACHE = {}
 
 def _load_static_line(path):
     """
-    Load racing line once
+    Load racing line once per path
     returns: list of full waypoint dicts
     """
-    global _STATIC_LINE_CACHE
-    if _STATIC_LINE_CACHE is not None:
-        return _STATIC_LINE_CACHE
+    cached = _STATIC_LINE_CACHE.get(path)
+    if cached is not None:
+        return cached
     if not os.path.exists(path):
         return []
     rows = []
@@ -48,8 +48,50 @@ def _load_static_line(path):
                     })
                 except ValueError:
                     continue
-    _STATIC_LINE_CACHE = rows
+    _STATIC_LINE_CACHE[path] = rows
     return rows
+
+_TRACK_EDGE_CACHE = {}
+_PLACEMARK_RE = re.compile(
+    r"<Placemark[^>]*>.*?<name>(.*?)</name>.*?<coordinates>(.*?)</coordinates>",
+    re.S,
+)
+_R_EARTH = 6_371_000  # gps_node.gps_to_coords
+
+def _load_track_edges(path, lat0, lon0):
+    """
+    Load the surveyed asphalt boundaries once, projected into the /odom frame
+    about (lat0, lon0) the same way gps_node projects a fix.
+    returns: {"inner": [[x, y], ...], "outer": [[x, y], ...]}
+    """
+    cached = _TRACK_EDGE_CACHE.get(path)
+    if cached is not None:
+        return cached
+    edges = {"inner": [], "outer": []}
+    if not os.path.exists(path):
+        return edges
+    cos_lat0 = math.cos(math.radians(lat0))
+    for name, coords in _PLACEMARK_RE.findall(open(path, "r").read()):
+        key = name.strip().lower()
+        side = "inner" if key.startswith("inside") else (
+            "outer" if key.startswith("outside") else None)
+        if side is None:
+            continue
+        for tok in coords.split():
+            parts = tok.split(",")
+            if len(parts) < 2:
+                continue
+            try:
+                lon, lat = float(parts[0]), float(parts[1])
+            except ValueError:
+                continue
+            edges[side].append([
+                _R_EARTH * math.radians(lon - lon0) * cos_lat0,
+                _R_EARTH * math.radians(lat - lat0),
+            ])
+    _TRACK_EDGE_CACHE[path] = edges
+    return edges
+
 @app.route("/get_logs", methods=["GET"])
 def get_logs():
     if not master_node:
@@ -164,6 +206,24 @@ def pathfinder_line_path():
     return jsonify({"success": "ok", "path": reason})
 
 
+@app.route("/pathfinder/line_shapes", methods=["GET"])
+def pathfinder_line_shapes():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify(master_node.get_line_shapes())
+
+
+@app.route("/pathfinder/line_speed", methods=["POST"])
+def pathfinder_line_speed():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    data = request.get_json(silent=True) or {}
+    ok, result = master_node.set_line_speed(data)
+    if not ok:
+        return jsonify({"error": result}), 400
+    return jsonify({"success": "ok", "spec": result, "path": master_node.path})
+
+
 @app.route("/gps", methods=["GET"])
 def gps_status():
     if not master_node:
@@ -219,11 +279,32 @@ def map_endpoint():
     waypoints = _load_static_line(master_node.path)
     if not waypoints:
         return jsonify({"error": "racing line not found", "waypoints": []}), 404
+    spec = master_node.get_active_spec()
+    if spec is not None:
+        # Report the speeds the planners are tracking, not the ones the CSV
+        # shipped with.
+        waypoints = [
+            dict(w, vx=line_spec.scale_vx(
+                w["vx"], spec["v_min"], spec["v_max"], spec["v_mult"]))
+            for w in waypoints
+        ]
     return jsonify({
         "path": master_node.path,
         "count": len(waypoints),
+        "spec": spec,
         "waypoints": waypoints,
     })
+
+
+@app.route("/track_edges", methods=["GET"])
+def track_edges_endpoint():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    edges = _load_track_edges(master_node.track_path, master_node.lat0,
+                              master_node.lon0)
+    if not edges["inner"] and not edges["outer"]:
+        return jsonify({"error": "track not found", **edges}), 404
+    return jsonify({"path": master_node.track_path, **edges})
 
 
 @app.route("/lines", methods=["GET"])

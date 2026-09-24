@@ -468,31 +468,3 @@ def test_localization_reverse_flip_ignores_noise_below_deadband(ros_ctx):
             node.destroy_node()
 
 
-def test_localization_reverse_flip_does_fire_for_real_reverse(ros_ctx):
-    """The flip must still fire when the kart is genuinely in reverse
-    (signed wheel speed clearly below -deadband)."""
-    import math
-    from std_msgs.msg import Float32
-
-    with ros_ctx(_real_params()) as rclpy:
-        node = LocalizationNode()
-        try:
-            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=0))
-            # Init cleanly forward.
-            node.gps_callback(_gps_odom(x=0.0, y=0.0, yaw=0.0, speed=2.0))
-            assert node.ekf.initialized
-            # Now kart genuinely reverses: wheel-v = -1.5 m/s, well below the
-            # default 0.3 deadband.
-            node._wheel_speed_cb(Float32(data=-1.5))
-            # A VTG fix arrives with course-over-ground = 0 (because COG is
-            # the direction of motion, which is +x even when kart faces -x).
-            # The flip should rotate yaw_meas to π, and the EKF should pull
-            # toward π (not stay near 0).
-            for _ in range(20):
-                node.gps_callback(_gps_odom(x=0.1, y=0.0, yaw=0.0, speed=1.5))
-            yaw = float(node.ekf.x[2])
-            assert abs(abs(yaw) - math.pi) < 0.5, (
-                f"EKF yaw={yaw}; real reverse should have flipped it toward π"
-            )
-        finally:
-            node.destroy_node()

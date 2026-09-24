@@ -10,7 +10,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float32, Float32MultiArray, String
 from std_msgs.msg import Empty as _EmptyMsg # naming conflict
 
-from autonomous_kart import paths
+from autonomous_kart import line_spec, paths
 from autonomous_kart.nodes.master.master_node import STATES
 from autonomous_kart.nodes.pathfinder.planners.base import KartConstants, PlannerInputs
 from autonomous_kart.nodes.pathfinder.planners.mpc import MPCPlanner
@@ -70,6 +70,11 @@ class PathfinderNode(Node):
         # Racing line
         self.line_path = paths.resolve(self._param("line_path", "", str))
         self.racing_line: List[Tuple[float, ...]] = self._load_line_csv(self.line_path)
+        # Shape + speed knobs arrive together on pathfinder/line_spec. Shapes
+        # are discovered from this directory on every request, so a CSV
+        # dropped in becomes loadable with no config or restart step.
+        self.line_dir = paths.resolve(self._param("line_dir", "data/racing_line", str))
+        self.speed_spec: Optional[dict] = None
 
         # Cached inputs to planners
         self.state = self._param("system_state", "IDLE", str)
@@ -153,6 +158,7 @@ class PathfinderNode(Node):
         self.create_subscription(_EmptyMsg, "mpc/residual_revert", self._on_residual_revert, 1)
         self.create_subscription(String, "pathfinder/planner", self._on_planner_swap, 1)
         self.create_subscription(String, "pathfinder/line_path", self._on_line_swap, 1)
+        self.create_subscription(String, "pathfinder/line_spec", self._on_line_spec, 1)
         self.create_subscription(Float32, "mpc/set_actuator_gain", self._on_set_actuator_gain, 1)
 
         # Publishers
@@ -258,19 +264,55 @@ class PathfinderNode(Node):
         self.active_planner_pub.publish(String(data=name))
         self.logger.info(f"active planner -> {name}")
 
+    def _adopt_line(self, path: str, rows: List[Tuple[float, ...]]) -> None:
+        self.line_path = path
+        self.racing_line = rows
+        # Keep the residual's seam-unwrap calibrated to the new line length
+        self.shared_residual.s_total = float(rows[-1][0])
+        # Rebuild planners on the new line; shared residual persists.
+        self.planners = self._build_planners()
+
     def _on_line_swap(self, msg: String):
         path = paths.resolve((msg.data or "").strip())
         new_line = self._load_line_csv(path)
         if not new_line:
             self.logger.warning(f"pathfinder/line_path: could not load '{path}'")
             return
-        self.line_path = path
-        self.racing_line = new_line
-        # Keep the residual's seam-unwrap calibrated to the new line length
-        self.shared_residual.s_total = float(new_line[-1][0])
-        # Rebuild planners on the new line; shared residual persists.
-        self.planners = self._build_planners()
+        # A raw path is taken as-is, so any speed spec stops applying.
+        self.speed_spec = None
+        self._adopt_line(path, new_line)
         self.logger.info(f"line -> {path} ({len(new_line)} pts)")
+
+    def _on_line_spec(self, msg: String):
+        """{shape, v_min, v_max, v_mult} -> reload that shape, reshape its vx."""
+        try:
+            payload = json.loads(msg.data)
+        except (TypeError, ValueError):
+            payload = None
+        if not isinstance(payload, dict):
+            self.logger.warning(f"pathfinder/line_spec: bad payload '{msg.data}'")
+            return
+        spec, err = line_spec.normalize_spec(
+            payload,
+            self._param("mpc.target_speed_mps", 10.0, float),
+            self.kart.v_max_mps,
+        )
+        if err:
+            self.logger.warning(f"pathfinder/line_spec: {err}")
+            return
+        path, rows = line_spec.load_shape(self.line_dir, spec)
+        if not rows:
+            self.logger.warning(
+                f"pathfinder/line_spec: no line for shape "
+                f"'{spec['shape']}' under {self.line_dir}"
+            )
+            return
+        self.speed_spec = spec
+        self._adopt_line(path, rows)
+        self.logger.info(
+            f"line -> {spec['shape']} x{spec['v_mult']:.2f} "
+            f"clip[{spec['v_min']:.1f}, {spec['v_max']:.1f}] ({len(rows)} pts)"
+        )
 
     def update_state(self, msg: String):
         if msg.data != self.state:
@@ -442,6 +484,10 @@ class PathfinderNode(Node):
             planner_params = {
                 k: p.value for k, p in self.get_parameters_by_prefix(name).items()
             }
+            if name == MPCPlanner.name and self.speed_spec is not None:
+                # MPC clamps v_ref at its own target_speed on top of the line's
+                # vx column, so the spec's ceiling needs to be here too
+                planner_params["target_speed_mps"] = self.speed_spec["v_max"]
             kwargs = dict(logger=self.logger, node=self)
             if cls is MPCPlanner:
                 kwargs["residual"] = self.shared_residual

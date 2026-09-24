@@ -59,7 +59,7 @@ pathfinder_node:
     # 0.38 off 9/13 bags. Superseded by the knot table below wherever that is
     # non-empty; it still sets steer_max.
     mpc.actuator_gain: 0.38
-    # true = learned knot table below, false = flat actuator_gain (numpy MPC)
+    # true = learned knot table below, false = flat actuator_gain
     mpc.use_steer_map: true
     # Measured cmd_drive -> wheel angle
     mpc.steer_map_cmd_deg: [-60.0, -21.459, -17.02, -12.622, -9.518, -6.809, -4.503, -2.487, 0.074, 2.52, 4.51, 6.873, 9.514, 12.69, 16.773, 22.035, 60.0]

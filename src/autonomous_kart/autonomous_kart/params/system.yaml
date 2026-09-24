@@ -5,4 +5,4 @@
     logs: false
     system_state: "IDLE" # "STOPPED", "IDLE", "MANUAL", "AUTONOMOUS"
     system_frequency: 60 # Speed of hot loop (Hertz)
-    line_path: "/ws/data/racing_line/line6.csv"
+    line_path: "data/racing_line/line6.csv"

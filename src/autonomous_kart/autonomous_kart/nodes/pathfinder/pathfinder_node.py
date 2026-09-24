@@ -10,9 +10,14 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float32, Float32MultiArray, String
 from std_msgs.msg import Empty as _EmptyMsg # naming conflict
 
+from autonomous_kart import paths
 from autonomous_kart.nodes.master.master_node import STATES
 from autonomous_kart.nodes.pathfinder.planners.base import KartConstants, PlannerInputs
 from autonomous_kart.nodes.pathfinder.planners.mpc import MPCPlanner
+from autonomous_kart.nodes.pathfinder.planners.mpc_cuda import (
+    describe_solver,
+    select_mpc_class,
+)
 from autonomous_kart.nodes.pathfinder.planners.mpc_residual import ResidualLearner
 from autonomous_kart.nodes.pathfinder.planners.opencv import OpenCVPlanner
 from autonomous_kart.nodes.pathfinder.planners.pure_pursuit import PurePursuitPlanner
@@ -63,7 +68,7 @@ class PathfinderNode(Node):
         self.manual_steer_max = self.kart.steer_max_deg
 
         # Racing line
-        self.line_path = self._param("line_path", "", str)
+        self.line_path = paths.resolve(self._param("line_path", "", str))
         self.racing_line: List[Tuple[float, ...]] = self._load_line_csv(self.line_path)
 
         # Cached inputs to planners
@@ -254,7 +259,7 @@ class PathfinderNode(Node):
         self.logger.info(f"active planner -> {name}")
 
     def _on_line_swap(self, msg: String):
-        path = (msg.data or "").strip()
+        path = paths.resolve((msg.data or "").strip())
         new_line = self._load_line_csv(path)
         if not new_line:
             self.logger.warning(f"pathfinder/line_path: could not load '{path}'")
@@ -440,6 +445,19 @@ class PathfinderNode(Node):
             kwargs = dict(logger=self.logger, node=self)
             if cls is MPCPlanner:
                 kwargs["residual"] = self.shared_residual
+                # CudaMPCPlanner keeps name "mpc", so the registry and the swap topic are unchanged.
+                cls = select_mpc_class()
+                if cls is not MPCPlanner:
+                    try:
+                        out[name] = cls(planner_params, self.kart,
+                                        self.racing_line, **kwargs)
+                        self.logger.info(f"MPC solver: {describe_solver()}")
+                        continue
+                    except Exception as e:
+                        self.logger.warning(
+                            f"CUDA MPC unavailable, falling back to numpy: {e}")
+                        cls = MPCPlanner
+                self.logger.info(f"MPC solver: {describe_solver()}")
             try:
                 out[name] = cls(planner_params, self.kart, self.racing_line, **kwargs)
             except Exception as e:

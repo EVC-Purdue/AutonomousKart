@@ -9,6 +9,8 @@ from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from std_msgs.msg import String, Float32, Float32MultiArray, UInt16, Empty
 
+from autonomous_kart import paths
+
 
 class STATES(Enum):
     IDLE = "IDLE"
@@ -28,7 +30,7 @@ class MasterNode(Node):
         self.logger = self.get_logger()
         self.state = self.get_parameter("system_state").value
         self.system_frequency = self.get_parameter("system_frequency").value
-        self.path = self.get_parameter("line_path").value
+        self.path = paths.resolve(self.get_parameter("line_path").value)
 
         assert self.state in [s.value for s in STATES]
 

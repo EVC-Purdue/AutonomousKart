@@ -20,6 +20,8 @@ from std_msgs.msg import Float32, Float32MultiArray
 from geometry_msgs.msg import Quaternion, TransformStamped
 from tf2_ros import TransformBroadcaster
 
+from autonomous_kart import paths
+
 from .ekf import LocalizationEKF, _wrap
 from .sim_bicycle import BicycleModel
 
@@ -94,7 +96,7 @@ class LocalizationNode(Node):
     def _auto_spawn(self):
         """Set initial pose from first point of racing line."""
         try:
-            line_path = self.get_parameter("line_path").value
+            line_path = paths.resolve(self.get_parameter("line_path").value)
             with open(line_path, "r") as f:
                 rows = []
                 for line in f:

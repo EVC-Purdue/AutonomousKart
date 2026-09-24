@@ -9,6 +9,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, ReliabilityPolicy, QoSProfile
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
+from autonomous_kart import paths
 from autonomous_kart.nodes.opencv_pathfinder.angle import AngleFinder
 
 class OpenCVPathfinderNode(Node):
@@ -32,7 +33,7 @@ class OpenCVPathfinderNode(Node):
         self.percent_of_img = self.get_parameter("percent_of_img").value
         self.pixel_range = self.get_parameter("pixel_range").value
         self.capture_frequency = self.get_parameter("capture_frequency").value
-        self.log_dir = self.get_parameter("log_dir").value
+        self.log_dir = paths.resolve(self.get_parameter("log_dir").value)
         self.log_file = self.get_parameter("log_file").value
 
         self.log_folder = os.path.join(self.log_dir, self.log_file)

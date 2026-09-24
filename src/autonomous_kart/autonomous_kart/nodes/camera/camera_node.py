@@ -11,6 +11,8 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
+from autonomous_kart import paths
+
 
 class CameraNode(Node):
     def __init__(self):
@@ -45,7 +47,7 @@ class CameraNode(Node):
         self.frame_lock = threading.Lock()
 
         if self.sim_mode:
-            video_path = "/ws/data/EVC_test_footage/video.mp4"
+            video_path = paths.resolve("data/EVC_test_footage/video.mp4")
             self.cap = cv2.VideoCapture(video_path)
             self.video_fps = self.cap.get(cv2.CAP_PROP_FPS)
 

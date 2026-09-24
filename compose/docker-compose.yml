@@ -22,7 +22,7 @@ services:
     stdin_open: true
     tty: true
     restart: always
-    command: bash /ws/scripts/start.bash
+    command: bash /ws/scripts/kart pi
     network_mode: host
 volumes:
   ros_cache:

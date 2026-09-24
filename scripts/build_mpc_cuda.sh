@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Build the CUDA MPC solver into build/mpc_cuda/libmpc_cuda.so.
-#
-# On error the planner falls back to numpy.
+# Build the CUDA MPC solver to build/mpc_cuda/; falls back to numpy on error.
 set -euo pipefail
 
 WS="${KART_WS:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -24,8 +22,7 @@ if [ -z "$ARCH" ]; then
 fi
 
 mkdir -p "$OUT"
-# -cudart static so the .so carries libcudart; the Jetson container runtime
-# injects libcuda.so.1 but not libcudart.
+# -cudart static: the container runtime injects libcuda.so.1, not libcudart.
 "$NVCC" -DLIBRARY -O3 -arch="$ARCH" --shared -Xcompiler -fPIC \
         -cudart static -o "$OUT/libmpc_cuda.so" "$SRC" -I "$WS/cuda"
 echo "built $OUT/libmpc_cuda.so ($ARCH)"

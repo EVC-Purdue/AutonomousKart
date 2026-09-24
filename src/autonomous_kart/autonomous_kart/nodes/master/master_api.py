@@ -7,7 +7,7 @@ from rclpy.executors import ExternalShutdownException
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-from autonomous_kart import line_spec, paths
+from autonomous_kart import paths
 from .master_node import MasterNode, STATES
 
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
@@ -279,19 +279,9 @@ def map_endpoint():
     waypoints = _load_static_line(master_node.path)
     if not waypoints:
         return jsonify({"error": "racing line not found", "waypoints": []}), 404
-    spec = master_node.get_active_spec()
-    if spec is not None:
-        # Report the speeds the planners are tracking, not the ones the CSV
-        # shipped with.
-        waypoints = [
-            dict(w, vx=line_spec.scale_vx(
-                w["vx"], spec["v_min"], spec["v_max"], spec["v_mult"]))
-            for w in waypoints
-        ]
     return jsonify({
         "path": master_node.path,
         "count": len(waypoints),
-        "spec": spec,
         "waypoints": waypoints,
     })
 

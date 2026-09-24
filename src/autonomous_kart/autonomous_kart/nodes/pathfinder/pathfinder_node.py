@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import traceback
 from typing import List, Optional, Tuple
 
@@ -10,7 +11,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float32, Float32MultiArray, String
 from std_msgs.msg import Empty as _EmptyMsg # naming conflict
 
-from autonomous_kart import line_spec, paths
+from autonomous_kart import paths
 from autonomous_kart.nodes.master.master_node import STATES
 from autonomous_kart.nodes.pathfinder.planners.base import KartConstants, PlannerInputs
 from autonomous_kart.nodes.pathfinder.planners.mpc import MPCPlanner
@@ -70,9 +71,7 @@ class PathfinderNode(Node):
         # Racing line
         self.line_path = paths.resolve(self._param("line_path", "", str))
         self.racing_line: List[Tuple[float, ...]] = self._load_line_csv(self.line_path)
-        # Shape + speed knobs arrive together on pathfinder/line_spec. Shapes
-        # are discovered from this directory on every request, so a CSV
-        # dropped in becomes loadable with no config or restart step.
+        # Shape + speed from line_spec
         self.line_dir = paths.resolve(self._param("line_dir", "data/racing_line", str))
         self.speed_spec: Optional[dict] = None
 
@@ -284,34 +283,33 @@ class PathfinderNode(Node):
         self.logger.info(f"line -> {path} ({len(new_line)} pts)")
 
     def _on_line_spec(self, msg: String):
-        """{shape, v_min, v_max, v_mult} -> reload that shape, reshape its vx."""
+        """Load line_dir/<shape>.csv with vx clipped to [v_min, v_max] after v_mult."""
         try:
-            payload = json.loads(msg.data)
+            spec = json.loads(msg.data)
         except (TypeError, ValueError):
-            payload = None
-        if not isinstance(payload, dict):
+            spec = None
+        if not isinstance(spec, dict) or not spec.get("shape"):
             self.logger.warning(f"pathfinder/line_spec: bad payload '{msg.data}'")
             return
-        spec, err = line_spec.normalize_spec(
-            payload,
-            self._param("mpc.target_speed_mps", 10.0, float),
-            self.kart.v_max_mps,
-        )
-        if err:
-            self.logger.warning(f"pathfinder/line_spec: {err}")
-            return
-        path, rows = line_spec.load_shape(self.line_dir, spec)
+        path = os.path.join(self.line_dir, f"{spec['shape']}.csv")
+        rows = self._load_line_csv(path)
         if not rows:
-            self.logger.warning(
-                f"pathfinder/line_spec: no line for shape "
-                f"'{spec['shape']}' under {self.line_dir}"
-            )
+            self.logger.warning(f"pathfinder/line_spec: could not load '{path}'")
             return
-        self.speed_spec = spec
-        self._adopt_line(path, rows)
+
+        v_mult = float(spec.get("v_mult") or 1.0)
+        v_min = float(spec.get("v_min") or 0.0)
+        v_max = float(spec.get("v_max") or self._param("mpc.target_speed_mps", 10.0, float))
+        v_max = min(v_max, self.kart.v_max_mps)
+        self.speed_spec = {
+            "shape": spec["shape"], "v_min": v_min, "v_max": v_max, "v_mult": v_mult,
+        }
+        self._adopt_line(path, [
+            r[:5] + (min(max(r[5] * v_mult, v_min), v_max),) + r[6:] for r in rows
+        ])
         self.logger.info(
-            f"line -> {spec['shape']} x{spec['v_mult']:.2f} "
-            f"clip[{spec['v_min']:.1f}, {spec['v_max']:.1f}] ({len(rows)} pts)"
+            f"line -> {spec['shape']} x{v_mult:.2f} "
+            f"clip[{v_min:.1f}, {v_max:.1f}] ({len(rows)} pts)"
         )
 
     def update_state(self, msg: String):
@@ -485,8 +483,7 @@ class PathfinderNode(Node):
                 k: p.value for k, p in self.get_parameters_by_prefix(name).items()
             }
             if name == MPCPlanner.name and self.speed_spec is not None:
-                # MPC clamps v_ref at its own target_speed on top of the line's
-                # vx column, so the spec's ceiling needs to be here too
+                # MPC clamps v_ref at its own target_speed, so the ceiling goes here too
                 planner_params["target_speed_mps"] = self.speed_spec["v_max"]
             kwargs = dict(logger=self.logger, node=self)
             if cls is MPCPlanner:

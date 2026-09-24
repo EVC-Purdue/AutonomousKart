@@ -1,7 +1,4 @@
-# Source this for a kart shell: ROS, the venv, the workspace, DDS and `kart`.
-# Finds its own workspace, so one ~/.bashrc line works at /ws and at ~/AutonomousKart:
-#
-#   [ -f "$HOME/AutonomousKart/scripts/kart_env.sh" ] && . "$HOME/AutonomousKart/scripts/kart_env.sh"
+# Source for a kart shell: ROS, venv, workspace, DDS and the kart command.
 
 KART_WS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export KART_WS

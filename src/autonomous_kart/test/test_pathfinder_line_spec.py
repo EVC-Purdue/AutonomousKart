@@ -1,11 +1,4 @@
-"""
-PathfinderNode's `pathfinder/line_spec` handling.
-
-A spec names a shape plus the three speed knobs. Adopting it reloads the
-shape's base CSV, reshapes the vx column, and rebuilds the planners on it.
-MPC caps v_ref at its own target_speed independently of the line, so the
-spec's v_max has to reach the rebuilt planner too.
-"""
+"""PathfinderNode's `pathfinder/line_spec` handling."""
 import json
 
 import pytest
@@ -38,7 +31,7 @@ def _params(line_path, line_dir):
 
 @pytest.fixture
 def shape_dir(tmp_path):
-    """Two shapes: `line1` (flat 10, 5 pts) and `center` (flat 8, 3 pts)."""
+    """line1 flat 10 / 5 pts, center flat 8 / 3 pts, fast flat 20 / 5 pts."""
     d = tmp_path / "lines"
     d.mkdir()
     (d / "line1.csv").write_text(
@@ -46,6 +39,9 @@ def shape_dir(tmp_path):
     )
     (d / "center.csv").write_text(
         "".join(f"{i}.0,{i}.0,1.0,0.0,0.0,8.0,0.0\n" for i in range(3))
+    )
+    (d / "fast.csv").write_text(
+        "".join(f"{i}.0,{i}.0,0.0,0.0,0.0,20.0,0.0\n" for i in range(5))
     )
     return str(d)
 
@@ -161,7 +157,7 @@ def test_unknown_shape_leaves_the_line_alone(ros_ctx, tiny_racing_line, shape_di
             node.destroy_node()
 
 
-def test_invalid_spec_leaves_the_line_alone(ros_ctx, tiny_racing_line, shape_dir):
+def test_bad_payload_leaves_the_line_alone(ros_ctx, tiny_racing_line, shape_dir):
     from std_msgs.msg import String
 
     with ros_ctx(_params(tiny_racing_line, shape_dir)):
@@ -169,10 +165,40 @@ def test_invalid_spec_leaves_the_line_alone(ros_ctx, tiny_racing_line, shape_dir
         try:
             before = list(node.racing_line)
 
-            node._on_line_spec(_spec_msg(shape="line1", v_min=9.0, v_max=4.0))
             node._on_line_spec(String(data="not json"))
+            node._on_line_spec(String(data="[1, 2]"))
+            node._on_line_spec(_spec_msg(v_max=6.0))  # no shape
 
             assert node.racing_line == before
+            assert node.speed_spec is None
+        finally:
+            node.destroy_node()
+
+
+def test_unset_v_max_falls_back_to_the_mpc_target_speed(
+    ros_ctx, tiny_racing_line, shape_dir
+):
+    with ros_ctx(_params(tiny_racing_line, shape_dir)):
+        node = PathfinderNode()
+        try:
+            # fast.csv carries vx 20; mpc.target_speed_mps is 10.
+            node._on_line_spec(_spec_msg(shape="fast"))
+
+            assert [r[5] for r in node.racing_line] == pytest.approx([10.0] * 5)
+            assert node.planners["mpc"].target_speed == pytest.approx(10.0)
+        finally:
+            node.destroy_node()
+
+
+def test_v_max_never_exceeds_the_kart_limit(ros_ctx, tiny_racing_line, shape_dir):
+    with ros_ctx(_params(tiny_racing_line, shape_dir)):
+        node = PathfinderNode()
+        try:
+            node._on_line_spec(_spec_msg(shape="fast", v_max=99.0))
+
+            # v_max_mps is 12.0.
+            assert [r[5] for r in node.racing_line] == pytest.approx([12.0] * 5)
+            assert node.planners["mpc"].target_speed == pytest.approx(12.0)
         finally:
             node.destroy_node()
 

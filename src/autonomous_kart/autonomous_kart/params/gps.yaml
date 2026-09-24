@@ -10,8 +10,7 @@
 gps_node:
   ros__parameters:
     gps_frequency: 20 # Hz, receiver output rate
-    # Unicore UM982 on its COM3, through the FT231X. Symlink from
-    # /dev/ttyUSB0 races the CANable on plug order.
+    # Unicore UM982 COM3 via FT231X; symlinked because ttyUSB0 races the CANable.
     serial_device: "/dev/kart-gps"
     baud_rate: 115200
     status_frequency: 10 # Hz, gps/status only
@@ -20,6 +19,8 @@ gps_node:
     receiver_port: "COM3"  # COM3 for USB, COM1 for UART
     # Dual-antenna heading 1-sigma. 0.1 deg/m (UM982 manual R1.7) over the 0.61 m antenna baseline.
     hdg_sigma_deg: 0.164
+    # $GPHDT reads 0.0000 with no solution, so yaw needs #HEADINGA's status.
+    hdg_accept_status: ["SOL_COMPUTED"]
     # VTG (course / ground-speed) uncertainty
     vtg_speed_sigma_mps: 0.1
     vtg_min_speed_for_yaw: 0.5

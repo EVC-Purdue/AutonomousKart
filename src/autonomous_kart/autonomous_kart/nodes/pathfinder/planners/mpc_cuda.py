@@ -9,14 +9,12 @@ import numpy as np
 from autonomous_kart import paths
 from autonomous_kart.nodes.pathfinder.planners.mpc import MPCPlanner
 
-# Compile-time limits in cuda/mpc_cuda.cu. The kernel would silently truncate a
-# param past one of these, so they are asserted at construction.
+# Compile-time limits for cuda that would get overwritten.
 NMAX = 64   # max horizon_steps
 NK = 17     # steer-map knot count
 MS = 42     # max proj_back + proj_fwd
 
-# Literals in the kernel's cost expression. A weight tuned in the yaml but not
-# passed to mpc_cuda_init has to appear here or it is silently ignored.
+# Kernel cost are literals. If updating in repo must be updated here.
 _BAKED = {
     "w_d": 8.85, "w_heading": 2.97, "w_speed": 30.69, "w_delta": 0.05,
     "w_drate": 0.12, "w_accel": 2.0, "w_edge": 1456.58, "w_progress": 6.23,
@@ -65,8 +63,7 @@ def select_mpc_class():
 
 
 def _d(a):
-    """Read-only argument. data_as keeps a reference to the array it points at,
-    so a temporary from ascontiguousarray stays alive for the call."""
+    """Read-only arg; data_as keeps the temporary alive for the call."""
     return np.ascontiguousarray(a, dtype=np.float64).ctypes.data_as(_D)
 
 
@@ -120,8 +117,7 @@ class CudaMPCPlanner(MPCPlanner):
         self._best = ctypes.c_double()
         self._cmd0 = ctypes.c_double()
         self._tick = 0
-        # The kernel returns no elite trajectory, and margin_min derives from
-        # it. NaN so the telemetry reads as absent, not as a full corridor.
+        # Kernel returns no elite trajectory, so margin_min reads absent, not full.
         self._no_traj = np.full(self.N, np.nan)
         self._n_elite = max(1, int(round(self.mppi_elite_frac * self.K)))
 

@@ -304,10 +304,7 @@ class LocalizationNode(Node):
         sigma_yy = max(sigma_yy, floor)
         R_xy = np.diag([sigma_xx, sigma_yy])
 
-        # Heading and speed travel inside the GPS Odometry: orientation carries
-        # yaw (ENU, rad) from the dual antenna and twist.linear.x carries VTG
-        # forward speed (m/s). gps_node leaves the matching cov entry at 1e6
-        # when neither is usable.
+        # Odometry has dual-antenna yaw in orientation, VTG speed in twist.x.
         q = msg.pose.pose.orientation
         yaw_meas = 2.0 * math.atan2(float(q.z), float(q.w))
         var_yaw = float(msg.pose.covariance[35])
@@ -315,9 +312,7 @@ class LocalizationNode(Node):
         var_v = float(msg.twist.covariance[0])
         have_yaw = var_yaw < self.vtg_yaw_var_max
         have_speed = var_v < self.vtg_speed_var_max
-        # Yaw comes from the dual-antenna $GPHDT, which reports body
-        # heading, so it needs no reverse correction. VTG course over ground
-        # did: it points 180 deg from body yaw when rolling backwards.
+        # $GPHDT is body heading, so no reverse correction as VTG course needed.
         if not self.ekf.initialized:
             if not self._imu_seen:
                 # Wait for IMU before seeding the filter the predict path

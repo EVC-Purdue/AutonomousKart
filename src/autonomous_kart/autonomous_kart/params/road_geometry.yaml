@@ -1,0 +1,55 @@
+# Bird's-eye warp + polynomial fit tunables (nodes/opencv_pathfinder/road_geometry.py).
+#
+# EVERY value below is an UNCALIBRATED PLACEHOLDER. Investigated
+# data/EVC_test_footage/video.mp4 looking for real numbers to seed these
+# with and it doesn't show the red tape boundary AngleFinder/RoadGeometry
+# detect (real track footage, but no tape in frame — some frames show a
+# white-painted edge instead) — so there is no real calibration data
+# anywhere in this repo. road_geometry.enabled defaults false for exactly
+# this reason: don't trust any of this until it's actually calibrated.
+#
+# Calibration procedure:
+#   1. Park the kart on a straight, taped section of the real course.
+#   2. Enable debug_mode and let RoadGeometry.write_debug_frame dump a
+#      frame (or grab one directly from camera/image_raw).
+#   3. On the RAW (unwarped) frame, pick 4 points (TL, TR, BR, BL) marking
+#      a trapezoid on the road surface ahead of the kart — the two top
+#      points closer together (far side, near the vanishing point), the
+#      two bottom points wider apart (near side) — set warp_src_*.
+#   4. Re-run and check the warped debug frame: the tape should render as
+#      two roughly-vertical, parallel lines. If they still converge/diverge,
+#      the source points are off — adjust and repeat.
+#   5. Measure a known real-world distance visible in the warped frame
+#      (e.g. the surveyed track width) and divide by the corresponding
+#      pixel distance in the warped frame to get meters_per_pixel_x/y.
+#   6. Only then flip road_geometry.enabled: true.
+
+opencv_pathfinder_node:
+  ros__parameters:
+    road_geometry.enabled: false
+
+    # Warp source: 4 pixel points (TL, TR, BR, BL) in the RAW camera frame.
+    # Placeholders assume the 1636x920 resolution confirmed in this repo's
+    # data/EVC_test_footage/video.mp4 — VERIFY against the actual deployed
+    # camera's resolution, they may differ, and these are not derived from
+    # any real tape sighting regardless (see note above).
+    road_geometry.warp_src_tl: [700.0, 550.0]
+    road_geometry.warp_src_tr: [936.0, 550.0]
+    road_geometry.warp_src_br: [1400.0, 900.0]
+    road_geometry.warp_src_bl: [236.0, 900.0]
+
+    # Warp destination: an arbitrary rectangle in warped-pixel space (its
+    # size doesn't matter — only the scale factors below convert it to
+    # meters).
+    road_geometry.warp_dst_width: 400
+    road_geometry.warp_dst_height: 600
+
+    # UNCALIBRATED. See step 5 above.
+    road_geometry.meters_per_pixel_x: 0.01
+    road_geometry.meters_per_pixel_y: 0.01
+
+    road_geometry.scan_row_count: 20
+    road_geometry.min_points_per_side: 5
+    # EMA factor for temporal smoothing of (offset_m, heading_err_rad,
+    # curvature_1pm) — higher = more responsive/less smoothed.
+    road_geometry.smoothing_alpha: 0.3

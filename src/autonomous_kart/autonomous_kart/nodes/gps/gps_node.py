@@ -44,6 +44,7 @@ class GpsNode(Node):
 
         # GPS status snapshot; populated from NMEA messages and the RTCM loop.
         self.fix_quality = 0
+        self._have_fix = False    # position and covariance start unset
         self.num_satellites = 0
         self.hdop = 0.0
         self.lat = 0.0
@@ -152,6 +153,9 @@ class GpsNode(Node):
         """
         Publishes the 2D coordinates and error
         """
+        if not self._have_fix:
+            return
+
         msg = Odometry()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "gps"
@@ -292,10 +296,12 @@ class GpsNode(Node):
         self.altitude = altitude
 
         if not lat or not lon or not lat_direction or not lon_direction:
+            self._have_fix = False
             return
 
 
         self.gps_to_coords(lat, lat_direction, lon, lon_direction)
+        self._have_fix = fix_quality > 0
 
         if not self.use_gst:
             # Numbers below come from the GEM1305 spec.

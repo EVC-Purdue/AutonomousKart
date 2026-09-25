@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Build and run the kart: kart [sim|pi|stop|restart [sim|pi]].
+# Build and run the kart: kart [<mode>|stop|restart [<mode>]], where <mode>
+# is any name with a matching launch/bringup_<mode>.launch.py (sim, pi,
+# jetson, rubik, ...). Defaults to pi.
 set -o pipefail  # not -u: ROS setup.bash reads AMENT_TRACE_SETUP_FILES unguarded
 
 WS="${KART_WS:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -90,7 +92,26 @@ PY
 )"
 }
 
-# NTRIP relay in kart's own group, never reaped, so it outlives a restart.
+# str2str degrades silently on a dropped upstream NTRIP connection -- GPS
+# keeps working, just without RTK correction, with nothing surfacing that
+# it happened. This logs the up/down transitions and exits on its own once
+# str2str (checked via the :9195 relay port) is gone, so it never orphans.
+ntrip_watchdog() {
+  local caster=108.59.49.226 cport=9000 up prev=""
+  while ss -ltnH "sport = :9195" 2>/dev/null | grep -q .; do
+    if ss -tnH "dst ${caster}:${cport}" 2>/dev/null | grep -q ESTAB; then up=1; else up=0; fi
+    if [ "$up" != "$prev" ]; then
+      if [ "$up" = 1 ]; then say "ntrip     correction link up"
+      else warn "ntrip     correction link DOWN -- GPS degrading to non-RTK"
+      fi
+      prev=$up
+    fi
+    sleep 15
+  done
+}
+
+# NTRIP relay + link watchdog, in kart's own group, never reaped, so they
+# outlive a restart.
 start_ntrip() {
   if ss -ltnH "sport = :9195" 2>/dev/null | grep -q .; then
     say "ntrip     already up on :9195"
@@ -100,6 +121,7 @@ start_ntrip() {
           -out tcpsvr://:9195 -b 1 -p 40.4376975222 -86.9444409756 200 \
           >> "$WS/logs/str2str.log" 2>&1 &
   say "ntrip     relaying to :9195"
+  ntrip_watchdog >> "$WS/logs/str2str.log" 2>&1 &
 }
 
 # stop needs only ps/kill/ss, and sourcing the env costs 0.6 s.
@@ -114,11 +136,10 @@ source "$WS/scripts/kart_env.sh"
 
 FORCE=0
 MODE="${1:-pi}"
-case "$MODE" in
-  restart) FORCE=1; MODE="${2:-pi}" ;;
-  sim|pi)  ;;
-  *) echo "usage: kart [sim|pi|stop|restart [sim|pi]]" >&2; exit 2 ;;
-esac
+if [ "$MODE" = restart ]; then
+  FORCE=1
+  MODE="${2:-pi}"
+fi
 if [ ! -f "$WS/src/autonomous_kart/autonomous_kart/launch/bringup_${MODE}.launch.py" ]; then
   warn "no launch file for mode '$MODE'"; exit 2
 fi
@@ -149,7 +170,7 @@ fi
 source "$WS/install/setup.bash"
 say "built     $(el)"
 
-[ "$MODE" = pi ] && start_ntrip
+[ -e /dev/ttyTHS1 ] && start_ntrip
 
 : > "$LOG"
 : > "$PIDFILE"

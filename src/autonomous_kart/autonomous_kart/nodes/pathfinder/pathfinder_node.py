@@ -19,7 +19,7 @@ from autonomous_kart.nodes.pathfinder.planners.mpc_cuda import (
     describe_solver,
     select_mpc_class,
 )
-from autonomous_kart.nodes.pathfinder.planners.mpc_residual import ResidualLearner
+from autonomous_kart.nodes.pathfinder.planners.mpc_residual import MultiHorizonResidual
 from autonomous_kart.nodes.pathfinder.planners.opencv import OpenCVPlanner
 from autonomous_kart.nodes.pathfinder.planners.pure_pursuit import PurePursuitPlanner
 from autonomous_kart.nodes.pathfinder.safety_checker import SafetyChecker
@@ -108,7 +108,7 @@ class PathfinderNode(Node):
         # s_total = racing-line arc length, needed for the residual's seam
         # unwrap. Falls back to 0 (= no unwrap) if the line is empty.
         s_total = float(self.racing_line[-1][0]) if self.racing_line else 0.0
-        self.shared_residual = ResidualLearner(
+        self.shared_residual = MultiHorizonResidual(
             residual_params, 1.0 / self.system_frequency, s_total=s_total,
         )
 

@@ -25,7 +25,7 @@ from autonomous_kart.nodes.pathfinder.planners.base import (
     KartConstants, Planner, PlannerInputs,
 )
 from autonomous_kart.nodes.pathfinder.planners.mpc_residual import (
-    NUM_STEER_HIST, NUM_THROTTLE_HIST, ResidualLearner, _features,
+    NUM_STEER_HIST, NUM_THROTTLE_HIST, MultiHorizonResidual, _features,
 )
 from autonomous_kart.nodes.pathfinder.strategies.rejoin import RejoinStrategy
 
@@ -37,11 +37,55 @@ def _wrap(angle):
     return (angle + math.pi) % (2.0 * math.pi) - math.pi
 
 
+class LineCorrection:
+    """Moves the reference line so the cost reads `d + offset`, kernel included."""
+
+    def __init__(self, horizons_s, speed_floor_mps: float):
+        # Leading zero: a line point level with the kart carries no correction.
+        self.horizons = np.concatenate(([0.0], np.asarray(horizons_s, float)))
+        self.speed_floor = float(speed_floor_mps)
+        self._along = np.zeros(self.horizons.size)
+        self._lateral = np.zeros(self.horizons.size)
+        self._s_now = 0.0
+        self._speed = self.speed_floor
+        self.active = False
+
+    def clear(self) -> None:
+        self.active = False
+        self._along[1:] = 0.0
+        self._lateral[1:] = 0.0
+
+    def set(self, along, lateral, s_now: float, speed: float) -> None:
+        """Install one offset per horizon, measured from `s_now` at `speed`."""
+        self._along[1:] = along
+        self._lateral[1:] = lateral
+        self._s_now = float(s_now)
+        self._speed = max(float(speed), self.speed_floor)
+        self.active = True
+
+    def apply(self, line_x, line_y, line_psi, line_s, wrap_at: float = 0.0):
+        """A line slice's corrected (x, y, s); heading and speed pass through."""
+        if not self.active:
+            return line_x, line_y, line_s
+        ahead = line_s - self._s_now
+        if wrap_at > 0.0:
+            half = 0.5 * wrap_at
+            ahead = np.where(ahead < -half, ahead + wrap_at, ahead)
+            ahead = np.where(ahead > half, ahead - wrap_at, ahead)
+        seconds = np.clip(ahead / self._speed, 0.0, self.horizons[-1])
+        lateral = np.interp(seconds, self.horizons, self._lateral)
+        along = np.interp(seconds, self.horizons, self._along)
+        return (line_x + lateral * np.sin(line_psi),
+                line_y - lateral * np.cos(line_psi),
+                line_s + along)
+
+
 class MPCPlanner(Planner):
     name = "mpc"
 
     def __init__(self, params: dict, kart: KartConstants, racing_line: list,
-                 logger=None, node=None, residual: Optional[ResidualLearner] = None):
+                 logger=None, node=None,
+                 residual: Optional[MultiHorizonResidual] = None):
         super().__init__(params, kart, racing_line, logger, node=node)
 
         if not racing_line:
@@ -198,12 +242,18 @@ class MPCPlanner(Planner):
             k[len("residual."):]: v for k, v in params.items()
             if k.startswith("residual.")
         }
-        # Shared ResidualLearner survives planner / line swaps so training state persists
+        # The shared learner survives planner / line swaps so training state persists
         s_total = float(self._static_arrays["s"][-1])
-        self.residual = residual if residual is not None else ResidualLearner(
-            residual_params, solve_dt, s_total=s_total,
-        )
-        self._nom_steps = max(1, int(round(self.residual.target_horizon_s / self.dt)))
+        self.residual = residual if residual is not None else \
+            MultiHorizonResidual(residual_params, solve_dt, s_total=s_total)
+        # Ascending, so one rollout can be read at every horizon on the way out.
+        self._nominal_steps = tuple(max(1, int(round(h / self.dt)))
+                                    for h in self.residual.horizons)
+        self._nom_steps = max(self._nominal_steps)
+        self._correction = LineCorrection(
+            self.residual.horizons,
+            float(residual_params.get("correction_speed_floor_mps", 2.0)))
+        self._res_pred = (0.0, 0.0)
         self._last_motor_mps = 0.0
         self._train_dt = solve_dt
         self._steer_hist = deque([0.0] * NUM_STEER_HIST, maxlen=NUM_STEER_HIST)
@@ -331,6 +381,8 @@ class MPCPlanner(Planner):
         v_target = self.target_speed
         v_cap = self.v_max
 
+        self._predict_correction(x, y, yaw, v, j_now, s, d, v_s, v_d)
+
         # Build candidate trajectories, evaluate, pick best
         zeros_breakdown = (0.0,) * 12
         try:
@@ -386,21 +438,25 @@ class MPCPlanner(Planner):
 
         # Residual learner (shadow)
         # nominal (held-command - straight line no acceleration) prediction over target_horizon_s of motion.
-        nom_x, nom_y = self._hold_rollout(x, y, yaw, v, delta_cmd, accel_cmd, self._nom_steps)
-        nom_s, nom_d, _, _, _ = self._frenet(nom_x, nom_y, j_now)
+        nominals = self._nominal_offsets(x, y, yaw, v, delta_cmd, accel_cmd,
+                                         j_now, s, d)
         kappa_local = self._curvature_at(j_now)
-        phi = _features(
-            d, v_s, v_d, kappa_local,
+        features = self._residual_features(
+            d, v_s, v_d, kappa_local, nominals,
             tuple(self._steer_hist), tuple(self._throttle_hist),
-            nom_s - s, nom_d - d,
         )
-        self.residual.push(phi, s, d, nom_s - s, nom_d - d, v)
+        self.residual.push(features, s, d, nominals, v)
         self.residual.step(s, d)
-        res_ps, res_pd, _residual_source = self.residual.predict(phi)
+        along, lateral = self.residual.predict(features)
+        res_ps = along[self.residual.primary]
+        res_pd = lateral[self.residual.primary]
         # effective_mode gating: zero the residual any time we're not yet in apply
         # so future consumers automatically see (0, 0) until the apply gate opens.
         if self.residual.effective_mode() != "apply":
             res_ps, res_pd = 0.0, 0.0
+        else:
+            # Report the correction the rollout was actually scored with.
+            res_ps, res_pd = self._res_pred
 
         # Live actuator_gain estimator (telemetry only — NOT consumed by _solve).
         self._update_alpha_estimate(yaw, v, delta_cmd, inputs.now_ns)
@@ -583,6 +639,68 @@ class MPCPlanner(Planner):
             return np.interp(wheel, self._map_wheel, self._map_cmd)
         return wheel / max(self.actuator_gain, 1e-6)
 
+    def _warm_cmd(self):
+        """The command the zero-noise sample publishes; `u_mean` is wheel angle."""
+        c = (float(self._command(self.u_mean[0, 0])) if self._map_cmd.size
+             else float(self.u_mean[0, 0]))
+        dr = self.steer_rate_max * self.dt
+        return min(max(c, max(self.delta_prev - dr, -self.steer_max)),
+                   min(self.delta_prev + dr, self.steer_max))
+
+    def _nominal_offsets(self, x, y, yaw, v, delta, accel, j_now, s, d):
+        """Held-command nominal displacement at each horizon, from one rollout."""
+        wheel = float(self._wheel(delta))
+        px, py, pyaw, pv = x, y, yaw, v
+        step = 0
+        offsets = []
+        for horizon_step in self._nominal_steps:
+            while step < horizon_step:
+                px += self.dt * pv * math.cos(pyaw)
+                py += self.dt * pv * math.sin(pyaw)
+                pyaw += self.dt * pv / self.wheelbase * math.tan(wheel)
+                pv = max(0.0, min(self.v_max, pv + self.dt * accel))
+                step += 1
+            nom_s, nom_d, _, _, _ = self._frenet(px, py, j_now)
+            offsets.append((nom_s - s, nom_d - d))
+        return offsets
+
+    def _residual_features(self, d, v_s, v_d, kappa, nominals,
+                           steer_hist, throttle_hist):
+        """One feature vector per horizon; only the nominal block differs."""
+        return [_features(d, v_s, v_d, kappa, steer_hist, throttle_hist,
+                          nom_ds, nom_dd)
+                for nom_ds, nom_dd in nominals]
+
+    def _predict_correction(self, x, y, yaw, v, j_now, s, d, v_s, v_d):
+        """Predict one correction per horizon and hand it to the line."""
+        self._correction.clear()
+        self._res_pred = (0.0, 0.0)
+        if self.residual.effective_mode() != "apply":
+            return
+        delta = self._warm_cmd()
+        accel = float(self.u_mean[1, 0])
+        nominals = self._nominal_offsets(x, y, yaw, v, delta, accel, j_now, s, d)
+        # Training puts the command being executed at the head of the history.
+        features = self._residual_features(
+            d, v_s, v_d, self._curvature_at(j_now), nominals,
+            (delta,) + tuple(self._steer_hist)[:NUM_STEER_HIST - 1],
+            (accel,) + tuple(self._throttle_hist)[:NUM_THROTTLE_HIST - 1],
+        )
+        along, lateral = self.residual.predict(features)
+        self._correction.set(along, lateral, s, v)
+        primary = self.residual.primary
+        self._res_pred = (along[primary], lateral[primary])
+
+    def _scored_line(self, j_now):
+        """The line slice the solver scores, carrying the correction."""
+        lo = max(0, j_now - self.proj_back)
+        hi = min(self.line_n, j_now + self.proj_fwd)
+        psi = self.l_psi[lo:hi]
+        wrap_at = float(self.l_s[-1]) if self.line_closed else 0.0
+        lx, ly, ls = self._correction.apply(
+            self.l_x[lo:hi], self.l_y[lo:hi], psi, self.l_s[lo:hi], wrap_at)
+        return lo, hi, lx, ly, psi, ls, self.l_vx[lo:hi]
+
     def _hold_rollout(self, x, y, yaw, v, delta, a, n):
         """Single-trajectory bicycle rollout used by the residual learner."""
         wheel = float(self._wheel(delta))
@@ -672,14 +790,8 @@ class MPCPlanner(Planner):
             tpsi[:, k] = psi
             tv[:, k] = v
 
-        # Batched Frenet projection onto the windowed line slice ahead of j_now
-        lo = max(0, j_now - self.proj_back)
-        hi = min(self.line_n, j_now + self.proj_fwd)
-        lx = self.l_x[lo:hi]
-        ly = self.l_y[lo:hi]
-        lp = self.l_psi[lo:hi]
-        ls = self.l_s[lo:hi]
-        lv = self.l_vx[lo:hi]
+        # Batched Frenet projection onto the line slice ahead of j_now.
+        lo, hi, lx, ly, lp, ls, lv = self._scored_line(j_now)
         # dx,dy: [K, N, M]
         dx = tx[..., None] - lx
         dy = ty[..., None] - ly
@@ -791,17 +903,18 @@ class MPCPlanner(Planner):
         self._last_motor_mps = motor_mps
         self._steer_hist.appendleft(delta_rad)
         self._throttle_hist.appendleft(accel)
-        nom_x, nom_y = self._hold_rollout(x, y, yaw, v, delta_rad, accel, self._nom_steps)
-        nom_s, nom_d, _, _, _ = self._frenet(nom_x, nom_y, j_now)
+        nominals = self._nominal_offsets(x, y, yaw, v, delta_rad, accel,
+                                         j_now, s, d)
         kappa_local = self._curvature_at(j_now)
-        phi = _features(
-            d, v_s, v_d, kappa_local,
+        features = self._residual_features(
+            d, v_s, v_d, kappa_local, nominals,
             tuple(self._steer_hist), tuple(self._throttle_hist),
-            nom_s - s, nom_d - d,
         )
-        self.residual.push(phi, s, d, nom_s - s, nom_d - d, v)
+        self.residual.push(features, s, d, nominals, v)
         self.residual.step(s, d)
-        res_ps, res_pd, _residual_source = self.residual.predict(phi)
+        along, lateral = self.residual.predict(features)
+        res_ps = along[self.residual.primary]
+        res_pd = lateral[self.residual.primary]
         # effective_mode gating: zero the residual any time we're not yet in apply
         if self.residual.effective_mode() != "apply":
             res_ps, res_pd = 0.0, 0.0

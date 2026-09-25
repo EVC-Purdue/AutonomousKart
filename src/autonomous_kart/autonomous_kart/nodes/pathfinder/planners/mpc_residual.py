@@ -207,7 +207,9 @@ class ResidualLearner:
                 return result
 
             self.trainer.train_once = _train_and_install
-            self.trainer.start()
+            # A multi-horizon owner drives every learner from one thread instead.
+            if bool(g("autostart_trainer", True)):
+                self.trainer.start()
 
     @property
     def enabled(self) -> bool:
@@ -459,3 +461,100 @@ class ResidualLearner:
     def shutdown(self) -> None:
         if self.trainer is not None:
             self.trainer.stop(timeout=2.0)
+
+
+class MultiHorizonResidual:
+    """One `ResidualLearner` per horizon; sequences are ordered by `horizons`."""
+
+    def __init__(self, params: dict, solve_dt: float, s_total: float = 0.0):
+        g = params.get
+        reference = float(g("target_horizon_s", 0.5))
+        self.horizons = tuple(sorted(float(h) for h in
+                                     (g("taps_s") or [reference])))
+        self.primary = min(range(len(self.horizons)),
+                           key=lambda i: abs(self.horizons[i] - reference))
+        self.learners = [
+            ResidualLearner(self._scaled(params, h, reference), solve_dt,
+                            s_total=s_total)
+            for h in self.horizons
+        ]
+        self._trainer = _RoundRobinTrainer(
+            [l.trainer for l in self.learners],
+            period_s=float(g("gbm_retrain_secs", 10.0)))
+
+    @staticmethod
+    def _scaled(params: dict, horizon: float, reference: float) -> dict:
+        """One learner's parameters, with its distance gates scaled to it."""
+        scale = horizon / max(reference, 1e-3)
+        scaled = dict(params)
+        scaled["target_horizon_s"] = horizon
+        scaled["outlier_threshold_m"] = (
+            float(params.get("outlier_threshold_m", 2.0)) * scale)
+        scaled["gbm_predict_clip_m"] = (
+            float(params.get("gbm_predict_clip_m", 0.5)) * scale)
+        # The owner drives every trainer from one thread; see _RoundRobinTrainer.
+        scaled["autostart_trainer"] = False
+        return scaled
+
+    def __getattr__(self, name):
+        # Telemetry and the HTTP API read the primary learner's surface.
+        return getattr(self.learners[self.primary], name)
+
+    def effective_mode(self) -> str:
+        """Apply only once every horizon has earned it, so the shape is whole."""
+        if self.mode == "off":
+            return "off"
+        if any(l.effective_mode() != "apply" for l in self.learners):
+            return "shadow"
+        return self.mode
+
+    def push(self, features, s_t: float, d_t: float, nominals, speed: float) -> None:
+        for learner, phi, (nom_ds, nom_dd) in zip(self.learners, features, nominals):
+            learner.push(phi, s_t, d_t, nom_ds, nom_dd, speed)
+
+    def step(self, s_now: float, d_now: float) -> None:
+        for learner in self.learners:
+            learner.step(s_now, d_now)
+
+    def predict(self, features):
+        """(along, lateral) per horizon, ordered like `horizons`."""
+        pairs = [learner.predict(phi)[:2]
+                 for learner, phi in zip(self.learners, features)]
+        return [a for a, _ in pairs], [d for _, d in pairs]
+
+    def shutdown(self) -> None:
+        self._trainer.stop()
+        for learner in self.learners:
+            learner.shutdown()
+
+
+class _RoundRobinTrainer:
+    """Fits one learner's batch model at a time, so N horizons cost one core."""
+
+    def __init__(self, trainers, period_s: float):
+        import threading
+
+        self._trainers = [t for t in trainers if t is not None]
+        self._stop = threading.Event()
+        self._thread = None
+        if not self._trainers:
+            return
+        self._slice_s = max(0.5, period_s / len(self._trainers))
+        self._thread = threading.Thread(target=self._loop, name="residual-taps",
+                                        daemon=True)
+        self._thread.start()
+
+    def _loop(self) -> None:
+        turn = 0
+        while not self._stop.wait(timeout=self._slice_s):
+            trainer = self._trainers[turn % len(self._trainers)]
+            turn += 1
+            try:
+                trainer.train_once()
+            except Exception:
+                pass
+
+    def stop(self, timeout: float = 2.0) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=timeout)

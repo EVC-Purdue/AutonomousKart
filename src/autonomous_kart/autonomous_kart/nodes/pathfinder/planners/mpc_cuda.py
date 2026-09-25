@@ -140,14 +140,13 @@ class CudaMPCPlanner(MPCPlanner):
                             for k, (v, w) in bad.items()))
 
     def _solve(self, x0, y0, yaw0, v0, j_now, v_target, v_cap):
-        lo = max(0, j_now - self.proj_back)
-        hi = min(self.line_n, j_now + self.proj_fwd)
+        # The residual rides in on the line, so the kernel knows nothing of it.
+        lo, hi, lx, ly, lp, ls, lv = self._scored_line(j_now)
         self._tick += 1
         rc = self._lib.mpc_cuda_solve(
             self._ctx, float(x0), float(y0), float(yaw0), float(v0),
             float(self.delta_prev), float(v_cap), float(v_target),
-            _d(self.l_x[lo:hi]), _d(self.l_y[lo:hi]), _d(self.l_psi[lo:hi]),
-            _d(self.l_s[lo:hi]), _d(self.l_vx[lo:hi]), int(hi - lo),
+            _d(lx), _d(ly), _d(lp), _d(ls), _d(lv), int(hi - lo),
             _d(self.u_mean[0]), _d(self.u_mean[1]),
             ctypes.c_ulonglong(self._tick * 0x9E3779B97F4A7C15 & 0xFFFFFFFFFFFFFFFF),
             int(self._n_elite), _out(self._u_buf), ctypes.byref(self._best),

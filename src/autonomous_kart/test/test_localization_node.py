@@ -134,9 +134,8 @@ def test_localization_real_mode_seeds_from_single_vtg_fix(ros_ctx):
             node.destroy_node()
 
 
-def test_localization_real_mode_seeds_xy_only_when_yaw_unknown(ros_ctx):
-    """If GPS yaw cov is 1e6 (no VTG yet), still seed xy with defaults for
-    yaw/speed at large variance so subsequent updates can pull them in."""
+def test_localization_real_mode_waits_for_heading_to_init(ros_ctx):
+    """A fix with no usable heading must not seed the filter."""
     with ros_ctx(_real_params()) as rclpy:
         node = LocalizationNode()
         try:
@@ -145,15 +144,35 @@ def test_localization_real_mode_seeds_xy_only_when_yaw_unknown(ros_ctx):
                 _gps_odom(x=1.0, y=2.0, yaw=0.0, speed=0.0,
                           yaw_var=1e6, speed_var=1e6)
             )
+            assert not node.ekf.initialized
+        finally:
+            node.destroy_node()
+
+
+def test_localization_real_mode_inits_on_the_first_fix_carrying_a_heading(ros_ctx):
+    """Fixes without a heading are skipped; the first one carrying it seeds."""
+    import math
+
+    with ros_ctx(_real_params()) as rclpy:
+        node = LocalizationNode()
+        try:
+            node._imu_cb(_imu_msg(omega_z=0.0, accel_x=0.0, stamp_sec=0))
+            for _ in range(5):
+                node.gps_callback(
+                    _gps_odom(x=1.0, y=2.0, yaw=0.0, speed=0.0,
+                              yaw_var=1e6, speed_var=1e6)
+                )
+            assert not node.ekf.initialized
+
+            node.gps_callback(
+                _gps_odom(x=3.0, y=4.0, yaw=-2.0, speed=0.0, speed_var=1e6)
+            )
             assert node.ekf.initialized
-            px, py, yaw0, v0 = node.ekf.x
-            assert abs(px - 1.0) < 1e-6
-            assert abs(py - 2.0) < 1e-6
-            assert yaw0 == 0.0
-            assert v0 == 0.0
-            # Yaw/speed variances should be wide since they weren't measured.
-            assert node.ekf.P[2, 2] > 1.0
-            assert node.ekf.P[3, 3] >= 1.0
+            px, py, yaw0, _ = node.ekf.x
+            assert abs(px - 3.0) < 1e-6
+            assert abs(py - 4.0) < 1e-6
+            assert abs(yaw0 - (-2.0)) < 1e-6, f"yaw={yaw0}"
+            assert node.ekf.P[2, 2] < 1.0, "heading was measured, so P[yaw] is tight"
         finally:
             node.destroy_node()
 

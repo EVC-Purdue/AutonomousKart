@@ -98,6 +98,42 @@ pathfinder_node:
     mpc.max_consecutive_solver_failures: 3
     mpc.infeasible_cost: 1000000000.0
     mpc.feasibility_threshold: 500000000.0
+    #  mpc RL residual (docs/rl_residual_plan.md). Reporting-only right now
+    #  (rl_residual/status telemetry) — never blended into cmd_drive, never
+    #  trained from live ticks. See the plan doc's "reward-validity finding"
+    #  for why. off | shadow | apply — all three currently behave the same
+    #  (report what the policy would do) until Phase 3 wires up training.
+    mpc.rl_residual.mode: off
+    mpc.rl_residual.learning_rate: 0.001
+    mpc.rl_residual.init_sigma_steer_deg: 0.5
+    mpc.rl_residual.init_sigma_accel_mps2: 0.1
+    mpc.rl_residual.max_steer_correction_deg: 3.0
+    mpc.rl_residual.max_accel_correction_mps2: 0.5
+    mpc.rl_residual.min_sigma: 0.001
+    # Baseline-subtracted advantage + grad-norm clip — REINFORCE on an
+    # always-negative tracking-cost reward diverges without these (see
+    # rl_residual.py's __init__ comment; confirmed empirically training
+    # against the sim plant, weight norms hit >3000 without a baseline).
+    mpc.rl_residual.reward_baseline_beta: 0.01
+    mpc.rl_residual.max_grad_norm: 50.0
+    # Reward std normalization (z-scored advantage), companion to the mean
+    # baseline above — a squared tracking-error reward is heavy-tailed and
+    # mean-subtraction alone doesn't tame that (see rl_residual.py comment).
+    mpc.rl_residual.min_reward_std: 0.001
+    # Root cause found in firing 7 (docs/rl_residual_plan.md): real signal
+    # exists (R^2=0.75 vs. a held-for-0.5s oracle) but full-magnitude
+    # per-tick reapplication in closed loop is an instability problem, not
+    # a signal problem. 0.03 is the empirically-best point from that
+    # firing's gain sweep for that specific setup — a starting point to
+    # re-tune per real deployment, not a proven universal constant.
+    mpc.rl_residual.closed_loop_gain: 0.03
+    # Online feature whitening (EMA) — _features()'s 14 raw values span
+    # wildly different physical scales; without this a single global
+    # learning rate can't handle all of them, which was the actual root
+    # cause of the divergence above (see rl_residual.py's __init__ comment).
+    mpc.rl_residual.feat_norm_beta: 0.001
+    mpc.rl_residual.min_feat_var: 0.000001
+    mpc.rl_residual.bias_index: 0
     #  mpc residual learner
     mpc.residual.mode: shadow
     mpc.residual.target_horizon_s: 0.5

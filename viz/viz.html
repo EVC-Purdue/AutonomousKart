@@ -16,6 +16,11 @@
   }
   #hud .label { color:#666; }
   #hud .val { color:#e0e0e0; font-weight:700; }
+  /* Subtle by design: dimmer than the primary telemetry above it, and the
+     row is hidden entirely until rl_residual/status has actually reported
+     something — a quiet "here's what it wants to do", not a loud panel. */
+  #hud #h-rl { color:#7a7a88; font-size:11px; margin-top:4px; border-top:1px solid #1c1c24; padding-top:4px; }
+  #hud #h-rl .val { color:#9a9ab0; font-weight:400; }
   #costs {
     position:fixed; bottom:16px; right:16px;
     background:rgba(10,10,15,0.85); border:1px solid #222;
@@ -64,6 +69,7 @@
   <div><span class="label">YAW   </span><span id="h-yaw" class="val">—</span></div>
   <div><span class="label">SPEED </span><span id="h-spd" class="val">—</span></div>
   <div><span class="label">CMD   </span><span id="h-cmd" class="val">—</span></div>
+  <div id="h-rl" hidden><span class="label">RL    </span><span id="h-rl-val" class="val">—</span></div>
 </div>
 
 <div id="status" class="err">disconnected</div>
@@ -98,6 +104,7 @@ let odom = { x:0, y:0, yaw:0, speed:0, motor:0, steer:0, state:'IDLE' };
 let connected = false;
 let mpcStatus = null;
 let dynamicLine = null;  // {active, strategy, merge_idx, points: [[x,y], ...]}
+let rlResidual = null;   // {received, mode, steer_corr_deg, accel_corr_mps2, samples_trained, ...}
 
 // ── Camera ──
 let cam = { x:0, y:0, zoom:4, targetZoom:4 };
@@ -245,6 +252,15 @@ async function fetchLines() {
     const d = await r.json();
     dynamicLine = d.dynamic || null;
   } catch(e) { dynamicLine = null; }
+}
+
+const RL_MODE_NAMES = ['off', 'shadow', 'apply'];
+
+async function fetchRlResidual() {
+  try {
+    const r = await fetch(API + '/rl_residual_status');
+    rlResidual = await r.json();
+  } catch(e) { rlResidual = null; }
 }
 
 // Display order roughly groups: line-tracking, speed, control, safety, reward.
@@ -444,6 +460,17 @@ function updateHUD() {
   document.getElementById('h-spd').textContent = `${odom.speed.toFixed(2)} m/s`;
   document.getElementById('h-cmd').textContent = `M:${(odom.motor||0).toFixed(0)}% S:${(odom.steer||0).toFixed(1)}°`;
 
+  const rlRow = document.getElementById('h-rl');
+  if (rlResidual && rlResidual.received) {
+    rlRow.hidden = false;
+    const modeName = RL_MODE_NAMES[rlResidual.mode] || '?';
+    document.getElementById('h-rl-val').textContent =
+      `${modeName} wants S:${rlResidual.steer_corr_deg >= 0 ? '+' : ''}${rlResidual.steer_corr_deg.toFixed(2)}° `
+      + `A:${rlResidual.accel_corr_mps2 >= 0 ? '+' : ''}${rlResidual.accel_corr_mps2.toFixed(2)} (n=${rlResidual.samples_trained.toFixed(0)})`;
+  } else {
+    rlRow.hidden = true;
+  }
+
   const s = document.getElementById('status');
   s.textContent = connected ? 'connected' : 'disconnected';
   s.className = connected ? 'ok' : 'err';
@@ -464,6 +491,7 @@ setInterval(fetchOdom, 50);          // 20Hz polling
 setInterval(fetchLine, 5000);        // refresh line occasionally
 setInterval(fetchMpcStatus, 100);    // 10Hz MPC cost breakdown
 setInterval(fetchLines, 200);        // 5Hz dynamic-line (bezier rejoin) overlay
+setInterval(fetchRlResidual, 200);   // 5Hz — a report, not a control signal, no need for 10-20Hz
 draw();
 </script>
 </body>

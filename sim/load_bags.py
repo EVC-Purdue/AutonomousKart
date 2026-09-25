@@ -31,6 +31,12 @@ class AlignedBag:
     odom_y: np.ndarray         # (N,) m
     odom_yaw: np.ndarray       # (N,) rad
     autonomous: np.ndarray     # (N,) bool — True iff state_mode == "AUTONOMOUS"
+    track_angle_right: np.ndarray = None   # (N,) deg, from /track_angles
+    track_angle_left: np.ndarray = None    # (N,) deg, from /track_angles
+    mpc_d: np.ndarray = None               # (N,) m, /mpc/status idx 4
+    mpc_psi_track: np.ndarray = None       # (N,) rad, /mpc/status idx 5
+    mpc_cost: np.ndarray = None            # (N,) /mpc/status idx 10
+    mpc_margin_min: np.ndarray = None      # (N,) /mpc/status idx 11
 
     def field_names(self) -> List[str]:
         return [f for f in self.__dataclass_fields__]
@@ -41,7 +47,12 @@ class AlignedBag:
     @classmethod
     def from_npz(cls, path: str) -> "AlignedBag":
         data = np.load(path, allow_pickle=True)  # allow_pickle needed for string arrays (state_mode)
-        return cls(**{name: data[name] for name in cls.__dataclass_fields__})
+        kwargs = {name: data[name] for name in cls.__dataclass_fields__ if name in data}
+        n = kwargs["t"].shape[0] if "t" in kwargs else next(iter(kwargs.values())).shape[0]
+        for name in cls.__dataclass_fields__:
+            if name not in kwargs:
+                kwargs[name] = np.full(n, np.nan)
+        return cls(**kwargs)
 
 
 def zoh_align(
@@ -122,16 +133,56 @@ TOPICS_NEEDED = {
     "/e_comms/kart_speed_m_per_s",
     "/system_state",
 }
+# RL-residual extras (docs/rl_residual_plan.md). Not required — align_streams
+# NaN-fills these when the stream is empty, which every bag is today (no
+# historical bag has camera data; see scripts/bag_health_check.py).
+OPTIONAL_TOPICS = {"/track_angles", "/mpc/status"}
+
+# /mpc/status payload order (autonomous_kart/nodes/pathfinder/planners/mpc.py,
+# the `plan()` status-publish block, 88 floats total). Keep in sync if that
+# payload's shape ever changes.
+MPC_STATUS_D_IDX = 4
+MPC_STATUS_PSI_TRACK_IDX = 5
+MPC_STATUS_COST_IDX = 10
+MPC_STATUS_MARGIN_IDX = 11
 
 
-def read_bag_streams(mcap_path: str):
+def read_bag_streams(mcap_path: str, topics=None):
     """Return {topic: [(t_seconds, msg), ...]} from one mcap file."""
     from mcap_ros2.reader import read_ros2_messages
-    streams = {t: [] for t in TOPICS_NEEDED}
-    for evt in read_ros2_messages(mcap_path, topics=TOPICS_NEEDED):
+    topics = topics if topics is not None else (TOPICS_NEEDED | OPTIONAL_TOPICS)
+    streams = {t: [] for t in topics}
+    for evt in read_ros2_messages(mcap_path, topics=topics):
         t = evt.publish_time_ns * 1e-9
         streams[evt.channel.topic].append((t, evt.ros_msg))
     return streams
+
+
+def _zoh_align_optional(stream, grid_t: np.ndarray, extractor, n_values: int = 1):
+    """Like zoh_align, but for a possibly-empty optional stream — returns
+    NaN-filled array(s) matching grid_t instead of raising when empty."""
+    if not stream:
+        if n_values == 1:
+            return np.full(grid_t.shape, np.nan)
+        return tuple(np.full(grid_t.shape, np.nan) for _ in range(n_values))
+    t = np.array([s[0] for s in stream])
+    values = np.array([extractor(m) for _, m in stream], dtype=np.float64)
+    if n_values == 1:
+        return zoh_align(t, values, grid_t)
+    return tuple(zoh_align(t, values[:, i], grid_t) for i in range(n_values))
+
+
+def _track_angle_fields(m):
+    right = m.data[0] if len(m.data) > 0 else float("nan")
+    left = m.data[1] if len(m.data) > 1 else float("nan")
+    return [right, left]
+
+
+def _mpc_status_fields(m):
+    def get(i):
+        return m.data[i] if len(m.data) > i else float("nan")
+    return [get(MPC_STATUS_D_IDX), get(MPC_STATUS_PSI_TRACK_IDX),
+            get(MPC_STATUS_COST_IDX), get(MPC_STATUS_MARGIN_IDX)]
 
 
 def align_streams(
@@ -199,6 +250,11 @@ def align_streams(
     cmd_throttle_hist = make_history(cmd_throttle, NUM_THROTTLE_HIST)
     cmd_steer_hist = make_history(cmd_steer, NUM_STEER_HIST)
 
+    track_angle_right, track_angle_left = _zoh_align_optional(
+        streams.get("/track_angles", []), grid, _track_angle_fields, n_values=2)
+    mpc_d, mpc_psi_track, mpc_cost, mpc_margin_min = _zoh_align_optional(
+        streams.get("/mpc/status", []), grid, _mpc_status_fields, n_values=4)
+
     return AlignedBag(
         t=grid - grid[0],
         cmd_throttle=cmd_throttle, cmd_steer=cmd_steer,
@@ -207,6 +263,9 @@ def align_streams(
         state_mode=state_mode,
         odom_x=odom_x, odom_y=odom_y, odom_yaw=odom_yaw,
         autonomous=autonomous,
+        track_angle_right=track_angle_right, track_angle_left=track_angle_left,
+        mpc_d=mpc_d, mpc_psi_track=mpc_psi_track,
+        mpc_cost=mpc_cost, mpc_margin_min=mpc_margin_min,
     )
 
 

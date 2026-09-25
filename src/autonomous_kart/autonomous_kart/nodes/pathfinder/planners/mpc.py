@@ -25,8 +25,9 @@ from autonomous_kart.nodes.pathfinder.planners.base import (
     KartConstants, Planner, PlannerInputs,
 )
 from autonomous_kart.nodes.pathfinder.planners.mpc_residual import (
-    NUM_STEER_HIST, NUM_THROTTLE_HIST, ResidualLearner, _features,
+    NUM_FEATURES, NUM_STEER_HIST, NUM_THROTTLE_HIST, ResidualLearner, _features,
 )
+from autonomous_kart.nodes.pathfinder.planners.rl_residual import RLResidualLearner
 from autonomous_kart.nodes.pathfinder.strategies.rejoin import RejoinStrategy
 
 MODE_NORMAL, MODE_FAILSAFE = 0, 2
@@ -204,6 +205,25 @@ class MPCPlanner(Planner):
             residual_params, solve_dt, s_total=s_total,
         )
         self._nom_steps = max(1, int(round(self.residual.target_horizon_s / self.dt)))
+
+        # RL residual (docs/rl_residual_plan.md, Phase 2). Reporting only —
+        # act() is called every tick for telemetry (rl_residual/status,
+        # below), but update() is never called from live ticks: nothing
+        # blends its output into throttle_mps/steering_deg yet (same as
+        # self.residual's own apply mode, see plan doc "reward-validity
+        # finding"), so there's no causally valid reward from live outcomes.
+        # Real training happens offline against a learned dynamics model
+        # (Phase 3/4), not here.
+        rl_residual_params = {
+            k[len("rl_residual."):]: v for k, v in params.items()
+            if k.startswith("rl_residual.")
+        }
+        self.rl_residual = RLResidualLearner(rl_residual_params, feature_dim=NUM_FEATURES,
+                                             logger=logger)
+        self.rl_status_pub = None
+        if node is not None:
+            self.rl_status_pub = node.create_publisher(
+                Float32MultiArray, "rl_residual/status", 5)
         self._last_motor_mps = 0.0
         self._train_dt = solve_dt
         self._steer_hist = deque([0.0] * NUM_STEER_HIST, maxlen=NUM_STEER_HIST)
@@ -401,6 +421,18 @@ class MPCPlanner(Planner):
         # so future consumers automatically see (0, 0) until the apply gate opens.
         if self.residual.effective_mode() != "apply":
             res_ps, res_pd = 0.0, 0.0
+
+        # RL residual: reporting only (see docstring on construction above).
+        # explore=False so telemetry shows the policy's current deterministic
+        # best guess, not per-tick sampling noise.
+        rl_steer_corr, rl_accel_corr = self.rl_residual.act(phi, explore=False)
+        if self.rl_status_pub is not None:
+            mode_id = {"off": 0, "shadow": 1, "apply": 2}.get(self.rl_residual.mode, 0)
+            self.rl_status_pub.publish(Float32MultiArray(data=[
+                float(mode_id), rl_steer_corr, rl_accel_corr,
+                float(self.rl_residual.samples_trained),
+                float(self.rl_residual.sigma[0]), float(self.rl_residual.sigma[1]),
+            ]))
 
         # Live actuator_gain estimator (telemetry only — NOT consumed by _solve).
         self._update_alpha_estimate(yaw, v, delta_cmd, inputs.now_ns)

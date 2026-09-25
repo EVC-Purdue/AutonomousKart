@@ -137,6 +137,18 @@ class MasterNode(Node):
             Float32MultiArray, "mpc/status", self._mpc_status_callback, 5
         )
 
+        # RL residual snapshot (docs/rl_residual_plan.md Phase 5). Reporting
+        # only, mirrors mpc_status_data above — payload order matches
+        # mpc.py's rl_status_pub.publish() call.
+        self.rl_residual_data = {
+            "received": False,
+            "mode": 0, "steer_corr_deg": 0.0, "accel_corr_mps2": 0.0,
+            "samples_trained": 0.0, "sigma_steer": 0.0, "sigma_accel": 0.0,
+        }
+        self.create_subscription(
+            Float32MultiArray, "rl_residual/status", self._rl_residual_callback, 5
+        )
+
         # GPS status snapshot (fix quality, RTK, sigmas, RTCM stats)
         self.gps_status_data = {"fix_quality": 0, "fix_label": "INVALID"}
         self.create_subscription(String, "gps/status", self._gps_status_callback, 1)
@@ -322,6 +334,25 @@ class MasterNode(Node):
                 self._last_train_seq = seq
         with self._lock:
             self.mpc_status_data = snapshot
+
+    def _rl_residual_callback(self, msg: Float32MultiArray):
+        data = list(msg.data)
+        if len(data) < 6:
+            return
+        with self._lock:
+            self.rl_residual_data = {
+                "received": True,
+                "mode": int(data[0]),
+                "steer_corr_deg": float(data[1]),
+                "accel_corr_mps2": float(data[2]),
+                "samples_trained": float(data[3]),
+                "sigma_steer": float(data[4]),
+                "sigma_accel": float(data[5]),
+            }
+
+    def get_rl_residual_status(self) -> dict:
+        with self._lock:
+            return dict(self.rl_residual_data)
 
     def get_mpc_status(self):
         with self._lock:

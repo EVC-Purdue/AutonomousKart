@@ -137,6 +137,48 @@ def test_odom_snapshot_and_cmd_callbacks(ros_ctx, spin_helper):
             node.destroy_node()
 
 
+def test_rl_residual_status_default_before_any_message(ros_ctx):
+    with ros_ctx(_default_params("IDLE")) as rclpy:
+        node = MasterNode()
+        try:
+            snap = node.get_rl_residual_status()
+            assert snap["received"] is False
+            assert snap["mode"] == 0
+        finally:
+            node.destroy_node()
+
+
+def test_rl_residual_status_snapshot(ros_ctx, spin_helper):
+    from std_msgs.msg import Float32MultiArray
+
+    with ros_ctx(_default_params("IDLE")) as rclpy:
+        node = MasterNode()
+        pub_node = rclpy.create_node("fake_rl_pub")
+        rl_pub = pub_node.create_publisher(Float32MultiArray, "rl_residual/status", 10)
+        exe = rclpy.executors.SingleThreadedExecutor()
+        exe.add_node(node)
+        exe.add_node(pub_node)
+        try:
+            spin_helper(exe, lambda: False, timeout=0.3)  # discovery
+            # [mode_id, steer_corr_deg, accel_corr_mps2, samples_trained,
+            #  sigma_steer, sigma_accel] — matches mpc.py's rl_status_pub.
+            rl_pub.publish(Float32MultiArray(data=[1.0, 0.75, -0.1, 42.0, 0.5, 0.1]))
+
+            assert spin_helper(
+                exe, lambda: node.rl_residual_data.get("received") is True, timeout=2.0
+            )
+            snap = node.get_rl_residual_status()
+            assert snap["mode"] == 1
+            assert snap["steer_corr_deg"] == 0.75
+            assert snap["accel_corr_mps2"] == -0.1
+            assert snap["samples_trained"] == 42.0
+        finally:
+            exe.remove_node(pub_node)
+            exe.remove_node(node)
+            pub_node.destroy_node()
+            node.destroy_node()
+
+
 def test_get_logs_flushes_after_read(ros_ctx):
     from std_msgs.msg import String
 

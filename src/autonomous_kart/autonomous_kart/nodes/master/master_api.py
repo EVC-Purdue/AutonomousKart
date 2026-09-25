@@ -155,6 +155,13 @@ def mpc_status():
     return jsonify(master_node.get_mpc_status())
 
 
+@app.route("/rl_residual_status", methods=["GET"])
+def rl_residual_status():
+    if not master_node:
+        return jsonify({"error": "not initialized"}), 500
+    return jsonify(master_node.get_rl_residual_status())
+
+
 @app.route("/mpc/residual_mode", methods=["POST"])
 def mpc_residual_mode():
     if not master_node:

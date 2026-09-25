@@ -1,9 +1,10 @@
-version: "3.8"
 services:
-  dev:
+  # `docker compose --profile <jetson|rubik|pi> up -d`
+  jetson:
+    profiles: ["jetson"]
     image: ghcr.io/evc-purdue/ros2-humble-dev:main
     container_name: ros2-dev
-    hostname: ros2-dev
+    hostname: jetson-dev
     volumes:
       - ../:/ws
       - ros_cache:/root/.cache
@@ -11,14 +12,68 @@ services:
     environment:
       - ROS_DISTRO=humble
       - ROS_DOMAIN_ID=42
-      - ROS_LOCALHOST_ONLY=1
+      - ROS_LOCALHOST_ONLY=0
       - CYCLONEDDS_URI=file:///ws/docker/cyclonedds.xml
+      - TARGET_DEVICE=jetson
     ports:
       - "8000:8000"
     devices:
-      - "/dev/ttyACM0:/dev/ttyACM0"
+      - "/dev/ttyACM0:/dev/ttyACM0"         # CAN
       - "/dev/ttyTHS1:/dev/ttyTHS1"         # GPS
-      - "/dev/i2c-7:/dev/i2c-7"
+      - "/dev/i2c-7:/dev/i2c-7"             # IMU
+    stdin_open: true
+    tty: true
+    restart: always
+    command: bash /ws/scripts/kart jetson
+    network_mode: host
+
+  rubik:
+    profiles: ["rubik"]
+    image: ghcr.io/evc-purdue/ros2-humble-dev:main
+    container_name: ros2-dev
+    hostname: rubik-dev
+    volumes:
+      - ../:/ws
+      - ros_cache:/root/.cache
+      - /data/kart_logs:/ws/logs  # logs location
+    environment:
+      - ROS_DISTRO=humble
+      - ROS_DOMAIN_ID=42
+      - ROS_LOCALHOST_ONLY=0
+      - CYCLONEDDS_URI=file:///ws/docker/cyclonedds.xml
+      - TARGET_DEVICE=rubik
+    ports:
+      - "8000:8000"
+    devices:
+      - "/dev/video0:/dev/video0"           # camera
+    stdin_open: true
+    tty: true
+    restart: always
+    command: bash /ws/scripts/kart rubik
+    network_mode: host
+
+  pi:
+    profiles: ["pi"]
+    image: ghcr.io/evc-purdue/ros2-humble-dev:main
+    container_name: ros2-dev
+    hostname: kart-dev
+    volumes:
+      - ../:/ws
+      - ros_cache:/root/.cache
+      - /data/kart_logs:/ws/logs  # logs location
+    environment:
+      - ROS_DISTRO=humble
+      - ROS_DOMAIN_ID=42
+      - ROS_LOCALHOST_ONLY=0
+      - CYCLONEDDS_URI=file:///ws/docker/cyclonedds.xml
+      - TARGET_DEVICE=pi
+    ports:
+      - "8000:8000"
+    devices:
+      - "/dev/ttyACM0:/dev/ttyACM0"         # CAN
+      - "/dev/ttyTHS1:/dev/ttyTHS1"         # GPS
+      - "/dev/i2c-7:/dev/i2c-7"             # IMU
+      - "/dev/video0:/dev/video0"           # camera
     stdin_open: true
     tty: true
     restart: always

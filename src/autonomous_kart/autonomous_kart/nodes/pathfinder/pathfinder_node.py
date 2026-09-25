@@ -139,7 +139,7 @@ class PathfinderNode(Node):
         safety_params = {
             k: p.value for k, p in self.get_parameters_by_prefix("safety").items()
         }
-        self.safety = SafetyChecker(safety_params)
+        self.safety = SafetyChecker(safety_params, self.kart)
 
         # Subscriptions
         self.create_subscription(Odometry, "odom", self._on_odom, 10)
@@ -156,6 +156,7 @@ class PathfinderNode(Node):
         self.create_subscription(String, "mpc/residual_mode", self._on_residual_mode, 1)
         self.create_subscription(_EmptyMsg, "mpc/residual_revert", self._on_residual_revert, 1)
         self.create_subscription(String, "pathfinder/planner", self._on_planner_swap, 1)
+        self.create_subscription(String, "safety/mode", self._on_safety_mode, 1)
         self.create_subscription(String, "pathfinder/line_path", self._on_line_swap, 1)
         self.create_subscription(String, "pathfinder/line_spec", self._on_line_spec, 1)
         self.create_subscription(Float32, "mpc/set_actuator_gain", self._on_set_actuator_gain, 1)
@@ -164,6 +165,7 @@ class PathfinderNode(Node):
         self.drive_publisher = self.create_publisher(Float32MultiArray, "cmd_drive", 5)
         self.metrics_publisher = self.create_publisher(Float32MultiArray, "pathfinder_params", 5)
         self.dynamic_line_pub = self.create_publisher(String, "pathfinder/dynamic_line", 1)
+        self.safety_status_pub = self.create_publisher(String, "safety/status", 1)
         # Latched so a bag started mid-run still captures the current planner.
         self.active_planner_pub = self.create_publisher(
             String, "pathfinder/active_planner",
@@ -176,6 +178,7 @@ class PathfinderNode(Node):
         self.create_timer(1.0 / self.system_frequency, self._autonomous_tick)
         self.create_timer(1.0 / self.system_frequency, self._manual_tick)
         self.create_timer(0.5, self.publish_dynamic_line)  # 2 Hz telemetry
+        self.create_timer(0.5, self.publish_safety_status)  # 2 Hz telemetry
         self.create_timer(5.0, self.log_command_rate)
 
         self.logger.info("Initialize Pathfinder Node")
@@ -224,6 +227,13 @@ class PathfinderNode(Node):
             return
         self.shared_residual.mode = mode
         self.logger.info(f"residual mode -> {mode}")
+
+    def _on_safety_mode(self, msg: String):
+        mode = (msg.data or "").strip().lower()
+        if not self.safety.set_mode(mode):
+            self.logger.warning(f"safety/mode: ignoring '{msg.data}'")
+            return
+        self.logger.info(f"safety mode -> {mode}")
 
     def _on_set_actuator_gain(self, msg: Float32):
         try:
@@ -456,6 +466,11 @@ class PathfinderNode(Node):
             payload = state
         self.dynamic_line_pub.publish(
             String(data=json.dumps(payload, separators=(",", ":")))
+        )
+
+    def publish_safety_status(self):
+        self.safety_status_pub.publish(
+            String(data=json.dumps(self.safety.last_status, separators=(",", ":")))
         )
 
     # Helpers

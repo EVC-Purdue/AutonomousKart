@@ -13,7 +13,7 @@ services:
       - ROS_DOMAIN_ID=42
       - ROS_LOCALHOST_ONLY=1
       - CYCLONEDDS_URI=file:///ws/docker/cyclonedds.xml
-      - CAMERA_LOG_HZ=5
+      - CAMERA_LOG_HZ=3
     ports:
       - "8000:8000"
     devices:

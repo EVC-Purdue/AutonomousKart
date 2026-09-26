@@ -39,7 +39,11 @@ pathfinder_node:
     pure_pursuit.rejoin_cte_deactivate: 1.0
     pure_pursuit.rejoin_merge_lookahead_m: 15.0
 
-    # opencv
+    # opencv (camera-only planner)
+    opencv.cruise_speed_pct: 20.0
+    opencv.steer_gain_deg_per_deg: 1.0
+    opencv.angle_deadband_deg: 1.0
+    opencv.max_missing_ticks: 5
 
     # mpc: sampling MPC
     mpc.horizon_steps: 20

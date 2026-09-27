@@ -19,6 +19,8 @@ gps_node:
     receiver_port: "COM3"  # COM3 for USB, COM1 for UART
     # Dual-antenna heading 1-sigma. 0.1 deg/m (UM982 manual R1.7) over the 0.61 m antenna baseline.
     hdg_sigma_deg: 0.164
+    # Added to $GPHDT; the antenna baseline reads 90 deg clockwise of the kart's nose.
+    hdg_offset_deg: -90.0
     # $GPHDT reads 0.0000 with no solution, so yaw needs #HEADINGA's status.
     hdg_accept_status: ["SOL_COMPUTED"]
     # VTG (course / ground-speed) uncertainty

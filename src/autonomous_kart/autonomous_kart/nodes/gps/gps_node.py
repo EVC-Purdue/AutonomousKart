@@ -110,6 +110,7 @@ class GpsNode(Node):
 
         self.hdg_sigma_rad = math.radians(
             float(self.get_parameter("hdg_sigma_deg").value or 0.164))
+        self.hdg_offset_deg = float(self.get_parameter("hdg_offset_deg").value or 0.0)
         self.hdg_accept_status = set(
             self.get_parameter("hdg_accept_status").value or ["SOL_COMPUTED"])
 
@@ -400,7 +401,7 @@ class GpsNode(Node):
             self.gps_data_cov[35] = 1e6
             return
         # Bearing (CW from north) -> ENU yaw (CCW from east).
-        raw = math.pi / 2.0 - math.radians(self.hdg_deg)
+        raw = math.pi / 2.0 - math.radians(self.hdg_deg + self.hdg_offset_deg)
         self.gps_yaw_rad = math.atan2(math.sin(raw), math.cos(raw))
         # Previous epoch's status; #HEADINGA re-applies this epoch's below.
         self.gps_data_cov[35] = self._hdg_var()

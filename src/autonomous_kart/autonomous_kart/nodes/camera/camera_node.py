@@ -24,6 +24,8 @@ class CameraNode(Node):
 
         self.fps = self.get_parameter("fps").value
         self.frame_counter = 0
+        self.frames_since_last_log = 0
+        self.last_log_time = time.time()
 
         if self.fps == 0:  # div by 0 error later
             self.fps = self.get_parameter("system_frequency").value
@@ -86,6 +88,17 @@ class CameraNode(Node):
         if publish_frame is not None:
             self.image_pub.publish(publish_frame)
             self.frame_counter += 1
+            self.frames_since_last_log += 1
+
+        now = time.time()
+        elapsed = now - self.last_log_time
+        if elapsed >= 1.0:  # Log every second
+            fps = self.frames_since_last_log / elapsed
+            self.logger.info(
+                f"Sending {fps:.1f} fps | Total frames sent: {self.frame_counter}"
+            )
+            self.last_log_time = now
+            self.frames_since_last_log = 0
 
     def read_frames(self):
         """

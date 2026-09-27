@@ -70,7 +70,7 @@ class OpenCVPathfinderNode(Node):
         if elapsed >= 1.0:  # Log every second
             fps = self.frames_since_last_log / elapsed
             self.logger.info(
-                f"Receiving {fps:.1f} fps | Total frames: {self.frame_count}"
+                f"Receiving {fps:.1f} fps | Total frames received: {self.frame_count}"
             )
             self.last_log_time = current_time
             self.frames_since_last_log = 0

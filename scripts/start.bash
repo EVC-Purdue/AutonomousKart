@@ -27,6 +27,8 @@ str2str -in ntrip://shayman1:shayman1@108.59.49.226:9000/MSM4_VRS -out tcpsvr://
   done
 ) &
 
-ros2 run topic_tools throttle messages /camera/image_raw "${CAMERA_LOG_HZ:-5.0}" /camera/image_raw_logged &
+if [ "${CAMERA_LOG_HZ:-5.0}" != "0" ]; then
+  ros2 run topic_tools throttle messages /camera/image_raw "${CAMERA_LOG_HZ:-5.0}" /camera/image_raw_logged &
+fi
 
 sleep infinity

@@ -13,14 +13,15 @@ services:
       - ROS_DISTRO=humble
       - ROS_DOMAIN_ID=42
       - ROS_LOCALHOST_ONLY=0
-      - CYCLONEDDS_URI=file:///ws/docker/cyclonedds.xml
+      - CYCLONEDDS_URI=file:///ws/docker/cyclonedds_distributed.xml
       - TARGET_DEVICE=jetson
+      - CAMERA_LOG_HZ=0
     ports:
       - "8000:8000"
-    devices:
-      - "/dev/ttyACM0:/dev/ttyACM0"         # CAN
-      - "/dev/ttyTHS1:/dev/ttyTHS1"         # GPS
-      - "/dev/i2c-7:/dev/i2c-7"             # IMU
+    #devices:
+    #  - "/dev/ttyACM0:/dev/ttyACM0"         # CAN
+    #  - "/dev/ttyTHS1:/dev/ttyTHS1"         # GPS
+    #  - "/dev/i2c-7:/dev/i2c-7"             # IMU
     stdin_open: true
     tty: true
     restart: always
@@ -40,8 +41,9 @@ services:
       - ROS_DISTRO=humble
       - ROS_DOMAIN_ID=42
       - ROS_LOCALHOST_ONLY=0
-      - CYCLONEDDS_URI=file:///ws/docker/cyclonedds.xml
+      - CYCLONEDDS_URI=file:///ws/docker/cyclonedds_distributed.xml
       - TARGET_DEVICE=rubik
+      - CAMERA_LOG_HZ=20
     ports:
       - "8000:8000"
     devices:
@@ -67,7 +69,7 @@ services:
       - ROS_LOCALHOST_ONLY=0
       - CYCLONEDDS_URI=file:///ws/docker/cyclonedds.xml
       - TARGET_DEVICE=pi
-      - CAMERA_LOG_HZ=3
+      - CAMERA_LOG_HZ=20
     ports:
       - "8000:8000"
     devices:

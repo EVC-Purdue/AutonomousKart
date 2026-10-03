@@ -114,10 +114,10 @@ class GpsNode(Node):
         self.hdg_accept_status = set(
             self.get_parameter("hdg_accept_status").value or ["SOL_COMPUTED"])
 
+        self.ser = None
+        self._last_open_try = 0.0
         if not self.sim_mode:
-            self.ser = serial.Serial(self.device, baudrate=self.baud, timeout=0)
-            if self.get_parameter("configure_receiver").value:
-                self._configure_receiver()
+            self._open_serial()
             threading.Thread(target=self._rtcm_loop, daemon=True).start()
 
         self.buffer = ""
@@ -127,6 +127,19 @@ class GpsNode(Node):
         status_hz = float(self.get_parameter("status_frequency").value
                           or self.gps_frequency)
         self.status_timer = self.create_timer(1.0 / status_hz, self.publish_status)
+
+    def _open_serial(self):
+        # serial_for_url accepts a tty path or socket://host:port (receiver served over Ethernet).
+        self._last_open_try = time.time()
+        try:
+            self.ser = serial.serial_for_url(self.device, baudrate=self.baud, timeout=0)
+        except (serial.SerialException, OSError) as e:
+            self.ser = None
+            self.logger.warning(f"GPS open {self.device} failed: {e}", throttle_duration_sec=5.0)
+            return
+        self.logger.info(f"GPS connected on {self.device}")
+        if self.get_parameter("configure_receiver").value:
+            self._configure_receiver()
 
     def _configure_receiver(self):
         port = str(self.get_parameter("receiver_port").value or "COM3")
@@ -212,11 +225,18 @@ class GpsNode(Node):
 
     def read_gps(self):
         if self.ser is None or not self.ser.is_open:
-            self.logger.info("Serial closed")
+            if time.time() - self._last_open_try >= 1.0:
+                self._open_serial()
             return
 
-        # read right now
-        chunk = self.ser.read(self.ser.in_waiting or 1)
+        # read right now; socket:// reports in_waiting as 0/1, so ask for everything available
+        try:
+            chunk = self.ser.read(4096)
+        except (serial.SerialException, OSError) as e:
+            self.logger.warning(f"GPS read failed ({e}), reconnecting", throttle_duration_sec=5.0)
+            self.ser.close()
+            self.ser = None
+            return
         if not chunk:
             self.logger.debug("No chunk")
             return

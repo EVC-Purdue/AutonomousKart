@@ -10,9 +10,9 @@
 gps_node:
   ros__parameters:
     gps_frequency: 20 # Hz, receiver output rate
-    # Unicore UM982 COM3 via FT231X; symlinked because ttyUSB0 races the CANable.
-    serial_device: "/dev/kart-gps"
-    baud_rate: 115200
+    # UM982 COM3 lives on the Rubik Pi (its ground on the Jetson bus-offs the CANable); scripts/kart-gps-bridge.service serves it over the direct Ethernet link.
+    serial_device: "socket://192.168.10.31:5017"
+    baud_rate: 115200  # set by the bridge for socket://
     status_frequency: 10 # Hz, gps/status only
     serial_poll_hz: 200
     configure_receiver: true

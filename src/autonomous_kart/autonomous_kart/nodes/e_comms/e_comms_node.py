@@ -1,5 +1,6 @@
 from typing import Optional
 
+import time
 import traceback
 
 import can
@@ -14,6 +15,8 @@ import autonomous_kart.nodes.e_comms.powertrain as powertrain
 
 CAN_CHANNEL = "/dev/ttyACM0"
 CAN_BITRATE = 500000
+CAN_RX_TIMEOUT_S = 0.5  # reopen the channel after this long with no RX frame
+CAN_REOPEN_PERIOD_S = 0.5  # minimum spacing between reopen attempts
 
 VESC_ID = 7
 VESC_STATUS_1_MSG_NUM = 9
@@ -62,6 +65,9 @@ class ECommsNode(Node):
             duty_cycle=0,
         )
 
+        self.last_rx: float = time.monotonic()
+        self.last_reopen: float = 0.0
+
         # CAN bus
         if not self.simulation_mode:
             try:
@@ -98,6 +104,10 @@ class ECommsNode(Node):
         self.hb_tx_period_ms = self.get_parameter("heartbeat_period_ms").value
         self.hb_timer = self.create_timer(self.hb_tx_period_ms / 1000.0, self.can_hb_tx)
 
+        # CANable2 firmware never leaves bus-off on its own, so reopen the channel whenever RX goes quiet
+        if self.bus is not None:
+            self.rx_watchdog_timer = self.create_timer(0.1, self.can_rx_watchdog)
+
         # Publishers
         self.logic_state_pub = self.create_publisher(String, "e_comms/logic_state", 1)
         self.running_mode_pub = self.create_publisher(String, "e_comms/running_mode", 1)
@@ -116,6 +126,7 @@ class ECommsNode(Node):
             return
         
         data = bytes(msg.data)  # copy, don't hold a reference
+        self.last_rx = time.monotonic()
         self.cmd_count += 1
         # self.logger.info(f"Msg: {msg.arbitration_id:X}")
         if msg.arbitration_id == STATUS_ID:
@@ -185,6 +196,38 @@ class ECommsNode(Node):
                 self.bus.send(msg)
             except can.CanError as e:
                 self.logger.error(f"Failed to send CAN heartbeat message: {e}")
+
+    def can_rx_watchdog(self):
+        """Reopen the slcan channel (clears bus-off) when RX has been silent. Reconnect fully if that fails."""
+        now = time.monotonic()
+        if now - self.last_rx < CAN_RX_TIMEOUT_S or now - self.last_reopen < CAN_REOPEN_PERIOD_S:
+            return
+        self.last_reopen = now
+        self.logger.warning(f"No CAN RX for {now - self.last_rx:.1f}s, reopening {CAN_CHANNEL}",
+                            throttle_duration_sec=5.0)
+        if self.bus is not None:
+            try:
+                self.bus.close()
+                self.bus.open()
+                return
+            except Exception as e:
+                self.logger.warning(f"CAN reopen failed ({e}), reconnecting", throttle_duration_sec=5.0)
+        try:
+            if self.can_notifier is not None:
+                self.can_notifier.stop()
+            if self.bus is not None:
+                self.bus.shutdown()
+        except Exception:
+            pass
+        self.bus, self.can_notifier = None, None
+        try:
+            self.bus = can.interface.Bus(interface="slcan", channel=CAN_CHANNEL, bitrate=CAN_BITRATE,
+                                         sleep_after_open=0)
+            self.can_notifier = can.Notifier(self.bus, [self._on_can_msg])
+            self.logger.info(f"Reconnected to CAN device on {CAN_CHANNEL}")
+        except Exception as e:
+            self.bus = None
+            self.logger.warning(f"CAN reconnect failed: {e}", throttle_duration_sec=5.0)
 
     def can_control_tx(self):
         """

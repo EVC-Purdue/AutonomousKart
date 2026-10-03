@@ -247,6 +247,7 @@ class MasterNode(Node):
             "kappa_local": float(data[41]),
             "consec_failures": int(data[42]),
             "corridor_half": float(data[43]),
+            "residual_mode_num": int(data[44]),
             # GPS pose passthrough (indices 47..50; 44..46 are residual telemetry).
             "gps_x": float(data[47]),
             "gps_y": float(data[48]),

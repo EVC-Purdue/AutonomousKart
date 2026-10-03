@@ -500,6 +500,15 @@ class MultiHorizonResidual:
         # Telemetry and the HTTP API read the primary learner's surface.
         return getattr(self.learners[self.primary], name)
 
+    @property
+    def mode(self) -> str:
+        return self.learners[self.primary].mode
+
+    @mode.setter
+    def mode(self, value: str) -> None:
+        for learner in self.learners:
+            learner.mode = value
+
     def effective_mode(self) -> str:
         """Apply only once every horizon has earned it, so the shape is whole."""
         if self.mode == "off":

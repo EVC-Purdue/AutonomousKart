@@ -113,6 +113,8 @@ class GpsNode(Node):
         self.hdg_offset_deg = float(self.get_parameter("hdg_offset_deg").value or 0.0)
         self.hdg_accept_status = set(
             self.get_parameter("hdg_accept_status").value or ["SOL_COMPUTED"])
+        dual = self.get_parameter("use_dual_heading").value
+        self.use_dual_heading = True if dual is None else bool(dual)
 
         self.ser = None
         self._last_open_try = 0.0
@@ -144,7 +146,7 @@ class GpsNode(Node):
     def _configure_receiver(self):
         port = str(self.get_parameter("receiver_port").value or "COM3")
         period = 1.0 / float(self.gps_frequency)
-        msgs = ("GPGGA", "GPRMC", "GPGST", "GPVTG", "GPHDT", "HEADINGA")
+        msgs = ("GPGGA", "GPRMC", "GPGST", "GPVTG") + (("GPHDT", "HEADINGA") if self.use_dual_heading else ())
         try:
             self.ser.write(f"UNLOG {port}\r\n".encode())
             time.sleep(0.1)
@@ -402,7 +404,21 @@ class GpsNode(Node):
         else:
             self.gps_data_twist_cov[0] = 1e6
 
-        # VTG only speed. Yaw comes from $GPHDT
+        # Yaw comes from $GPHDT unless dual-antenna heading is off; then VTG course, as before the UM982.
+        if self.use_dual_heading:
+            return
+        # sigma_yaw = sigma_v / v only meaningful once the kart is actually moving.
+        if fields[1] and v is not None and v > self.vtg_min_speed_for_yaw:
+            try:
+                track_true_deg = float(fields[1])
+                # Bearing (CW from north) -> ENU yaw (CCW from east).
+                raw = math.pi / 2.0 - math.radians(track_true_deg)
+                self.gps_yaw_rad = math.atan2(math.sin(raw), math.cos(raw))
+                self.gps_data_cov[35] = (self.vtg_speed_sigma / v) ** 2
+            except ValueError:
+                self.gps_data_cov[35] = 1e6
+        else:
+            self.gps_data_cov[35] = 1e6
 
     def _hdg_var(self) -> float:
         """Yaw variance, 1e6 unless #HEADINGA reports an accepted solution."""

@@ -17,6 +17,8 @@ gps_node:
     serial_poll_hz: 200
     configure_receiver: true
     receiver_port: "COM3"  # COM3 for USB, COM1 for UART
+    # UM982 ANT2 tracks 0 SVs (2026-10-03); false = VTG course yaw once moving, as before the UM982.
+    use_dual_heading: false
     # Dual-antenna heading 1-sigma. 0.1 deg/m (UM982 manual R1.7) over the 0.61 m antenna baseline.
     hdg_sigma_deg: 0.164
     # Added to $GPHDT; the antenna baseline reads 90 deg clockwise of the kart's nose.

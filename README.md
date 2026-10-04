@@ -9,6 +9,10 @@ Main codebase for the EVC 2025-26 Purdue Autonomous Kart team.
 
 ## Build
 
+```exec into container
+sudo docker exec -it ros2-dev bash
+```
+
 ```bash
 colcon build --packages-select autonomous_kart
 source install/setup.bash

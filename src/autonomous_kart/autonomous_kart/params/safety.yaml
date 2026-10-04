@@ -1,1 +1,23 @@
 # Safety limits and estop config
+#
+# Consumed by SafetyChecker (nodes/pathfinder/safety_checker.py), the single
+# chokepoint between the active planner's proposed (speed, steer) and
+# cmd_drive. Reacts to the CV pathfinder's `track_angles` (right, left) —
+# see safety_checker.py's docstring for what those angles mean.
+#
+# NOTE: the numeric thresholds below are placeholders, not calibrated
+# values — there's no recorded bag data yet for what right/left angle a
+# centered kart reports with this camera mount. Tune warn_angle_deg /
+# critical_angle_deg / camera_steer_gain from safety/status telemetry (or a
+# bag replay) before trusting this at real speed.
+
+pathfinder_node:
+  ros__parameters:
+    safety.enabled: true
+    safety.mode: blend            # camera_only | hard_override | blend
+    safety.warn_angle_deg: 35.0
+    safety.critical_angle_deg: 55.0
+    safety.max_correction_deg: 20.0
+    safety.min_speed_at_critical_mps: 2.0
+    safety.camera_only_speed_mps: 2.0
+    safety.camera_steer_gain: 1.0

@@ -11,6 +11,7 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 from autonomous_kart import paths
 from autonomous_kart.nodes.opencv_pathfinder.angle import AngleFinder
+from autonomous_kart.nodes.opencv_pathfinder.road_geometry import RoadGeometry
 
 class OpenCVPathfinderNode(Node):
     def __init__(self):
@@ -37,6 +38,20 @@ class OpenCVPathfinderNode(Node):
         self.log_file = self.get_parameter("log_file").value
 
         self.log_folder = os.path.join(self.log_dir, self.log_file)
+
+        self.road_geometry_enabled = bool(
+            self.get_parameter("road_geometry.enabled").value
+        )
+        self.road_geometry_pub = None
+        self.road_geometry = None
+        if self.road_geometry_enabled:
+            road_geometry_params = {
+                k: p.value for k, p in self.get_parameters_by_prefix("road_geometry").items()
+            }
+            self.road_geometry = RoadGeometry(road_geometry_params, self.logger)
+            self.road_geometry_pub = self.create_publisher(
+                Float32MultiArray, "road_geometry", 5
+            )
 
         qos = QoSProfile(
             depth=1,
@@ -88,6 +103,12 @@ class OpenCVPathfinderNode(Node):
             float(left_angle) if left_angle is not None else float('nan'),
         ]
         self.angle_pub.publish(msg)
+
+        if self.road_geometry_enabled:
+            offset_m, heading_err_rad, curvature_1pm, valid = self.road_geometry.update(frame)
+            geom_msg = Float32MultiArray()
+            geom_msg.data = [offset_m, heading_err_rad, curvature_1pm, 1.0 if valid else 0.0]
+            self.road_geometry_pub.publish(geom_msg)
 
 
 def main(args=None):

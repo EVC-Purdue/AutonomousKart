@@ -153,5 +153,26 @@ pathfinder_node:
     mpc.residual.cache_dir: /root/.cache/residual_cache
     mpc.residual.cache_load_on_start: true
 
+    #  mpc opponent avoidance (only active when PlannerInputs.opponents is non-empty;
+    #  with no karts in range the plan and published speed are unchanged)
+    mpc.opp.track_kml: /ws/data/track/purdue_grand_prix.kml  # real track edges for pass room
+    mpc.opp.origin_lat: 40.4380475  # same ENU origin as gps_node lat0/lon0
+    mpc.opp.origin_lon: -86.9442826
+    mpc.opp.kart_length_m: 1.8
+    mpc.opp.kart_width_m: 1.0
+    mpc.opp.w_collision: 20000.0  # soft keep-out zone around each opponent
+    mpc.opp.w_contact: 200000.0  # per horizon step of predicted box overlap
+    mpc.opp.w_track: 20000.0  # real track edges while racing (contact >> grass >> slowing)
+    mpc.opp.margin_long_m: 0.8
+    mpc.opp.margin_lat_m: 0.3
+    mpc.opp.margin_growth_mps: 0.3  # keep-out grows with prediction time
+    mpc.opp.sigma_cap_s_m: 4.0  # tracker-uncertainty inflation caps
+    mpc.opp.sigma_cap_d_m: 1.0
+    mpc.opp.engage_r: 2.0  # planned speed overrides line speed when this close
+    mpc.opp.range_m: 40.0
+    mpc.opp.d_ref_rate_mps: 1.0  # lateral speed of moving to / from a pass offset
+    mpc.opp.pass_lateral_gap_m: 0.5
+    mpc.opp.pass_lost_hold_s: 8.0  # hold a pass target that left the camera view
+
     #  safety wrapper 
     safety.enabled: true

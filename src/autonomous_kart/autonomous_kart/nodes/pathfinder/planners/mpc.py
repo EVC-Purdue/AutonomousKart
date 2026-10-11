@@ -18,8 +18,12 @@ from typing import Optional, Tuple
 import numpy as np
 from std_msgs.msg import Float32MultiArray
 
+from autonomous_kart.nodes.opencv_pathfinder.kart_tracker import TrackFrame
 from autonomous_kart.nodes.pathfinder.dynamic_line import (
     DynamicLineManager, KartState,
+)
+from autonomous_kart.nodes.pathfinder.opponents import (
+    Opponent, PassPlanner, TrackBounds, predict,
 )
 from autonomous_kart.nodes.pathfinder.planners.base import (
     KartConstants, Planner, PlannerInputs,
@@ -253,6 +257,166 @@ class MPCPlanner(Planner):
         self._ekf_post_yaw = math.nan
         self._ekf_post_v = math.nan
 
+        self._init_opponents(params, racing_line)
+
+    def _init_opponents(self, params: dict, racing_line: list) -> None:
+        """Opponent avoidance. Opt-in by data: with no opponents in
+        PlannerInputs nothing here touches the plan or the published speed."""
+        o = {k[len("opp."):]: v for k, v in params.items() if k.startswith("opp.")}
+        g = o.get
+        # Soft penalty max(0, 1 - r)^2 per step inside the kart boxes plus
+        # margins (margins grow with prediction time because predictions get
+        # worse); w_contact per step of actual box overlap. See _opponent_cost.
+        self.w_opp = float(g("w_collision", 20000.0))
+        self.w_contact = float(g("w_contact", 200000.0))
+        self.opp_len = float(g("kart_length_m", 1.8))
+        self.opp_wid = float(g("kart_width_m", 1.0))
+        self.opp_margin_long = float(g("margin_long_m", 0.8))
+        self.opp_margin_lat = float(g("margin_lat_m", 0.3))
+        self.opp_margin_growth = float(g("margin_growth_mps", 0.3))
+        self.opp_d_dot_tau = float(g("d_dot_tau_s", 0.5))
+        # Published speed follows the plan (not the line) while the best
+        # trajectory comes within engage_r of an opponent: that is the only
+        # way the kart can actually brake for one.
+        self.opp_engage_r = float(g("engage_r", 2.0))
+        self.opp_speed_horizon_s = float(g("speed_horizon_s", 0.3))
+        self.opp_range_m = float(g("range_m", 40.0))
+        self.d_ref_rate = float(g("d_ref_rate_mps", 1.0))
+        # Uncertainty inflation caps. Lateral is tight so one badly tracked
+        # kart cannot wall off the whole (5 m wide) track; along the line a
+        # kart coasting unseen beside us can be metres off, and inflating
+        # that way costs nothing but a longer keep-out box.
+        self.opp_sigma_cap_s = float(g("sigma_cap_s_m", 4.0))
+        self.opp_sigma_cap_d = float(g("sigma_cap_d_m", 1.0))
+        # Priority is contact >> off track >> slowing down: at 2000 the
+        # planner preferred the grass to braking for a blocked track.
+        self.w_track = float(g("w_track", 20000.0))
+        self.track_margin = float(g("track_margin_m", 0.05))
+        self.kart_half_width = float(params.get("kart_half_width_m", 0.5025))
+
+        self._opp_frame = TrackFrame(racing_line)
+        self._s_offset = float(racing_line[0][0])  # TrackFrame s starts at 0
+        kml = g("track_kml", "")
+        self._bounds = None
+        if kml:
+            try:
+                self._bounds = TrackBounds.from_kml(
+                    kml, self._opp_frame,
+                    float(g("origin_lat", 40.4380475)), float(g("origin_lon", -86.9442826)),
+                )
+            except Exception as exc:
+                if self.logger:
+                    self.logger.warning(f"opp.track_kml unusable ({exc}); using symmetric bounds")
+        if self._bounds is None:
+            self._bounds = TrackBounds.symmetric(self._opp_frame, float(params.get("track_half_width_m", 2.5)))
+        self.pass_planner = PassPlanner(o)
+
+        self._t_steps = self.dt * np.arange(1, self.N + 1)
+        self._opp_pred = None  # (ox, oy, cos, sin) each (M, N) while opponents are in range
+        self._opp_m_long = self.opp_margin_long + self.opp_margin_growth * self._t_steps  # (N,)
+        self._opp_m_lat = self.opp_margin_lat + self.opp_margin_growth * self._t_steps
+        self._d_ref = 0.0  # ramped lateral reference actually tracked
+        self._d_ref_seq = np.zeros(self.N)
+        self._d_ref_t = None
+        self._track_cost_on = False
+        self._opp_sig = (np.zeros((0, 1)), np.zeros((0, 1)))
+        self.opp_engaged = False
+        self._opp_rmin_best = math.inf
+        self._v_plan = math.nan
+
+    def _prepare_opponents(self, inputs: PlannerInputs, s_static: float, d_static: float,
+                           v: float, static_active: bool) -> None:
+        """Per tick: predict opponents in range over the horizon and pick d_ref."""
+        now_s = inputs.now_ns * 1e-9
+        fr = self._opp_frame
+        s_ego = s_static - self._s_offset
+        opps = [
+            op for op in (inputs.opponents or ())
+            if -10.0 < float(fr.wrap_ds(op.s + op.s_dot * (now_s - op.stamp_s) - s_ego)) < self.opp_range_m
+        ]
+        now = [Opponent(op.id, op.s + op.s_dot * (now_s - op.stamp_s), op.d, op.s_dot, op.d_dot, now_s,
+                        op.sigma_s, op.sigma_d)
+               for op in opps]
+        # Tactics only against the static line: during a rejoin overlay d is
+        # measured from the bezier and an offset means nothing. Runs even
+        # with nobody in view so a pass target that slipped out of the camera
+        # (alongside us) is held as a ghost rather than forgotten.
+        target = 0.0
+        if static_active and (now or self.pass_planner.state == "pass"):
+            target = self.pass_planner.update(s_ego, d_static, v, now, fr, self._bounds, now_s)
+            if self.pass_planner.ghost is not None:
+                opps = opps + [self.pass_planner.ghost]
+        elif not now:
+            self.pass_planner.state = "free"
+        if opps:
+            ox, oy, oh = predict(fr, opps, now_s, self._t_steps, self.opp_d_dot_tau,
+                                 self._bounds, self.kart_half_width)
+            self._opp_pred = (ox, oy, np.cos(oh), np.sin(oh))
+            # Keep-out box grows with each opponent's position uncertainty:
+            # 1 sigma on the contact box, 2 sigma on the soft zone.
+            sig_s = np.minimum(np.array([op.sigma_s for op in opps]), self.opp_sigma_cap_s)[:, None]
+            sig_d = np.minimum(np.array([op.sigma_d for op in opps]), self.opp_sigma_cap_d)[:, None]
+            self._opp_sig = (sig_s, sig_d)
+        else:
+            self._opp_pred = None
+
+        # Ramp the tracked reference toward the target at a lateral speed
+        # limit, both across ticks and along the horizon.
+        dt = 0.0 if self._d_ref_t is None else max(0.0, now_s - self._d_ref_t)
+        self._d_ref_t = now_s
+        step = self.d_ref_rate * dt
+        self._d_ref += float(np.clip(target - self._d_ref, -step, step))
+        self._d_ref_seq = self._d_ref + np.clip(target - self._d_ref, -self.d_ref_rate * self._t_steps,
+                                                self.d_ref_rate * self._t_steps)
+        self._track_cost_on = self._opp_pred is not None and static_active
+
+    def _opponent_cost(self, tx: np.ndarray, ty: np.ndarray, tpsi: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """(K,) collision cost and (K,) closest normalized distance per sample.
+
+        Exact box geometry in each opponent's frame: the ego kart's extent
+        along/across the opponent grows with their relative yaw (Minkowski
+        sum of the two rectangles projected on the opponent's axes). An
+        ellipse was tried first and let corners overlap during passes.
+        r = max(|along| / half_len, |lat| / half_wid): r < 1 means inside.
+        Soft zone (with time-growing margins) shapes the plan; actual
+        overlap of the bare boxes costs w_contact, so it is never traded
+        for speed.
+        """
+        ox, oy, c, s = self._opp_pred
+        dx = tx[:, None, :] - ox[None]
+        dy = ty[:, None, :] - oy[None]
+        along = np.abs(dx * c + dy * s)
+        lat = np.abs(dy * c - dx * s)
+        rel = tpsi[:, None, :] - np.arctan2(s, c)[None]
+        cr, sr = np.abs(np.cos(rel)), np.abs(np.sin(rel))
+        hl = 0.5 * self.opp_len  # same size karts
+        hw = 0.5 * self.opp_wid
+        sig_s, sig_d = self._opp_sig  # (M, 1)
+        half_a = hl + hl * cr + hw * sr + sig_s[None]  # (K, M, N)
+        half_b = hw + hl * sr + hw * cr + sig_d[None]
+        r_core = np.maximum(along / half_a, lat / half_b)
+        r_soft = np.maximum(along / (half_a + self._opp_m_long + sig_s[None]),
+                            lat / (half_b + self._opp_m_lat + sig_d[None]))
+        soft = np.maximum(0.0, 1.0 - r_soft)
+        hard = np.maximum(0.0, 1.0 - r_core)
+        # Step + slope: any predicted touch outweighs every other term, so a
+        # contact-free sample always wins when one exists; the slope still
+        # ranks the touching ones when none does.
+        contact = np.count_nonzero(hard > 0.0, axis=(1, 2)) + 10.0 * np.sum(hard, axis=(1, 2))
+        cost = self.w_opp * np.sum(soft * soft, axis=(1, 2)) + self.w_contact * contact
+        return cost, r_soft.min(axis=(1, 2))
+
+    def _track_cost(self, j: np.ndarray, d: np.ndarray) -> np.ndarray:
+        """Real track edges (KML) while racing other karts: an offset to pass
+        must not put us on the grass. Off with no traffic (corridor rules).
+        j: nearest static-line vertex per rollout point, from the projection
+        _solve already did (indexing beats re-searching by s: ~10x faster)."""
+        j = j % self._bounds.left.shape[0]  # a repeated closing vertex maps to 0
+        left, right = self._bounds.left[j], self._bounds.right[j]
+        lim = self.kart_half_width + self.track_margin
+        over = np.maximum(0.0, d - (left - lim)) + np.maximum(0.0, -(right - lim) - d)
+        return self.w_track * np.sum(over * over, axis=1)
+
     # plan
     def plan(self, inputs: PlannerInputs) -> Optional[Tuple[float, float]]:
         t0 = time.perf_counter()
@@ -281,7 +445,7 @@ class MPCPlanner(Planner):
             self.static_closest_idx = int(np.argmin(d2))
             self.closest_idx = self.static_closest_idx
             self.initial_sync_done = True
-        _, d_static, j_static, _, _ = self._frenet(x, y, self.static_closest_idx)
+        s_static, d_static, j_static, _, _ = self._frenet(x, y, self.static_closest_idx)
         self.static_closest_idx = j_static
 
         # Drive overlay activation / deactivation off CTE-to-line.
@@ -327,6 +491,8 @@ class MPCPlanner(Planner):
         v_target = self.target_speed
         v_cap = self.v_max
 
+        self._prepare_opponents(inputs, s_static, d_static, v, static_active=not now_active)
+
         # Build candidate trajectories, evaluate, pick best
         zeros_breakdown = (0.0,) * 12
         try:
@@ -370,6 +536,11 @@ class MPCPlanner(Planner):
         v_ref_now = min(float(self.l_vx[j_now]), self.target_speed)
         v_ref_now = max(0.0, min(self.v_max, v_ref_now))
         throttle_mps = v_ref_now
+        # Normally the line sets speed. Near an opponent the planned speed
+        # does, otherwise the plan's braking never reaches the motor.
+        self.opp_engaged = self._opp_pred is not None and self._opp_rmin_best < self.opp_engage_r
+        if self.opp_engaged and math.isfinite(self._v_plan):
+            throttle_mps = max(0.0, min(throttle_mps, self._v_plan))
         steering_deg = math.degrees(delta_cmd)
 
         # Update warm-start (shift by 1)
@@ -618,8 +789,17 @@ class MPCPlanner(Planner):
         noise_a = rng.normal(0.0, self.accel_sigma, size=(K, N))
         noise_d[0] = 0.0
         noise_a[0] = 0.0
+        brake_rows = self._opp_pred is not None and K > 4
+        if brake_rows:
+            noise_d[1:4] = 0.0
         delta_seq = self.u_mean[0, :] + noise_d
         accel_seq = self.u_mean[1, :] + noise_a
+        if brake_rows:
+            # Fixed candidates (full brake / half brake / hold speed on the
+            # warm-start steering) so hard braking is in the draw on the first
+            # tick. Sampling around the warm start alone took ~0.6 s to reach
+            # full braking for a blocked track: 3.6 m at 6 m/s.
+            accel_seq[1:4] = np.array([[self.a_min], [0.5 * self.a_min], [0.0]])
         # The sampled sequence is a wheel angle when a map is configured, so
         # turn it into the command that asks for it before the actuator's own
         # limits are applied. Those limits belong to the command: the rack
@@ -706,6 +886,11 @@ class MPCPlanner(Planner):
         a_lat = tv * tv * np.tan(
             delta_seq if self._map_cmd.size else self._wheel(delta_seq)
         ) / self.wheelbase
+        d_raw = d
+        if self._opp_pred is not None or self._d_ref != 0.0:
+            # Track the pass offset instead of the line. Only shifts the
+            # tracking terms; with no traffic d_ref is 0 and this is skipped.
+            d = d - self._d_ref_seq
         edge_excess = np.maximum(0.0, np.abs(d) - self.edge_inner)
         c_d = self.w_d * np.sum(d * d, axis=1)
         c_h = self.w_heading * np.sum(psi_err * psi_err, axis=1)
@@ -724,6 +909,12 @@ class MPCPlanner(Planner):
 
         cost = (c_d + c_h + c_v + c_delta + c_drate + c_accel
                 + c_prog + c_term_h + c_alat + c_edge)
+        r_min = None
+        if self._opp_pred is not None:
+            c_opp, r_min = self._opponent_cost(tx, ty, tpsi)
+            cost = cost + c_opp
+            if self._track_cost_on:
+                cost = cost + self._track_cost(lo + jmin, d_raw)
 
         # Corridor enforcement comes from c_d alone (c_bnd is reported, not
         # scored). Pick the action by averaging the top `mppi_elite_frac × K` samples'
@@ -739,10 +930,22 @@ class MPCPlanner(Planner):
             np.mean(delta_seq[elite_idx, :], axis=0),
             np.mean(accel_seq[elite_idx, :], axis=0),
         ], axis=0)
+        # A winning fixed brake candidate is taken as is: averaged into the
+        # elite mean it gets diluted back toward the old plan.
+        brake_won = brake_rows and 1 <= best <= 3
+        if brake_won:
+            u[1] = accel_seq[best]
         # Handed over on the instance rather than returned: `_solve`'s
         # signature has other callers (sim/apex_repro.py sweeps it directly).
         self._cmd_out = float(np.mean(cmd_seq[elite_idx, 0]))
-        traj = {"d": d[best], "s": s[best]}
+        if r_min is not None:
+            self._opp_rmin_best = float(r_min[best])
+            k_v = min(N - 1, max(0, int(round(self.opp_speed_horizon_s / dt)) - 1))
+            self._v_plan = float(tv[best, k_v]) if brake_won else float(np.mean(tv[elite_idx, k_v]))
+        else:
+            self._opp_rmin_best = math.inf
+            self._v_plan = math.nan
+        traj = {"d": d_raw[best], "s": s[best]}
         breakdown = (
             float(c_d[best]), float(c_h[best]), float(c_v[best]),
             float(c_delta[best]), float(c_drate[best]), float(c_accel[best]),

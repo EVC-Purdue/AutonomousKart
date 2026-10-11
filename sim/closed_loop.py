@@ -95,6 +95,8 @@ class SimResult:
     # Diagnostics captured from the planner's residual learner at end of run.
     # Empty dict if planner/learner missing or capture failed.
     residual_stats: dict = None  # type: ignore[assignment]
+    # sim.traffic.Traffic.stats() when run with scripted opponents.
+    traffic_stats: dict = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +246,7 @@ def simulate(
     kart_half_width: float = 0.5025,
     safety_margin: float = 0.2,
     steering_gain: float = 1.0,
+    traffic=None,
 ) -> SimResult:
     """Run a closed-loop MPC simulation over `n_laps` of the racing line.
 
@@ -277,6 +280,9 @@ def simulate(
         Half-width of the kart in metres.
     safety_margin:
         Additional margin from track edge (safety check).
+    traffic:
+        Optional sim.traffic.Traffic: scripted opponents fed to the planner
+        through PlannerInputs.opponents, with collision bookkeeping.
     """
     kart = _kart_from_yaml()
 
@@ -368,12 +374,17 @@ def simulate(
 
     for step in range(max_steps):
         now_ns = t0_ns + int(step * dt * 1e9)
+        opponents = ()
+        if traffic is not None:
+            opponents = traffic.observe(step * dt, model.x, model.y, model.yaw,
+                                        s_prev - float(s_arr[0]), model.speed)
         inputs = PlannerInputs(
             pose_xy=(model.x, model.y),
             yaw_rad=model.yaw,
             speed_mps=model.speed,
             track_angles=None,
             now_ns=now_ns,
+            opponents=opponents,
         )
         try:
             cmd = planner.plan(inputs)
@@ -393,10 +404,14 @@ def simulate(
                 ds=np.asarray(ds_list),
                 times=np.asarray(times),
                 residual_stats=_capture_residual_stats(planner),
+                traffic_stats=traffic.stats(cumulative_s) if traffic is not None else None,
             )
 
         motor_pct, steer_deg = cmd
         model.step(motor_pct, steer_deg * steering_gain, dt)
+        if traffic is not None:
+            traffic.step(step * dt, dt)
+            traffic.check((step + 1) * dt, model.x, model.y, model.yaw)
 
         # Forward-windowed nearest-point search
         idxs = (progress_idx + np.arange(-win_back, win_fwd + 1)) % n_line
@@ -434,6 +449,7 @@ def simulate(
                 ds=np.asarray(ds_list),
                 times=np.asarray(times),
                 residual_stats=_capture_residual_stats(planner),
+                traffic_stats=traffic.stats(cumulative_s) if traffic is not None else None,
             )
 
         # Cumulative arc-length with wrap-aware delta.
@@ -478,6 +494,7 @@ def simulate(
         ds=ds_a,
         times=times_a,
         residual_stats=_capture_residual_stats(planner),
+        traffic_stats=traffic.stats(cumulative_s) if traffic is not None else None,
     )
 
 

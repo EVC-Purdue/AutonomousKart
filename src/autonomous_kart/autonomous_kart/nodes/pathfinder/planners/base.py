@@ -39,6 +39,10 @@ class PlannerInputs:
     ekf_post_xy: Tuple[float, float] = (nan, nan)
     ekf_post_yaw_rad: float = nan
     ekf_post_v: float = nan
+    # Tracked opponent karts (pathfinder.opponents.Opponent), Frenet on the
+    # static racing line. Empty = no traffic; planners must behave exactly
+    # as before.
+    opponents: Tuple = ()
 
 
 class Planner(ABC):

@@ -97,16 +97,20 @@ class TrackFrame:
         cov_f = J @ np.asarray(cov, dtype=np.float64).reshape(-1, 2, 2) @ np.transpose(J, (0, 2, 1))
         return np.stack([s, d], axis=-1), cov_f
 
-    def _interp(self, s: float) -> Tuple[float, float, float, float]:
-        s = s % self.s_total
-        i = int(np.searchsorted(self.s, s, side="right") - 1)
+    def pose_at(self, s) -> Tuple[np.ndarray, ...]:
+        """Line (x, y, psi, kappa) at arc length(s); vectorized over s."""
+        s = np.asarray(s, dtype=np.float64) % self.s_total
+        i = np.searchsorted(self.s, s, side="right") - 1
         i1 = (i + 1) % self.n
-        seg = (self.s[i1] - self.s[i]) if i1 else (self.s_total - self.s[i])
-        f = (s - self.s[i]) / seg if seg > 0 else 0.0
+        seg = np.where(i1 > 0, self.s[i1] - self.s[i], self.s_total - self.s[i])
+        f = np.where(seg > 0, (s - self.s[i]) / np.where(seg > 0, seg, 1.0), 0.0)
         x = self.x[i] + f * (self.x[i1] - self.x[i])
         y = self.y[i] + f * (self.y[i1] - self.y[i])
         dpsi = (self.psi[i1] - self.psi[i] + math.pi) % (2 * math.pi) - math.pi
         return x, y, self.psi[i] + f * dpsi, self.kappa[i] + f * (self.kappa[i1] - self.kappa[i])
+
+    def _interp(self, s: float) -> Tuple[float, float, float, float]:
+        return tuple(float(v) for v in self.pose_at(s))
 
     def to_world(self, s: float, d: float, s_dot: float = 0.0, d_dot: float = 0.0) -> Tuple[float, ...]:
         """(s, d, s_dot, d_dot) -> (x, y, vx, vy) in the map frame."""
@@ -160,6 +164,7 @@ class KartTracker:
         # measurement noise. Larger values only add jitter.
         self.q_s = float(g("accel_psd_s", 2.0))
         self.q_d = float(g("accel_psd_d", 0.5))
+        self.d_dot_tau = float(g("d_dot_tau_s", 1.0))
         # chi2(2) 99.97 %. Tighter gates reject ordinary noise tails often
         # enough (0.3 % of frames at 11.8) to split one kart into two tracks.
         self.gate = float(g("gate_chi2", 16.0))
@@ -169,7 +174,9 @@ class KartTracker:
         self.confirm_hits = int(g("confirm_hits", 3))
         self.confirm_window_s = float(g("confirm_window_s", 0.3))
         self.max_coast_s = float(g("max_coast_s", 0.4))
-        self.max_coast_out_of_fov_s = float(g("max_coast_out_of_fov_s", 2.0))
+        # A slow pass keeps a kart beside us (out of view) for 2 kart lengths
+        # / closing speed: ~4.5 s at 0.8 m/s. 2 s dropped karts mid-pass in sim.
+        self.max_coast_out_of_fov_s = float(g("max_coast_out_of_fov_s", 5.0))
         self.init_vel_sigma = float(g("init_vel_sigma_mps", 4.0))
         self.init_d_dot_sigma = float(g("init_d_dot_sigma_mps", 1.0))
         self.max_pos_var = float(g("max_pos_var_m2", 25.0))
@@ -184,7 +191,12 @@ class KartTracker:
         dt = t - tr.t
         if dt <= 0.0:
             return
-        F = np.array([[1, 0, dt, 0], [0, 1, 0, dt], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float64)
+        # Lateral velocity is mean-reverting (karts settle on a line, they do
+        # not drift across the track forever). Pure constant d_dot let tracks
+        # coasting out of view wander off the track in sim and spook the planner.
+        ed = math.exp(-dt / self.d_dot_tau)
+        F = np.array([[1, 0, dt, 0], [0, 1, 0, self.d_dot_tau * (1.0 - ed)], [0, 0, 1, 0], [0, 0, 0, ed]],
+                     dtype=np.float64)
         d3, d2 = dt ** 3 / 3.0, dt ** 2 / 2.0
         qs, qd = self.q_s, self.q_d
         Q = np.array(
@@ -258,13 +270,26 @@ class KartTracker:
         for tr in self._tracks:
             self._predict(tr, t)
 
+        # A track predicted outside the camera view cannot have produced any
+        # of this frame's detections. Without this, a kart coasting unseen
+        # beside us (wide covariance) grabbed the detection of the kart ahead
+        # and the tracker forgot the one alongside: the planner then steered
+        # into it.
+        visible = {}
+        for tr in self._tracks:
+            if in_fov is None:
+                visible[tr.id] = True
+            else:
+                x, y, _, _ = self.frame.to_world(tr.x[0], tr.x[1])
+                visible[tr.id] = in_fov(x, y)
+
         # Matching cascade: confirmed tracks pick first, tentative ones only
         # get the leftovers. Otherwise a tentative track born from a noise
         # outlier (large covariance) out-bids the real track for the next
         # few detections, confirms, and steals the kart's identity.
         assigned_det = np.zeros(m, dtype=bool)
         for stage in (True, False):
-            cands = [tr for tr in self._tracks if tr.confirmed is stage]
+            cands = [tr for tr in self._tracks if tr.confirmed is stage and visible[tr.id]]
             free = np.flatnonzero(~assigned_det)
             if cands and free.size:
                 self._associate(cands, free, z, Rs, t, assigned_det)
@@ -277,15 +302,18 @@ class KartTracker:
             if not tr.confirmed:
                 if t - tr.t_born > self.confirm_window_s:
                     continue
-            else:
+            out_of_view = False
+            if tr.confirmed:
                 limit = self.max_coast_s
-                if in_fov is not None and t > tr.t_last_hit:
-                    x, y, _, _ = self.frame.to_world(tr.x[0], tr.x[1])
-                    if not in_fov(x, y):
-                        limit = self.max_coast_out_of_fov_s
+                if t > tr.t_last_hit and not visible.get(tr.id, True):
+                    out_of_view = True
+                    limit = self.max_coast_out_of_fov_s
                 if t - tr.t_last_hit > limit:
                     continue
-            if tr.P[0, 0] + tr.P[1, 1] > self.max_pos_var:
+            # A kart beside us is unseen but still there; an uncertain "probably
+            # alongside" beats forgetting it, so the variance cap only prunes
+            # tracks the camera should be seeing.
+            if not out_of_view and tr.P[0, 0] + tr.P[1, 1] > self.max_pos_var:
                 continue
             # Overlaps an older track: same kart, keep the older identity
             if any(math.hypot(*self._innovation(o, tr.x[:2])) < self.min_sep for o in survivors):
@@ -299,6 +327,8 @@ class KartTracker:
         for j in np.flatnonzero(~assigned_det):
             dup = False
             for tr in self._tracks:
+                if not visible.get(tr.id, True):
+                    continue  # an unseen track's wide gate must not swallow a kart in view
                 y = self._innovation(tr, z[j])
                 if (math.hypot(*y) < self.min_sep
                         or float(y @ np.linalg.solve(tr.P[:2, :2] + Rs[j], y)) <= self.gate):

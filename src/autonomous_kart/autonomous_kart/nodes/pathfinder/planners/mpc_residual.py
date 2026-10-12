@@ -99,6 +99,9 @@ class ResidualLearner:
         self.last_pred_clipped = 0
         self._gbm_s = None
         self._gbm_d = None
+        # (gbm_s, gbm_d, fast_s, fast_d): single-row predictors compiled by
+        # _install_gbm, tagged with the models they came from.
+        self._gbm_fast = None
         self._last_val_mae_s = float("nan")
         self._last_val_mae_d = float("nan")
         self._last_rls_val_mae_s = float("nan")
@@ -147,6 +150,15 @@ class ResidualLearner:
         if self.uses_batch_model and self.enabled:
             from autonomous_kart.nodes.pathfinder.planners.residual.buffer import TrainBuffer
             from autonomous_kart.nodes.pathfinder.planners.residual.trainer import GBMTrainer
+            estimator_factory = models.estimator(self.model_size, params)
+            # Build one now so sklearn is imported here at startup. Imported for
+            # the first time on the trainer thread, it holds the GIL for ~1 s and
+            # plan() overruns its tick the whole time. Without sklearn the
+            # trainer records the error each cycle and the RLS carries on, as before.
+            try:
+                estimator_factory()
+            except ImportError:
+                pass
             self.buffer = TrainBuffer(
                 capacity=int(g("gbm_buffer_capacity", 18000)),
                 feature_dim=NUM_FEATURES,
@@ -161,7 +173,7 @@ class ResidualLearner:
                 min_samples_to_train=int(g("gbm_min_samples_to_train", 1200)),
                 retrain_secs=float(g("gbm_retrain_secs", 10.0)),
                 retrain_every_samples=int(g("gbm_retrain_every_samples", 1200)),
-                estimator_factory=models.estimator(self.model_size, params),
+                estimator_factory=estimator_factory,
             )
             # Monkey-patch the trainer's train_once so the learner installs the
             # new GBM (subject to a hard val_mae safety floor) and recomputes
@@ -306,9 +318,14 @@ class ResidualLearner:
             self._clip_history.append(0)
             return 0.0, 0.0, SOURCE_RLS
         if self.use_gbm and self._gbm_s is not None and self._gbm_d is not None:
-            X = phi.reshape(1, -1)
-            s_raw = float(self._gbm_s.predict(X)[0])
-            d_raw = float(self._gbm_d.predict(X)[0])
+            fast = self._gbm_fast
+            if fast is not None and fast[0] is self._gbm_s and fast[1] is self._gbm_d:
+                s_raw = fast[2](phi)
+                d_raw = fast[3](phi)
+            else:
+                X = phi.reshape(1, -1)
+                s_raw = float(self._gbm_s.predict(X)[0])
+                d_raw = float(self._gbm_d.predict(X)[0])
             clip = self._predict_clip_m
             s = max(-clip, min(clip, s_raw))
             d = max(-clip, min(clip, d_raw))
@@ -418,8 +435,12 @@ class ResidualLearner:
         Real callers are GBMTrainer (after training) and the cache loader
         (Task 17). Tests call it directly to skip the threaded trainer.
         """
+        # Compile here, on the trainer thread, so predict() never pays for it.
+        fast = (gbm_s, gbm_d,
+                models.compile_single_row(gbm_s), models.compile_single_row(gbm_d))
         self._gbm_s = gbm_s
         self._gbm_d = gbm_d
+        self._gbm_fast = fast
         self._last_val_mae_s = val_mae_s
         self._last_val_mae_d = val_mae_d
         self._last_rls_val_mae_s = rls_val_mae_s

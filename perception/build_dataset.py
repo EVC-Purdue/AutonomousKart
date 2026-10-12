@@ -16,6 +16,13 @@ dropped. Segmentation polygons are reduced to their bounding box.
 Then:
   * images are re-encoded with the long side <= --max-side (12 MP phone shots
     only slow the dataloader; the model trains at 320 anyway),
+  * with --restore-aspect, images a Roboflow export stretched to a square are
+    resized back to their original aspect (from a 'WxH' in the filename, or
+    from a same-named image in another source). YOLO labels are normalized,
+    so they stay valid; the camera never sees squashed karts,
+  * an image whose original name already came from an earlier source is
+    dropped (stretching defeats the perceptual hash, so name matching catches
+    exports of images we already have),
   * near-duplicates (perceptual hash distance <= --dup-dist) are dropped; the
     source listed FIRST wins, so list hand-labeled exports before autolabels,
   * images are grouped (same capture sequence or perceptually similar) and
@@ -100,6 +107,14 @@ def rf_stem(path: str) -> str:
     return os.path.splitext(os.path.basename(path))[0].split(".rf.")[0]
 
 
+def orig_aspect(name: str, known: Dict[str, float]) -> Optional[float]:
+    """Original w/h for a (possibly stretched) export: 'WxH' in the name, else a same-named image elsewhere."""
+    m = re.search(r"(\d{3,5})x(\d{3,5})", name)
+    if m:
+        return int(m.group(1)) / int(m.group(2))
+    return known.get(name)
+
+
 def seq_key(name: str, block: int) -> str:
     """Bucket filenames that differ only by a nearby trailing number (burst / video frames)."""
     m = re.match(r"^(.*?)(\d+)\D*$", name)
@@ -144,16 +159,41 @@ def main():
                     "only these go to val, so the hand-verified val set stays fixed across rebuilds")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--kart-names", nargs="*", default=None, help="extra class names to treat as kart")
+    ap.add_argument("--restore-aspect", action="store_true",
+                    help="un-stretch square (Roboflow 'Stretch') exports to their original aspect")
     args = ap.parse_args()
 
     kart_names = KART_NAMES | {norm_name(n) for n in (args.kart_names or [])}
     items = [it for s in args.source for it in source_items(s, kart_names)]
     print(f"{len(items)} labeled images from {len(args.source)} source(s)")
 
+    # Same original name from an earlier (higher-priority) source: drop.
+    seen_src: Dict[str, str] = {}
+    by_name = []
+    for it in items:
+        n = orig_name(it["img"])
+        if seen_src.setdefault(n, it["source"]) != it["source"]:
+            continue
+        by_name.append(it)
+    print(f"dropped {len(items) - len(by_name)} images already present in an earlier source (by name)")
+    items = by_name
+
     # Hash on a small decode; 12 MP JPEG decode is the slow part, so do it once
     imgs: List[Optional[np.ndarray]] = []
+    known_aspect: Dict[str, float] = {}
+    restored = 0
     for it in items:
         im = cv2.imread(it["img"])
+        if im is not None and args.restore_aspect:
+            h, w = im.shape[:2]
+            if abs(w - h) <= 1:  # square = stretched export
+                a = orig_aspect(orig_name(it["img"]), known_aspect)
+                if a and abs(a - 1.0) > 0.02:
+                    nw, nh = (w, round(w / a)) if a > 1 else (round(h * a), h)
+                    im = cv2.resize(im, (nw, nh), interpolation=cv2.INTER_AREA)
+                    restored += 1
+            else:
+                known_aspect[orig_name(it["img"])] = w / h
         if im is None:
             print("  unreadable, skipped:", it["img"])
         elif max(im.shape[:2]) > args.max_side:
@@ -162,6 +202,8 @@ def main():
         imgs.append(im)
         it["hash"] = phash(im) if im is not None else None
     keep = [i for i, im in enumerate(imgs) if im is not None]
+    if args.restore_aspect:
+        print(f"restored aspect on {restored} stretched images")
 
     # Dedupe: first occurrence (= higher-priority source) wins
     kept: List[int] = []

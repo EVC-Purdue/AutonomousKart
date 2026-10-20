@@ -135,3 +135,47 @@ def test_trainer_fits_whatever_factory_it_is_given():
     assert result is not None
     assert isinstance(result.gbm_s, Ridge)
     assert result.val_mae_s < result.rls_val_mae_s
+
+
+# --- single-row GBM predict -------------------------------------------------
+def _fit_gbm(n=3000, seed=0):
+    rng = np.random.default_rng(seed)
+    X = rng.standard_normal((n, NUM_FEATURES))
+    X[:, 0] = 1.0
+    X[rng.random(n) < 0.02, 3] = np.nan
+    y = 0.3 * X[:, 1] + np.sin(X[:, 4]) * X[:, 9]
+    return models.estimator("m", {"gbm_max_iter": 60, "gbm_max_depth": 3})().fit(X, y)
+
+
+def test_compiled_gbm_matches_sklearn_exactly():
+    pytest.importorskip("sklearn")
+    gbm = _fit_gbm()
+    fast = models.compile_single_row(gbm)
+    assert fast.__name__ == "predict"  # the tree walk, not the sklearn fallback
+    rng = np.random.default_rng(1)
+    X = 3.0 * rng.standard_normal((500, NUM_FEATURES))
+    X[::5, 3] = np.nan
+    assert np.array_equal(gbm.predict(X), [fast(x) for x in X])
+
+
+def test_compile_falls_back_for_non_gbm():
+    class _Const:
+        def predict(self, X):
+            return np.full(len(X), 0.25)
+    assert models.compile_single_row(_Const())(np.zeros(NUM_FEATURES)) == 0.25
+
+
+def test_learner_predicts_with_compiled_gbm():
+    pytest.importorskip("sklearn")
+    learner = ResidualLearner(_params(model_size="s", gbm_predict_clip_m=10.0),
+                              solve_dt=1.0 / 60.0)
+    gbm_s, gbm_d = _fit_gbm(seed=2), _fit_gbm(seed=3)
+    learner._install_gbm(gbm_s, gbm_d, val_mae_s=0.01, val_mae_d=0.01,
+                         rls_val_mae_s=1.0, rls_val_mae_d=1.0)
+    assert learner.use_gbm
+    assert learner._gbm_fast[2].__name__ == "predict"
+    phi = _phi(d=0.4, v_s=3.0)
+    s, d, src = learner.predict(phi)
+    assert src == 1
+    assert s == float(gbm_s.predict(phi.reshape(1, -1))[0])
+    assert d == float(gbm_d.predict(phi.reshape(1, -1))[0])

@@ -40,6 +40,7 @@ setup(
             'pathfinder_node = autonomous_kart.nodes.pathfinder.pathfinder_node:main',
             'gps_node = autonomous_kart.nodes.gps.gps_node:main',
             'opencv_pathfinder_node = autonomous_kart.nodes.opencv_pathfinder.opencv_pathfinder_node:main',
+            'kart_detector_node = autonomous_kart.nodes.opencv_pathfinder.kart_detector_node:main',
             'e_comms_node = autonomous_kart.nodes.e_comms.e_comms_node:main',
             'camera_node = autonomous_kart.nodes.camera.camera_node:main',
             'metrics_node = autonomous_kart.nodes.metrics.metrics_node:main',

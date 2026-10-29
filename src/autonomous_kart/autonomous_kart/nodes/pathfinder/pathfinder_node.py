@@ -8,14 +8,16 @@ import rclpy
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from std_msgs.msg import Float32, Float32MultiArray, String
+from std_msgs.msg import Float32, Float32MultiArray, Float64MultiArray, String
 from std_msgs.msg import Empty as _EmptyMsg # naming conflict
 
 from autonomous_kart import paths
 from autonomous_kart.nodes.master.master_node import STATES
+from autonomous_kart.nodes.pathfinder.opponents import decode_opponents
 from autonomous_kart.nodes.pathfinder.planners.base import KartConstants, PlannerInputs
 from autonomous_kart.nodes.pathfinder.planners.mpc import MPCPlanner
 from autonomous_kart.nodes.pathfinder.planners.mpc_cuda import (
+    CudaMPCPlanner,
     describe_solver,
     select_mpc_class,
 )
@@ -82,6 +84,11 @@ class PathfinderNode(Node):
         self.current_yaw = 0.0
         self.current_speed_mps = 0.0
         self._latest_track_angles: Optional[Tuple[float, ...]] = None
+        # Tracked opponents from kart_detector_node. Dropped when stale so a
+        # dead detector cannot leave the planner dodging ghosts forever.
+        self._opponents: tuple = ()
+        self._opponents_ns = 0
+        self.opponents_timeout_s = self._param("opponents_timeout_s", 0.5, float)
         # Raw GPS pose cache, passed through to MPC for offline EKF-vs-GPS diff.
         self.gps_xy: Tuple[float, float] = (math.nan, math.nan)
         self.gps_yaw = math.nan
@@ -151,6 +158,7 @@ class PathfinderNode(Node):
             Float32, "e_comms/kart_speed_m_per_s", self._on_wheel_speed, 10,
         )
         self.create_subscription(Float32MultiArray, "track_angles", self._on_track_angles, 5)
+        self.create_subscription(Float64MultiArray, "opponents", self._on_opponents, 5)
         self.create_subscription(String, "system_state", self.update_state, 10)
         self.create_subscription(Float32MultiArray, "manual_commands", self.manual_loop, 5)
         self.create_subscription(String, "mpc/residual_mode", self._on_residual_mode, 1)
@@ -216,6 +224,25 @@ class PathfinderNode(Node):
 
     def _on_track_angles(self, msg: Float32MultiArray):
         self._latest_track_angles = tuple(msg.data) if msg.data else None
+
+    def _on_opponents(self, msg: Float64MultiArray):
+        try:
+            self._opponents = decode_opponents(msg.data)
+        except ValueError as exc:
+            self.logger.warning(f"opponents: {exc}")
+            return
+        self._opponents_ns = self.get_clock().now().nanoseconds
+        # The CUDA kernel scores no opponent cost, so they're tracked but never
+        # avoided. Say so rather than look like it works.
+        if self._opponents and isinstance(self.planners.get(self.active_planner_name), CudaMPCPlanner):
+            self.logger.warning("opponents in range but the CUDA MPC has no opponent cost; "
+                                "NOT avoiding them", throttle_duration_sec=5.0)
+
+    def _fresh_opponents(self, now_ns: int) -> tuple:
+        if self._opponents and now_ns - self._opponents_ns > self.opponents_timeout_s * 1e9:
+            self.logger.warning("opponents stale; planning without them", throttle_duration_sec=5.0)
+            return ()
+        return self._opponents
 
     def _on_residual_mode(self, msg: String):
         mode = (msg.data or "").strip().lower()
@@ -333,12 +360,13 @@ class PathfinderNode(Node):
         active = self.planners.get(self.active_planner_name)
         if active is None:
             return
+        now_ns = self.get_clock().now().nanoseconds
         inputs = PlannerInputs(
             pose_xy=self.current_xy,
             yaw_rad=self.current_yaw,
             speed_mps=self.current_speed_mps,
             track_angles=self._latest_track_angles,
-            now_ns=self.get_clock().now().nanoseconds,
+            now_ns=now_ns,
             gps_xy=self.gps_xy,
             gps_yaw_rad=self.gps_yaw,
             gps_speed_mps=self.gps_speed_mps,
@@ -352,6 +380,7 @@ class PathfinderNode(Node):
             ekf_post_xy=self.ekf_post_xy,
             ekf_post_yaw_rad=self.ekf_post_yaw,
             ekf_post_v=self.ekf_post_v,
+            opponents=self._fresh_opponents(now_ns),
         )
 
         # Always run MPC.plan() so mpc/status keeps flowing for telemetry, regardless of state or active planner

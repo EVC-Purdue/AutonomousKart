@@ -14,3 +14,5 @@ joblib==1.6.0
 scikit-learn==1.7.2
 # colcon-core refuses setuptools 80+.
 setuptools==79.0.1
+# CPU build; on the Jetson install NVIDIA's onnxruntime-gpu wheel for TensorRT
+onnxruntime==1.23.2

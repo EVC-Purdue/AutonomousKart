@@ -17,6 +17,7 @@ from autonomous_kart.nodes.pathfinder.opponents import decode_opponents
 from autonomous_kart.nodes.pathfinder.planners.base import KartConstants, PlannerInputs
 from autonomous_kart.nodes.pathfinder.planners.mpc import MPCPlanner
 from autonomous_kart.nodes.pathfinder.planners.mpc_cuda import (
+    CudaMPCPlanner,
     describe_solver,
     select_mpc_class,
 )
@@ -231,6 +232,11 @@ class PathfinderNode(Node):
             self.logger.warning(f"opponents: {exc}")
             return
         self._opponents_ns = self.get_clock().now().nanoseconds
+        # The CUDA kernel scores no opponent cost, so they're tracked but never
+        # avoided. Say so rather than look like it works.
+        if self._opponents and isinstance(self.planners.get(self.active_planner_name), CudaMPCPlanner):
+            self.logger.warning("opponents in range but the CUDA MPC has no opponent cost; "
+                                "NOT avoiding them", throttle_duration_sec=5.0)
 
     def _fresh_opponents(self, now_ns: int) -> tuple:
         if self._opponents and now_ns - self._opponents_ns > self.opponents_timeout_s * 1e9:

@@ -11,7 +11,7 @@ from autonomous_kart.nodes.opencv_pathfinder.kart_ranging import CameraModel, Ra
 from autonomous_kart.nodes.opencv_pathfinder.kart_tracker import TrackFrame
 from autonomous_kart.nodes.pathfinder.opponents import Opponent, decode_opponents, encode_opponents
 
-_LINE6 = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "racing_line", "line6.csv")
+_LINE1 = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "racing_line", "line1.csv")
 CAM = CameraModel(fx=180.0, fy=180.0, cx=180.0, cy=101.0, width_px=360, height_px=202,
                   height_m=1.2, pitch_rad=math.radians(5.0))
 KART_H = 1.0
@@ -20,9 +20,9 @@ DT = 1.0 / 30.0
 
 @pytest.fixture(scope="module")
 def frame():
-    if not os.path.exists(_LINE6):
+    if not os.path.exists(_LINE1):
         pytest.skip("racing line data not available")
-    return TrackFrame([tuple(r) for r in np.genfromtxt(_LINE6, delimiter=",", skip_header=1)])
+    return TrackFrame([tuple(r) for r in np.genfromtxt(_LINE1, delimiter=",", skip_header=1)])
 
 
 class _StubDetector:

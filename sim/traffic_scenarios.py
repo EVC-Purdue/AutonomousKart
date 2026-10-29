@@ -1,6 +1,6 @@
 """Closed-loop opponent scenarios for the MPC's avoidance / passing.
 
-Runs each scenario with the shipped pathfinder.yaml MPC params on line6:
+Runs each scenario with the shipped pathfinder.yaml MPC params on line1:
   blind   planner gets no opponents (today's behaviour)
   truth   planner gets perfect opponent states
   tracker planner gets them through FOV + range noise + KartTracker + latency
@@ -76,7 +76,7 @@ def offtrack_m(res, line, kml) -> float:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--line", default=os.path.join(REPO, "data/racing_line/line6.csv"))
+    ap.add_argument("--line", default=os.path.join(REPO, "data/racing_line/line1.csv"))
     ap.add_argument("--kml", default=os.path.join(REPO, "data/track/purdue_grand_prix.kml"))
     ap.add_argument("--sim", choices=["bicycle", "datasim"], default="bicycle")
     ap.add_argument("--modes", nargs="+", default=["blind", "truth", "tracker"])

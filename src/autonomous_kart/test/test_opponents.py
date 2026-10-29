@@ -13,7 +13,7 @@ from autonomous_kart.nodes.pathfinder.opponents import (
 )
 
 _DATA = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data")
-_LINE6 = os.path.join(_DATA, "racing_line", "line6.csv")
+_LINE1 = os.path.join(_DATA, "racing_line", "line1.csv")
 _KML = os.path.join(_DATA, "track", "purdue_grand_prix.kml")
 LAT0, LON0 = 40.4380475, -86.9442826
 
@@ -24,17 +24,17 @@ def _circle(radius=50.0, n=400):
 
 
 @pytest.fixture(scope="module")
-def line6():
-    if not (os.path.exists(_LINE6) and os.path.exists(_KML)):
+def line1():
+    if not (os.path.exists(_LINE1) and os.path.exists(_KML)):
         pytest.skip("track data not available")
-    return [tuple(r) for r in np.genfromtxt(_LINE6, delimiter=",", skip_header=1)]
+    return [tuple(r) for r in np.genfromtxt(_LINE1, delimiter=",", skip_header=1)]
 
 
 # Track bounds
 
 
-def test_kml_bounds_match_the_real_track(line6):
-    fr = TrackFrame(line6)
+def test_kml_bounds_match_the_real_track(line1):
+    fr = TrackFrame(line1)
     b = TrackBounds.from_kml(_KML, fr, LAT0, LON0)
     width = b.left + b.right
     assert 4.0 < width.min() and np.median(width) == pytest.approx(5.0, abs=0.5)
@@ -163,33 +163,33 @@ def _inputs(line, t, opponents=()):
                          now_ns=int(t * 1e9), opponents=opponents)
 
 
-def test_mpc_without_opponents_is_unchanged(line6):
-    a, b = _mpc(line6), _mpc(line6)
+def test_mpc_without_opponents_is_unchanged(line1):
+    a, b = _mpc(line1), _mpc(line1)
     for k in range(5):
         t = k / 60.0
-        assert a.plan(_inputs(line6, t)) == b.plan(_inputs(line6, t, opponents=()))
+        assert a.plan(_inputs(line1, t)) == b.plan(_inputs(line1, t, opponents=()))
     assert not a.opp_engaged and a._opp_pred is None
 
 
-def test_mpc_avoids_stopped_kart_ahead(line6):
-    mpc = _mpc(line6)
-    s_ego = line6[20][0]
+def test_mpc_avoids_stopped_kart_ahead(line1):
+    mpc = _mpc(line1)
+    s_ego = line1[20][0]
     stopped = (Opponent(1, s_ego + 6.0, 0.0, 0.0, 0.0, 0.0),)
-    free_speed, free_steer = mpc.plan(_inputs(line6, 0.0))
+    free_speed, free_steer = mpc.plan(_inputs(line1, 0.0))
     for k in range(1, 30):
-        speed, steer = mpc.plan(_inputs(line6, k / 60.0, stopped))
+        speed, steer = mpc.plan(_inputs(line1, k / 60.0, stopped))
     assert mpc.opp_engaged
     # Either way out is fine at 6 m/s and 6 m: swerve around it or slow down
     assert mpc.pass_planner.state == "pass" or speed < free_speed - 0.5
     assert abs(steer - free_steer) > 5.0 or speed < free_speed - 0.5
 
 
-def test_mpc_brakes_when_karts_block_the_track(line6):
-    mpc = _mpc(line6)
-    s_ego = line6[20][0]
+def test_mpc_brakes_when_karts_block_the_track(line1):
+    mpc = _mpc(line1)
+    s_ego = line1[20][0]
     wall = (Opponent(1, s_ego + 8.0, 1.2, 0.0, 0.0, 0.0), Opponent(2, s_ego + 8.0, -1.2, 0.0, 0.0, 0.0))
-    free_speed, _ = mpc.plan(_inputs(line6, 0.0))
+    free_speed, _ = mpc.plan(_inputs(line1, 0.0))
     for k in range(1, 30):
-        speed, _ = mpc.plan(_inputs(line6, k / 60.0, wall))
+        speed, _ = mpc.plan(_inputs(line1, k / 60.0, wall))
     assert mpc.pass_planner.state == "follow"
     assert mpc.opp_engaged and speed < free_speed - 0.5

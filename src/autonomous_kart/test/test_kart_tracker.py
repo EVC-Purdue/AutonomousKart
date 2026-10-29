@@ -12,7 +12,7 @@ SIG = 0.3
 R = np.diag([SIG ** 2, SIG ** 2])
 NONE_XY, NONE_COV = np.zeros((0, 2)), np.zeros((0, 2, 2))
 
-_LINE6 = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "racing_line", "line6.csv")
+_LINE1 = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "racing_line", "line1.csv")
 
 
 def _circle(radius=12.0, n=200):
@@ -22,10 +22,10 @@ def _circle(radius=12.0, n=200):
 
 
 @pytest.fixture(scope="module")
-def line6():
-    if not os.path.exists(_LINE6):
+def line1():
+    if not os.path.exists(_LINE1):
         pytest.skip("racing line data not available")
-    return [tuple(r) for r in np.genfromtxt(_LINE6, delimiter=",", skip_header=1)]
+    return [tuple(r) for r in np.genfromtxt(_LINE1, delimiter=",", skip_header=1)]
 
 
 def _follow(tracker, frame, v, d, steps, rng, t0=0.0, drop=lambda k: False, in_fov=None):
@@ -47,19 +47,19 @@ def _follow(tracker, frame, v, d, steps, rng, t0=0.0, drop=lambda k: False, in_f
 # TrackFrame
 
 
-def test_frame_closes_loop_and_round_trips(line6):
-    fr = TrackFrame(line6)
-    assert fr.s_total == pytest.approx(846.0, abs=0.5)
-    for s, d in [(10.0, 0.0), (200.0, 1.5), (500.0, -1.0), (845.0, 0.5)]:
+def test_frame_closes_loop_and_round_trips(line1):
+    fr = TrackFrame(line1)
+    assert fr.s_total == pytest.approx(423.3, abs=0.5)
+    for s, d in [(10.0, 0.0), (150.0, 1.5), (300.0, -1.0), (422.0, 0.5)]:
         x, y, _, _ = fr.to_world(s, d)
         sd, _ = fr.to_frenet(np.array([[x, y]]), np.eye(2)[None], hint_s=s)
         assert float(fr.wrap_ds(sd[0, 0] - s)) == pytest.approx(0.0, abs=0.1)
         assert sd[0, 1] == pytest.approx(d, abs=0.1)
 
 
-def test_frame_heading_ignores_csv_psi_column(line6):
-    # line6's psi column is ~pi/2 off the direction of travel
-    fr = TrackFrame(line6)
+def test_frame_heading_ignores_csv_psi_column(line1):
+    # the heading comes from the xy geometry, never the csv's psi column
+    fr = TrackFrame(line1)
     _, _, vx, vy = fr.to_world(100.0, 0.0, 5.0, 0.0)
     x0, y0, _, _ = fr.to_world(100.0, 0.0)
     x1, y1, _, _ = fr.to_world(101.0, 0.0)
@@ -96,8 +96,8 @@ def test_corner_velocity_accuracy_on_tight_circle():
     assert rms < 0.6
 
 
-def test_full_lap_of_real_line_keeps_one_id_across_seam(line6):
-    fr = TrackFrame(line6)
+def test_full_lap_of_real_line_keeps_one_id_across_seam(line1):
+    fr = TrackFrame(line1)
     # 846 m at 7 m/s ~ 121 s; run a lap plus the seam crossing
     out, rms, ids = _follow(KartTracker(fr), fr, 7.0, 1.0, int(125.0 / DT), np.random.default_rng(1))
     assert ids == {1}
@@ -106,8 +106,8 @@ def test_full_lap_of_real_line_keeps_one_id_across_seam(line6):
     assert out[0].s_dot == pytest.approx(7.0, abs=0.6)
 
 
-def test_two_karts_side_by_side_keep_ids(line6):
-    fr = TrackFrame(line6)
+def test_two_karts_side_by_side_keep_ids(line1):
+    fr = TrackFrame(line1)
     tr = KartTracker(fr)
     rng = np.random.default_rng(2)
     ids = set()
@@ -159,8 +159,8 @@ def test_out_of_fov_track_coasts_longer():
     assert tr.step(t0 + 2.5, NONE_XY, NONE_COV, in_fov=hidden) == []
 
 
-def test_reacquires_same_id_after_short_dropout(line6):
-    fr = TrackFrame(line6)
+def test_reacquires_same_id_after_short_dropout(line1):
+    fr = TrackFrame(line1)
     out, _, ids = _follow(KartTracker(fr), fr, 6.0, 0.0, 90, np.random.default_rng(5),
                           drop=lambda k: 40 <= k < 48)
     assert ids == {1} and [o.id for o in out] == [1]

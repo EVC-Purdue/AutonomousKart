@@ -12,3 +12,5 @@ pyserial
 smbus2==0.6.1
 joblib
 scikit-learn
+# CPU build; on the Jetson install NVIDIA's onnxruntime-gpu wheel for TensorRT
+onnxruntime

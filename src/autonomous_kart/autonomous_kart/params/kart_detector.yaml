@@ -1,0 +1,38 @@
+# Opponent kart detection -> /opponents (kart_detector_node).
+kart_detector_node:
+  ros__parameters:
+    # Exported by perception/train.py. Missing model = node idles and logs why.
+    model_path: "/ws/models/kart_192x320.onnx"
+    conf: 0.35
+    iou: 0.5
+    threads: 2          # CPU fallback only; leave cores for the planner
+    fp16: true          # TensorRT
+    # Crop (fractions of the frame) before detecting: drop our own nose/hood
+    # at the bottom, or the detector reports us as an opponent.
+    roi_frac: [0.0, 0.0, 1.0, 0.6]
+    max_range_m: 40.0
+    ego_xy_sigma_m: 0.1
+    ego_yaw_sigma_deg: 1.0
+
+    # Camera model at the resolution below (scaled to whatever arrives).
+    # PLACEHOLDERS until the camera is calibrated (checkerboard) and the mount
+    # is measured: ranging is only as good as height and pitch.
+    camera.width_px: 360
+    camera.height_px: 202
+    camera.fx: 180.0          # ~90 deg HFOV at 360 px
+    camera.fy: 180.0
+    camera.cx: 180.0
+    camera.cy: 101.0
+    camera.height_m: 1.2      # lens above ground
+    camera.pitch_deg: 5.0     # positive = looking down
+    camera.yaw_deg: 0.0
+    camera.mount_x_m: 0.0     # lens position relative to the odom origin
+    camera.mount_y_m: 0.0
+    # camera.dist: [k1, k2, p1, p2, k3]  # add once calibrated
+
+    ranging.kart_height_m: 1.0
+    ranging.kart_height_sigma_m: 0.2
+    ranging.center_offset_m: 0.8
+    ranging.pitch_sigma_deg: 1.0
+
+    tracker.max_coast_out_of_fov_s: 5.0

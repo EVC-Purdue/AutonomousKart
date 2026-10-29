@@ -45,6 +45,30 @@ class Opponent:
     sigma_d: float = 0.0
 
 
+# Wire format for /opponents (std_msgs/Float64MultiArray): [n, then n rows of
+# OPP_FIELDS]. Float64 because stamps are ROS-clock seconds (~1.7e9), which a
+# float32 can only resolve to ~2 minutes.
+
+OPP_FIELDS = 8  # id, s, d, s_dot, d_dot, stamp_s, sigma_s, sigma_d
+
+
+def encode_opponents(opps: Sequence[Opponent]) -> List[float]:
+    out = [float(len(opps))]
+    for o in opps:
+        out += [float(o.id), o.s, o.d, o.s_dot, o.d_dot, o.stamp_s, o.sigma_s, o.sigma_d]
+    return out
+
+
+def decode_opponents(data: Sequence[float]) -> Tuple[Opponent, ...]:
+    if len(data) == 0:
+        return ()
+    n = int(data[0])
+    if n < 0 or len(data) != 1 + n * OPP_FIELDS:
+        raise ValueError(f"/opponents payload: {len(data)} values for n={n}")
+    rows = (data[1 + i * OPP_FIELDS: 1 + (i + 1) * OPP_FIELDS] for i in range(n))
+    return tuple(Opponent(int(r[0]), *(float(v) for v in r[1:])) for r in rows)
+
+
 # Track limits
 
 

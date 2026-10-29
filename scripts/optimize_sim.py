@@ -4,14 +4,15 @@ Runs bicycle model + pathfinder (no ROS), scores by cross-track error + lap comp
 
 Usage:
   python3 scripts/optimize_sim.py
-  python3 scripts/optimize_sim.py --line /ws/data/racing_line/line14.csv --laps 3
+  python3 scripts/optimize_sim.py --line data/racing_line/line14.csv --laps 3
 """
 import argparse
 import math
 import itertools
 import sys
 import os
-sys.path.insert(0, "/ws/src/autonomous_kart")
+WS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(WS, "src", "autonomous_kart"))
 
 from autonomous_kart.nodes.localization.sim_bicycle import BicycleModel
 from autonomous_kart.nodes.pathfinder.pathfinder import pathfinder
@@ -155,7 +156,7 @@ def run_sim(line, params, dt=1.0/60, max_steps=100000, n_laps=2):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--line", default="/ws/data/racing_line/line6.csv")
+    parser.add_argument("--line", default=os.path.join(WS, "data", "racing_line", "line6.csv"))
     parser.add_argument("--laps", type=int, default=2)
     args = parser.parse_args()
 

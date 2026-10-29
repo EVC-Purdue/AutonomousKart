@@ -1,0 +1,11 @@
+# Log the Tegra PMC reset reason once per boot so `journalctl -b -1 -u kart-reset-reason` says why the last boot started.
+[Unit]
+Description=Log Tegra reset reason
+After=systemd-journald.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'd=/sys/devices/platform/bus@0/c360000.pmc; echo "reset_reason=$$(cat $$d/reset_reason) reset_level=$$(cat $$d/reset_level)"'
+
+[Install]
+WantedBy=multi-user.target

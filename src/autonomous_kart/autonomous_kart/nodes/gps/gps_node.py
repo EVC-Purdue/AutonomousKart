@@ -44,6 +44,7 @@ class GpsNode(Node):
 
         # GPS status snapshot; populated from NMEA messages and the RTCM loop.
         self.fix_quality = 0
+        self._have_fix = False    # position and covariance start unset
         self.num_satellites = 0
         self.hdop = 0.0
         self.lat = 0.0
@@ -52,6 +53,11 @@ class GpsNode(Node):
         self.sigma_e = 0.0
         self.sigma_n = 0.0
         self.sigma_u = 0.0
+        self.hdg_status = ""      # HEADINGA solution status, "" until seen
+        self.hdg_deg = 0.0
+        self.hdg_length_m = 0.0
+        self._hdt_alive_t = 0.0   # last $GPHDT
+        self._hdg_alive_t = 0.0   # last #HEADINGA, which closes the epoch
         self.rtcm_bytes_total = 0
         self.rtcm_last_t = 0.0  # 0 until first RTCM byte arrives
         self._rtcm_sock = None
@@ -102,21 +108,69 @@ class GpsNode(Node):
         self.device = self.get_parameter("serial_device").value or "/dev/ttyTHS1"
         self.baud = self.get_parameter("baud_rate").value or 9600
 
+        self.hdg_sigma_rad = math.radians(
+            float(self.get_parameter("hdg_sigma_deg").value or 0.164))
+        self.hdg_offset_deg = float(self.get_parameter("hdg_offset_deg").value or 0.0)
+        self.hdg_accept_status = set(
+            self.get_parameter("hdg_accept_status").value or ["SOL_COMPUTED"])
+        dual = self.get_parameter("use_dual_heading").value
+        self.use_dual_heading = True if dual is None else bool(dual)
+
+        self.ser = None
+        self._last_open_try = 0.0
         if not self.sim_mode:
-            self.ser = serial.Serial(self.device, baudrate=self.baud, timeout=0)
+            self._open_serial()
             threading.Thread(target=self._rtcm_loop, daemon=True).start()
 
         self.buffer = ""
 
-        self.timer = self.create_timer(1.0 / self.gps_frequency, self.publish_gps)
+        poll = float(self.get_parameter("serial_poll_hz").value or 200)
+        self.timer = self.create_timer(1.0 / poll, self.service_serial)
+        status_hz = float(self.get_parameter("status_frequency").value
+                          or self.gps_frequency)
+        self.status_timer = self.create_timer(1.0 / status_hz, self.publish_status)
+
+    def _open_serial(self):
+        # serial_for_url accepts a tty path or socket://host:port (receiver served over Ethernet).
+        self._last_open_try = time.time()
+        try:
+            self.ser = serial.serial_for_url(self.device, baudrate=self.baud, timeout=0)
+        except (serial.SerialException, OSError) as e:
+            self.ser = None
+            self.logger.warning(f"GPS open {self.device} failed: {e}", throttle_duration_sec=5.0)
+            return
+        self.logger.info(f"GPS connected on {self.device}")
+        if self.get_parameter("configure_receiver").value:
+            self._configure_receiver()
+
+    def _configure_receiver(self):
+        port = str(self.get_parameter("receiver_port").value or "COM3")
+        period = 1.0 / float(self.gps_frequency)
+        msgs = ("GPGGA", "GPRMC", "GPGST", "GPVTG") + (("GPHDT", "HEADINGA") if self.use_dual_heading else ())
+        try:
+            self.ser.write(f"UNLOG {port}\r\n".encode())
+            time.sleep(0.1)
+            for m in msgs:
+                self.ser.write(f"LOG {port} {m} ONTIME {period:g}\r\n".encode())
+                time.sleep(0.05)
+            self.logger.info(
+                f"receiver: {port} -> {', '.join(msgs)} at {1.0 / period:g} Hz")
+        except Exception as e:
+            self.logger.warning(f"receiver config failed: {e}")
+
+    def service_serial(self):
+        if not self.sim_mode:
+            self.read_gps()
+        elif self.sim_mode:
+            self.publish_gps()
 
 
     def publish_gps(self):
         """
         Publishes the 2D coordinates and error
         """
-        if not self.sim_mode:
-            self.read_gps()
+        if not self._have_fix:
+            return
 
         msg = Odometry()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -140,7 +194,6 @@ class GpsNode(Node):
         self.logger.debug(f"GPS Pos: {msg.pose.pose.position}")
         self.logger.debug(f"GPS Cov: {msg.pose.covariance}")
         self.gps_publisher.publish(msg)
-        self.publish_status()
 
     def publish_status(self):
         """Publish a JSON snapshot of fix quality / RTK / measurements."""
@@ -162,6 +215,10 @@ class GpsNode(Node):
             "sigma_n": self.sigma_n,
             "sigma_u": self.sigma_u,
             "use_gst": self.use_gst,
+            "heading_deg": self.hdg_deg,
+            "heading_status": self.hdg_status,
+            "heading_baseline_m": self.hdg_length_m,
+            "heading_var": self.gps_data_cov[35],
             "rtcm_bytes_total": self.rtcm_bytes_total,
             "rtcm_last_age_s": rtcm_age,
             "stamp_ns": self.get_clock().now().nanoseconds,
@@ -170,26 +227,47 @@ class GpsNode(Node):
 
     def read_gps(self):
         if self.ser is None or not self.ser.is_open:
-            self.logger.info("Serial closed")
+            if time.time() - self._last_open_try >= 1.0:
+                self._open_serial()
             return
 
-        # read right now
-        chunk = self.ser.read(self.ser.in_waiting or 1)
+        # read right now; socket:// reports in_waiting as 0/1, so ask for everything available
+        try:
+            chunk = self.ser.read(4096)
+        except (serial.SerialException, OSError) as e:
+            self.logger.warning(f"GPS read failed ({e}), reconnecting", throttle_duration_sec=5.0)
+            self.ser.close()
+            self.ser = None
+            return
         if not chunk:
             self.logger.debug("No chunk")
             return
 
         self.buffer += chunk.decode("ascii", errors="ignore")
 
+        # GGA opens the epoch and #HEADINGA closes it, so publish there.
         while "\n" in self.buffer:
             line, self.buffer = self.buffer.split("\n", 1)
             line = line.strip()
             if line.startswith(("$GPGGA", "$GNGGA")):
                 self._relay_gga(line)
+            if line.startswith("#HEADINGA"):
+                self._handle_headinga(line)
+                self._hdg_alive_t = time.time()
+                self.publish_gps()
+                continue
             try:
                 self.parse(line)
             except Exception as e:
                 self.logger.error(f"parse crash on '{line}': {e}")
+                continue
+            now = time.time()
+            if line.startswith(("$GPHDT", "$GNHDT")) and \
+                    now - self._hdg_alive_t > 0.5:
+                self.publish_gps()
+            elif line.startswith(("$GPGGA", "$GNGGA")) and \
+                    now - self._hdt_alive_t > 0.5 and now - self._hdg_alive_t > 0.5:
+                self.publish_gps()
 
     def parse(self, msg: str):
         if not msg.startswith("$"):
@@ -211,6 +289,8 @@ class GpsNode(Node):
                 pass
             case "GST":
                 self.handle_gst(fields)
+            case "HDT":
+                self.handle_hdt(fields)
             case "RMC":
                 self.handle_rmc(fields)
             case "VTG":
@@ -239,10 +319,12 @@ class GpsNode(Node):
         self.altitude = altitude
 
         if not lat or not lon or not lat_direction or not lon_direction:
+            self._have_fix = False
             return
 
 
         self.gps_to_coords(lat, lat_direction, lon, lon_direction)
+        self._have_fix = fix_quality > 0
 
         if not self.use_gst:
             # Numbers below come from the GEM1305 spec.
@@ -322,6 +404,9 @@ class GpsNode(Node):
         else:
             self.gps_data_twist_cov[0] = 1e6
 
+        # Yaw comes from $GPHDT unless dual-antenna heading is off; then VTG course, as before the UM982.
+        if self.use_dual_heading:
+            return
         # sigma_yaw = sigma_v / v only meaningful once the kart is actually moving.
         if fields[1] and v is not None and v > self.vtg_min_speed_for_yaw:
             try:
@@ -334,6 +419,38 @@ class GpsNode(Node):
                 self.gps_data_cov[35] = 1e6
         else:
             self.gps_data_cov[35] = 1e6
+
+    def _hdg_var(self) -> float:
+        """Yaw variance, 1e6 unless #HEADINGA reports an accepted solution."""
+        return (self.hdg_sigma_rad ** 2
+                if self.hdg_status in self.hdg_accept_status else 1e6)
+
+    def handle_hdt(self, fields):
+        """$GPHDT,heading_true,T: body heading, so no reverse correction."""
+        self._hdt_alive_t = time.time()
+        if not fields[1]:
+            self.gps_data_cov[35] = 1e6
+            return
+        try:
+            self.hdg_deg = float(fields[1])
+        except ValueError:
+            self.gps_data_cov[35] = 1e6
+            return
+        # Bearing (CW from north) -> ENU yaw (CCW from east).
+        raw = math.pi / 2.0 - math.radians(self.hdg_deg + self.hdg_offset_deg)
+        self.gps_yaw_rad = math.atan2(math.sin(raw), math.cos(raw))
+        # Previous epoch's status; #HEADINGA re-applies this epoch's below.
+        self.gps_data_cov[35] = self._hdg_var()
+
+    def _handle_headinga(self, line: str):
+        """#HEADINGA closes the epoch and carries the status $GPHDT lacks."""
+        try:
+            body = line.split(";", 1)[1].split("*", 1)[0].split(",")
+            self.hdg_status = body[0]
+            self.hdg_length_m = float(body[2])
+        except (IndexError, ValueError):
+            self.hdg_status = ""
+        self.gps_data_cov[35] = self._hdg_var()
 
     def handle_rmc(self, fields):
         lat = fields[3]

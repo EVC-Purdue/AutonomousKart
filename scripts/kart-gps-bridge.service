@@ -1,0 +1,13 @@
+# Rubik Pi: serves the UM982 to the Jetson's gps_node over the direct Ethernet link (serial_device socket://192.168.10.31:5017).
+[Unit]
+Description=UM982 serial-over-TCP bridge for the Jetson
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/socat -d TCP-LISTEN:5017,bind=192.168.10.31,reuseaddr,nodelay FILE:/dev/kart-gps,rawer,b460800
+Restart=always
+RestartSec=0.5
+
+[Install]
+WantedBy=multi-user.target

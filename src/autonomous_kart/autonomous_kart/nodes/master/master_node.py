@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 from enum import Enum
@@ -8,6 +9,8 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from std_msgs.msg import String, Float32, Float32MultiArray, UInt16, Empty
+
+from autonomous_kart import paths
 
 
 class STATES(Enum):
@@ -28,7 +31,14 @@ class MasterNode(Node):
         self.logger = self.get_logger()
         self.state = self.get_parameter("system_state").value
         self.system_frequency = self.get_parameter("system_frequency").value
-        self.path = self.get_parameter("line_path").value
+        self.path = paths.resolve(self.get_parameter("line_path").value)
+        self.line_dir = paths.resolve(
+            self.get_parameter("line_dir").value or "data/racing_line"
+        )
+        self._active_spec = None
+        self.track_path = paths.resolve(self.get_parameter("track_path").value)
+        self.lat0 = self.get_parameter("lat0").value
+        self.lon0 = self.get_parameter("lon0").value
 
         assert self.state in [s.value for s in STATES]
 
@@ -135,6 +145,7 @@ class MasterNode(Node):
         self.residual_mode_publisher = self.create_publisher(String, "mpc/residual_mode", 1)
         self.planner_publisher = self.create_publisher(String, "pathfinder/planner", 1)
         self.line_publisher = self.create_publisher(String, "pathfinder/line_path", 1)
+        self.spec_publisher = self.create_publisher(String, "pathfinder/line_spec", 1)
         self.residual_revert_publisher = self.create_publisher(Empty, "mpc/residual_revert", 1)
 
         # Live MPC actuator_gain knob + estimator snapshot.
@@ -236,6 +247,7 @@ class MasterNode(Node):
             "kappa_local": float(data[41]),
             "consec_failures": int(data[42]),
             "corridor_half": float(data[43]),
+            "residual_mode_num": int(data[44]),
             # GPS pose passthrough (indices 47..50; 44..46 are residual telemetry).
             "gps_x": float(data[47]),
             "gps_y": float(data[48]),
@@ -452,11 +464,63 @@ class MasterNode(Node):
         self.actuator_gain_publisher.publish(Float32(data=v))
         return True, f"{v:.3f}"
 
+    def get_active_spec(self):
+        return dict(self._active_spec) if self._active_spec else None
+
+    def get_line_shapes(self) -> dict:
+        """Every CSV in line_dir, named by its stem."""
+        try:
+            names = sorted(os.listdir(self.line_dir))
+        except OSError:
+            names = []
+        return {
+            "line_dir": self.line_dir,
+            "shapes": [n[:-4] for n in names if n.endswith(".csv")],
+            "active": self.get_active_spec(),
+            "path": self.path,
+        }
+
+    def set_line_speed(self, payload: dict):
+        """Publish a {shape, v_min, v_max, v_mult} spec. Omitted speeds are pathfinder's."""
+        payload = payload or {}
+        shape = str(payload.get("shape", "") or "").strip()
+        if not shape:
+            return False, "shape is required"
+        path = os.path.join(self.line_dir, f"{shape}.csv")
+        if not os.path.exists(path):
+            return False, f"unknown shape '{shape}' under {self.line_dir}"
+
+        spec = {"shape": shape}
+        for key in ("v_min", "v_max", "v_mult"):
+            v = payload.get(key)
+            if v is None or v == "":
+                continue
+            try:
+                spec[key] = float(v)
+            except (TypeError, ValueError):
+                return False, f"{key} must be a number (got {v!r})"
+        if spec.get("v_mult", 1.0) <= 0.0:
+            return False, f"v_mult must be > 0 (got {spec['v_mult']})"
+        if "v_min" in spec and "v_max" in spec and spec["v_min"] > spec["v_max"]:
+            return False, f"v_min {spec['v_min']} exceeds v_max {spec['v_max']}"
+
+        self.spec_publisher.publish(String(data=json.dumps(spec)))
+        self._active_spec = spec
+        # /map, /lines and /racing_line read self.path, so it follows the swap
+        self.path = path
+        return True, spec
+
     def set_line(self, path: str) -> tuple[bool, str]:
         p = (path or "").strip()
         if not p:
             return False, "path is empty"
+        resolved = paths.resolve(p)
+        if not os.path.exists(resolved):
+            return False, f"no such racing line: {p}"
         self.line_publisher.publish(String(data=p))
+        # A raw path is taken as-is, so any speed spec stops applying.
+        self._active_spec = None
+        self.path = resolved
         return True, p
 
     def _imu_callback(self, msg: Imu):

@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
+# The same ~/.bashrc line the native install uses.
 set -euo pipefail
 
-: "${ROS_DISTRO:=humble}"
-grep -qxF "[ -f /ws/.venv/bin/activate ] && source /ws/.venv/bin/activate" ~/.bashrc || \
-  echo "[ -f /ws/.venv/bin/activate ] && source /ws/.venv/bin/activate" >> ~/.bashrc
+grep -q "kart_env.sh" ~/.bashrc 2>/dev/null || cat >> ~/.bashrc <<'RC'
 
-grep -qxF "source /opt/ros/$ROS_DISTRO/setup.bash" ~/.bashrc || \
-  echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> ~/.bashrc
-
-grep -qxF "[ -f /ws/install/setup.bash ] && source /ws/install/setup.bash" ~/.bashrc || \
-  echo "[ -f /ws/install/setup.bash ] && source /ws/install/setup.bash" >> ~/.bashrc
-
-
+# Kart: ROS 2, the venv, the workspace and the `kart` command.
+[ -f /ws/scripts/kart_env.sh ] && . /ws/scripts/kart_env.sh
+RC

@@ -7,6 +7,7 @@ ring land in Phase 2 — for now those slots stay `None`.
 """
 from __future__ import annotations
 
+import os
 from collections import deque
 from typing import Deque, Tuple
 
@@ -62,7 +63,8 @@ class ResidualLearner:
         if self.model_size == "xs":
             self.feature_mask[1:] = 0.0
         self.cache_enabled = bool(g("cache_enabled", True))
-        self.cache_dir = str(g("cache_dir", "/root/.cache/residual_cache"))
+        self.cache_dir = str(g("cache_dir", os.path.expanduser(
+            "~/.cache/residual_cache")))
         self.cache_load_on_start = bool(g("cache_load_on_start", True))
         self.cache_loaded = False
         self.cache = None
@@ -97,6 +99,9 @@ class ResidualLearner:
         self.last_pred_clipped = 0
         self._gbm_s = None
         self._gbm_d = None
+        # (gbm_s, gbm_d, fast_s, fast_d): single-row predictors compiled by
+        # _install_gbm, tagged with the models they came from.
+        self._gbm_fast = None
         self._last_val_mae_s = float("nan")
         self._last_val_mae_d = float("nan")
         self._last_rls_val_mae_s = float("nan")
@@ -145,6 +150,15 @@ class ResidualLearner:
         if self.uses_batch_model and self.enabled:
             from autonomous_kart.nodes.pathfinder.planners.residual.buffer import TrainBuffer
             from autonomous_kart.nodes.pathfinder.planners.residual.trainer import GBMTrainer
+            estimator_factory = models.estimator(self.model_size, params)
+            # Build one now so sklearn is imported here at startup. Imported for
+            # the first time on the trainer thread, it holds the GIL for ~1 s and
+            # plan() overruns its tick the whole time. Without sklearn the
+            # trainer records the error each cycle and the RLS carries on, as before.
+            try:
+                estimator_factory()
+            except ImportError:
+                pass
             self.buffer = TrainBuffer(
                 capacity=int(g("gbm_buffer_capacity", 18000)),
                 feature_dim=NUM_FEATURES,
@@ -159,7 +173,7 @@ class ResidualLearner:
                 min_samples_to_train=int(g("gbm_min_samples_to_train", 1200)),
                 retrain_secs=float(g("gbm_retrain_secs", 10.0)),
                 retrain_every_samples=int(g("gbm_retrain_every_samples", 1200)),
-                estimator_factory=models.estimator(self.model_size, params),
+                estimator_factory=estimator_factory,
             )
             # Monkey-patch the trainer's train_once so the learner installs the
             # new GBM (subject to a hard val_mae safety floor) and recomputes
@@ -205,7 +219,9 @@ class ResidualLearner:
                 return result
 
             self.trainer.train_once = _train_and_install
-            self.trainer.start()
+            # A multi-horizon owner drives every learner from one thread instead.
+            if bool(g("autostart_trainer", True)):
+                self.trainer.start()
 
     @property
     def enabled(self) -> bool:
@@ -302,9 +318,14 @@ class ResidualLearner:
             self._clip_history.append(0)
             return 0.0, 0.0, SOURCE_RLS
         if self.use_gbm and self._gbm_s is not None and self._gbm_d is not None:
-            X = phi.reshape(1, -1)
-            s_raw = float(self._gbm_s.predict(X)[0])
-            d_raw = float(self._gbm_d.predict(X)[0])
+            fast = self._gbm_fast
+            if fast is not None and fast[0] is self._gbm_s and fast[1] is self._gbm_d:
+                s_raw = fast[2](phi)
+                d_raw = fast[3](phi)
+            else:
+                X = phi.reshape(1, -1)
+                s_raw = float(self._gbm_s.predict(X)[0])
+                d_raw = float(self._gbm_d.predict(X)[0])
             clip = self._predict_clip_m
             s = max(-clip, min(clip, s_raw))
             d = max(-clip, min(clip, d_raw))
@@ -414,8 +435,12 @@ class ResidualLearner:
         Real callers are GBMTrainer (after training) and the cache loader
         (Task 17). Tests call it directly to skip the threaded trainer.
         """
+        # Compile here, on the trainer thread, so predict() never pays for it.
+        fast = (gbm_s, gbm_d,
+                models.compile_single_row(gbm_s), models.compile_single_row(gbm_d))
         self._gbm_s = gbm_s
         self._gbm_d = gbm_d
+        self._gbm_fast = fast
         self._last_val_mae_s = val_mae_s
         self._last_val_mae_d = val_mae_d
         self._last_rls_val_mae_s = rls_val_mae_s
@@ -457,3 +482,109 @@ class ResidualLearner:
     def shutdown(self) -> None:
         if self.trainer is not None:
             self.trainer.stop(timeout=2.0)
+
+
+class MultiHorizonResidual:
+    """One `ResidualLearner` per horizon; sequences are ordered by `horizons`."""
+
+    def __init__(self, params: dict, solve_dt: float, s_total: float = 0.0):
+        g = params.get
+        reference = float(g("target_horizon_s", 0.5))
+        self.horizons = tuple(sorted(float(h) for h in
+                                     (g("taps_s") or [reference])))
+        self.primary = min(range(len(self.horizons)),
+                           key=lambda i: abs(self.horizons[i] - reference))
+        self.learners = [
+            ResidualLearner(self._scaled(params, h, reference), solve_dt,
+                            s_total=s_total)
+            for h in self.horizons
+        ]
+        self._trainer = _RoundRobinTrainer(
+            [l.trainer for l in self.learners],
+            period_s=float(g("gbm_retrain_secs", 10.0)))
+
+    @staticmethod
+    def _scaled(params: dict, horizon: float, reference: float) -> dict:
+        """One learner's parameters, with its distance gates scaled to it."""
+        scale = horizon / max(reference, 1e-3)
+        scaled = dict(params)
+        scaled["target_horizon_s"] = horizon
+        scaled["outlier_threshold_m"] = (
+            float(params.get("outlier_threshold_m", 2.0)) * scale)
+        scaled["gbm_predict_clip_m"] = (
+            float(params.get("gbm_predict_clip_m", 0.5)) * scale)
+        # The owner drives every trainer from one thread; see _RoundRobinTrainer.
+        scaled["autostart_trainer"] = False
+        return scaled
+
+    def __getattr__(self, name):
+        # Telemetry and the HTTP API read the primary learner's surface.
+        return getattr(self.learners[self.primary], name)
+
+    @property
+    def mode(self) -> str:
+        return self.learners[self.primary].mode
+
+    @mode.setter
+    def mode(self, value: str) -> None:
+        for learner in self.learners:
+            learner.mode = value
+
+    def effective_mode(self) -> str:
+        """Apply only once every horizon has earned it, so the shape is whole."""
+        if self.mode == "off":
+            return "off"
+        if any(l.effective_mode() != "apply" for l in self.learners):
+            return "shadow"
+        return self.mode
+
+    def push(self, features, s_t: float, d_t: float, nominals, speed: float) -> None:
+        for learner, phi, (nom_ds, nom_dd) in zip(self.learners, features, nominals):
+            learner.push(phi, s_t, d_t, nom_ds, nom_dd, speed)
+
+    def step(self, s_now: float, d_now: float) -> None:
+        for learner in self.learners:
+            learner.step(s_now, d_now)
+
+    def predict(self, features):
+        """(along, lateral) per horizon, ordered like `horizons`."""
+        pairs = [learner.predict(phi)[:2]
+                 for learner, phi in zip(self.learners, features)]
+        return [a for a, _ in pairs], [d for _, d in pairs]
+
+    def shutdown(self) -> None:
+        self._trainer.stop()
+        for learner in self.learners:
+            learner.shutdown()
+
+
+class _RoundRobinTrainer:
+    """Fits one learner's batch model at a time, so N horizons cost one core."""
+
+    def __init__(self, trainers, period_s: float):
+        import threading
+
+        self._trainers = [t for t in trainers if t is not None]
+        self._stop = threading.Event()
+        self._thread = None
+        if not self._trainers:
+            return
+        self._slice_s = max(0.5, period_s / len(self._trainers))
+        self._thread = threading.Thread(target=self._loop, name="residual-taps",
+                                        daemon=True)
+        self._thread.start()
+
+    def _loop(self) -> None:
+        turn = 0
+        while not self._stop.wait(timeout=self._slice_s):
+            trainer = self._trainers[turn % len(self._trainers)]
+            turn += 1
+            try:
+                trainer.train_once()
+            except Exception:
+                pass
+
+    def stop(self, timeout: float = 2.0) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=timeout)

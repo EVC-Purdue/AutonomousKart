@@ -28,7 +28,8 @@ import pytest
 
 rclpy_mod = pytest.importorskip("rclpy")
 
-SIM_VIDEO_PATH = "/ws/data/EVC_test_footage/video.mp4"
+_WS = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+SIM_VIDEO_PATH = os.path.join(_WS, "data", "EVC_test_footage", "video.mp4")
 BASE_URL = "http://127.0.0.1:8000"
 
 

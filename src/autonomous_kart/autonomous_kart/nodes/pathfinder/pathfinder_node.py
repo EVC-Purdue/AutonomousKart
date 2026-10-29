@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import traceback
 from typing import List, Optional, Tuple
 
@@ -10,11 +11,16 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Float32, Float32MultiArray, Float64MultiArray, String
 from std_msgs.msg import Empty as _EmptyMsg # naming conflict
 
+from autonomous_kart import paths
 from autonomous_kart.nodes.master.master_node import STATES
 from autonomous_kart.nodes.pathfinder.opponents import decode_opponents
 from autonomous_kart.nodes.pathfinder.planners.base import KartConstants, PlannerInputs
 from autonomous_kart.nodes.pathfinder.planners.mpc import MPCPlanner
-from autonomous_kart.nodes.pathfinder.planners.mpc_residual import ResidualLearner
+from autonomous_kart.nodes.pathfinder.planners.mpc_cuda import (
+    describe_solver,
+    select_mpc_class,
+)
+from autonomous_kart.nodes.pathfinder.planners.mpc_residual import MultiHorizonResidual
 from autonomous_kart.nodes.pathfinder.planners.opencv import OpenCVPlanner
 from autonomous_kart.nodes.pathfinder.planners.pure_pursuit import PurePursuitPlanner
 from autonomous_kart.nodes.pathfinder.safety_checker import SafetyChecker
@@ -64,8 +70,11 @@ class PathfinderNode(Node):
         self.manual_steer_max = self.kart.steer_max_deg
 
         # Racing line
-        self.line_path = self._param("line_path", "", str)
+        self.line_path = paths.resolve(self._param("line_path", "", str))
         self.racing_line: List[Tuple[float, ...]] = self._load_line_csv(self.line_path)
+        # Shape + speed from line_spec
+        self.line_dir = paths.resolve(self._param("line_dir", "data/racing_line", str))
+        self.speed_spec: Optional[dict] = None
 
         # Cached inputs to planners
         self.state = self._param("system_state", "IDLE", str)
@@ -105,7 +114,7 @@ class PathfinderNode(Node):
         # s_total = racing-line arc length, needed for the residual's seam
         # unwrap. Falls back to 0 (= no unwrap) if the line is empty.
         s_total = float(self.racing_line[-1][0]) if self.racing_line else 0.0
-        self.shared_residual = ResidualLearner(
+        self.shared_residual = MultiHorizonResidual(
             residual_params, 1.0 / self.system_frequency, s_total=s_total,
         )
 
@@ -155,6 +164,7 @@ class PathfinderNode(Node):
         self.create_subscription(_EmptyMsg, "mpc/residual_revert", self._on_residual_revert, 1)
         self.create_subscription(String, "pathfinder/planner", self._on_planner_swap, 1)
         self.create_subscription(String, "pathfinder/line_path", self._on_line_swap, 1)
+        self.create_subscription(String, "pathfinder/line_spec", self._on_line_spec, 1)
         self.create_subscription(Float32, "mpc/set_actuator_gain", self._on_set_actuator_gain, 1)
 
         # Publishers
@@ -274,19 +284,54 @@ class PathfinderNode(Node):
         self.active_planner_pub.publish(String(data=name))
         self.logger.info(f"active planner -> {name}")
 
+    def _adopt_line(self, path: str, rows: List[Tuple[float, ...]]) -> None:
+        self.line_path = path
+        self.racing_line = rows
+        # Keep the residual's seam-unwrap calibrated to the new line length
+        self.shared_residual.s_total = float(rows[-1][0])
+        # Rebuild planners on the new line; shared residual persists.
+        self.planners = self._build_planners()
+
     def _on_line_swap(self, msg: String):
-        path = (msg.data or "").strip()
+        path = paths.resolve((msg.data or "").strip())
         new_line = self._load_line_csv(path)
         if not new_line:
             self.logger.warning(f"pathfinder/line_path: could not load '{path}'")
             return
-        self.line_path = path
-        self.racing_line = new_line
-        # Keep the residual's seam-unwrap calibrated to the new line length
-        self.shared_residual.s_total = float(new_line[-1][0])
-        # Rebuild planners on the new line; shared residual persists.
-        self.planners = self._build_planners()
+        # A raw path is taken as-is, so any speed spec stops applying.
+        self.speed_spec = None
+        self._adopt_line(path, new_line)
         self.logger.info(f"line -> {path} ({len(new_line)} pts)")
+
+    def _on_line_spec(self, msg: String):
+        """Load line_dir/<shape>.csv with vx clipped to [v_min, v_max] after v_mult."""
+        try:
+            spec = json.loads(msg.data)
+        except (TypeError, ValueError):
+            spec = None
+        if not isinstance(spec, dict) or not spec.get("shape"):
+            self.logger.warning(f"pathfinder/line_spec: bad payload '{msg.data}'")
+            return
+        path = os.path.join(self.line_dir, f"{spec['shape']}.csv")
+        rows = self._load_line_csv(path)
+        if not rows:
+            self.logger.warning(f"pathfinder/line_spec: could not load '{path}'")
+            return
+
+        v_mult = float(spec.get("v_mult") or 1.0)
+        v_min = float(spec.get("v_min") or 0.0)
+        v_max = float(spec.get("v_max") or self._param("mpc.target_speed_mps", 10.0, float))
+        v_max = min(v_max, self.kart.v_max_mps)
+        self.speed_spec = {
+            "shape": spec["shape"], "v_min": v_min, "v_max": v_max, "v_mult": v_mult,
+        }
+        self._adopt_line(path, [
+            r[:5] + (min(max(r[5] * v_mult, v_min), v_max),) + r[6:] for r in rows
+        ])
+        self.logger.info(
+            f"line -> {spec['shape']} x{v_mult:.2f} "
+            f"clip[{v_min:.1f}, {v_max:.1f}] ({len(rows)} pts)"
+        )
 
     def update_state(self, msg: String):
         if msg.data != self.state:
@@ -460,9 +505,25 @@ class PathfinderNode(Node):
             planner_params = {
                 k: p.value for k, p in self.get_parameters_by_prefix(name).items()
             }
+            if name == MPCPlanner.name and self.speed_spec is not None:
+                # MPC clamps v_ref at its own target_speed, so the ceiling goes here too
+                planner_params["target_speed_mps"] = self.speed_spec["v_max"]
             kwargs = dict(logger=self.logger, node=self)
             if cls is MPCPlanner:
                 kwargs["residual"] = self.shared_residual
+                # CudaMPCPlanner keeps name "mpc", so the registry and the swap topic are unchanged.
+                cls = select_mpc_class()
+                if cls is not MPCPlanner:
+                    try:
+                        out[name] = cls(planner_params, self.kart,
+                                        self.racing_line, **kwargs)
+                        self.logger.info(f"MPC solver: {describe_solver()}")
+                        continue
+                    except Exception as e:
+                        self.logger.warning(
+                            f"CUDA MPC unavailable, falling back to numpy: {e}")
+                        cls = MPCPlanner
+                self.logger.info(f"MPC solver: {describe_solver()}")
             try:
                 out[name] = cls(planner_params, self.kart, self.racing_line, **kwargs)
             except Exception as e:

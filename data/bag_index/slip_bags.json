@@ -1,0 +1,130 @@
+{
+  "label": "slip",
+  "what": "Bags containing rear-axle traction loss. Identified 2026-09-25 from logs/run_20260919_*; see project-spinout-is-combined-slip in the agent memory for the full analysis.",
+  "track_day": "2026-09-19",
+  "bags": [
+    {
+      "path": "logs/run_20260919_152803_auto",
+      "contains_slip": true,
+      "planner": "mpc",
+      "line": "newline6 for the whole run. /pathfinder/line_path publishes newline8 (t=222 s), newline8 (247), newline7 (334), line8 (390), but the commanded throttle is a flat 6.00 m/s start to finish and MPC reads throttle off the line's vx, so those publications are requests that never took effect. newline6 is the only 6.0 m/s line in the newline family, and the geometry fit prefers that family in every window. params_live.yaml says line6 and is also wrong.",
+      "laps": 6,
+      "speed_mps": 6.0,
+      "events": [
+        {
+          "n": 1,
+          "rc_takeover_s": 444.6,
+          "track_s_m": 218,
+          "xy": [
+            19.0,
+            -21.3
+          ],
+          "entry_mps": 6.3,
+          "peak_lat_mps2": 7.42,
+          "peak_slip_pct": 22.9,
+          "sideslip_built_deg": 20,
+          "full_rotation": false
+        },
+        {
+          "n": 2,
+          "rc_takeover_s": 472.3,
+          "track_s_m": 213,
+          "xy": [
+            22.3,
+            -16.8
+          ],
+          "entry_mps": 6.3,
+          "peak_lat_mps2": 7.73,
+          "peak_slip_pct": 17.6,
+          "sideslip_built_deg": 126,
+          "full_rotation": true,
+          "note": "standing restart, launched at ~70% axle slip"
+        },
+        {
+          "n": 3,
+          "rc_takeover_s": 498.8,
+          "track_s_m": 212,
+          "xy": [
+            20.2,
+            -15.8
+          ],
+          "entry_mps": 6.51,
+          "peak_lat_mps2": 8.91,
+          "peak_slip_pct": 14.9,
+          "sideslip_built_deg": 42,
+          "full_rotation": true,
+          "note": "standing restart, launched at ~70% axle slip"
+        },
+        {
+          "n": 4,
+          "rc_takeover_s": 526.7,
+          "track_s_m": 226,
+          "xy": [
+            11.2,
+            -24.6
+          ],
+          "entry_mps": 6.19,
+          "peak_lat_mps2": 7.99,
+          "peak_slip_pct": 43.0,
+          "sideslip_built_deg": 36,
+          "full_rotation": true,
+          "note": "standing restart, launched at ~70% axle slip"
+        }
+      ],
+      "location": "tight right-hander immediately after the esses, s = 212-228 m on line8 (kappa -0.138, R 7.2 m)",
+      "line_evidence": {
+        "cmd_throttle_mps": 6.0,
+        "constant_for_whole_run": true,
+        "cte_p95_newline_family_m": 1.42,
+        "cte_p95_line_family_m": 1.6,
+        "newline6_kappa_at_corner": 0.112,
+        "line8_kappa_at_corner": 0.139
+      },
+      "note": "Three of the four events rotate past 30 deg of sideslip (126, 42, 36 deg); the t=444 event reaches about 20 deg and the driver caught it. All four slip hard and all four are the same failure at the same corner."
+    },
+    {
+      "path": "logs/run_20260919_151541_auto",
+      "contains_slip": false,
+      "planner": "mpc",
+      "line": "a 4.0 m/s line; line_path names line4 but see the caveat on 152803",
+      "speed_mps": 4.3,
+      "note": "shakedown on a 4.0 m/s line, 4.7 m/s max; no window starting above 4 m/s builds 30 deg of sideslip"
+    },
+    {
+      "path": "logs/run_20260919_152204_auto",
+      "contains_slip": false,
+      "planner": "mpc",
+      "line": "a 4.0 m/s line; line_path names line4 but see the caveat on 152803",
+      "speed_mps": 4.2,
+      "note": "shakedown on a 4.0 m/s line, 4.8 m/s max; no window starting above 4 m/s builds 30 deg of sideslip"
+    },
+    {
+      "path": "logs/run_20260919_151404_auto",
+      "contains_slip": false,
+      "planner": "mpc",
+      "note": "79 s, kart never moved"
+    }
+  ],
+  "not_slip": {
+    "logs/run_20260924_*": "58 runs, all bench. GPS span 0 m, wheels turning on stands. Not a track day."
+  },
+  "gotchas": [
+    "Use header.stamp, not bag log time, for /gps and /mpc/status. Log times bunch (3 fixes inside 20 ms) and blow up derivatives.",
+    "~1% of /gps VTG course samples are corrupt by ~20 deg in a single fix. Hampel-filter before differentiating, or take yaw rate from the IMU gyro.",
+    "Calibrate wheel speed per bag on steady straight running. The May scale (1/1.033) reads -4% slip on straights here; the in-bag scale is 1.008.",
+    "The IMU is healthy in these bags: gyro_z TLS slope 0.98 at r=0.94 vs GPS course rate, correct sign, and accel_x is usable at r=0.81. The CLAUDE.md warnings describe the pre-2026-09-14 mount.",
+    "GPS lags the IMU by 0.11 s on yaw rate and 0.16 s on lateral accel.",
+    "The gyro sign is per-mount, not per-repo-flag: 20260913 bags measure slope -1.007 against GPS course rate, 20260919 bags +0.92. Test the sign in every bag before integrating yaw; skipping this invents a dozen false spins per run.",
+    "/pathfinder/line_path reports a requested path, not the active one. Identify the line from the commanded throttle (it is the line's vx) plus a geometry fit."
+  ],
+  "figures": [
+    "spinout_where.png",
+    "spinout_tyres.png",
+    "spinout_friction_budget.png",
+    "spinout_friction_line.png"
+  ],
+  "other_days": {
+    "new_mpc_bags/20260913/run_20260913_195301_auto": "2 spins, at (44,-34) and (-30,-6), different day and different places",
+    "new_mpc_bags/20260913/run_*": "the rest are clean once the gyro sign is corrected"
+  }
+}

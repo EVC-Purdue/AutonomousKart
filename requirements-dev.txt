@@ -1,0 +1,7 @@
+# Build and test tooling, installed alongside requirements.txt.
+colcon-common-extensions==0.3.0
+# ROS Humble's launch_testing uses the `path` hook argument pytest 8 removed.
+pytest==7.4.4
+pytest-cov==7.1.0
+pytest-repeat==0.9.4
+pytest-rerunfailures==11.1.2
